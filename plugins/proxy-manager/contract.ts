@@ -1,0 +1,47 @@
+import { defineRpcContract } from '@get-bb/plugin-sdk';
+import { z } from 'zod';
+export const proxyInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  protocol: z.enum(['http', 'https']),
+  host: z.string().trim().min(1).max(253).regex(/^[a-zA-Z0-9.-]+$/, 'Укажите IP или имя хоста без протокола'),
+  port: z.number().int().min(1).max(65535),
+  username: z.string().max(512).default(''),
+  password: z.string().max(512).default(''),
+}).strict();
+export const storedProxy = proxyInput.extend({ id: z.string() });
+export type StoredProxy = z.infer<typeof storedProxy>;
+export const publicProxy = storedProxy.omit({ username: true, password: true }).extend({ authenticated: z.boolean() });
+export const checkSchema = z.object({
+  ok: z.boolean(), ip: z.string().nullable(), country: z.string().nullable(), city: z.string().nullable(),
+  openaiStatus: z.number().nullable(), message: z.string(), checkedAt: z.string(), latencyMs: z.number(),
+});
+export type Check = z.infer<typeof checkSchema>;
+export const hostContract = defineRpcContract({
+  check: { input: z.object({ proxy: storedProxy.nullable(), previous: checkSchema.optional() }), output: checkSchema },
+  prepare_native: { input: z.object({ proxy: storedProxy.nullable() }), output: z.object({ home: z.string(), fingerprint: z.string() }) },
+  apply_native: { input: z.object({ proxy: storedProxy.nullable(), fingerprint: z.string() }), output: z.object({ home: z.string(), fingerprint: z.string() }) },
+  verify_native: { input: z.object({ fingerprint: z.string() }), output: z.object({ matches: z.boolean() }) },
+});
+export const bindingSchema = z.object({ hostId: z.string(), providerId: z.string(), proxyId: z.string().nullable() });
+export const routeStateSchema = z.object({ phase: z.enum(['switching', 'ready', 'error']), proxyId: z.string().nullable(), fingerprint: z.string().optional(), home: z.string().optional(), message: z.string(), updatedAt: z.string() });
+export type RouteState = z.infer<typeof routeStateSchema>;
+export const routeContextSchema = z.object({
+  hostId: z.string(), hostName: z.string(), providerId: z.string(), proxyId: z.string().nullable(), proxyName: z.string().nullable(), connected: z.boolean(),
+  check: checkSchema.nullable(), applied: z.boolean(), warning: z.string().nullable(),
+});
+export type RouteContext = z.infer<typeof routeContextSchema>;
+export const rpcContract = defineRpcContract({
+  route_context: { input: z.object({ threadId: z.string().nullable(), hostId: z.string().nullable(), environmentId: z.string().nullable(), providerId: z.string().nullable() }), output: routeContextSchema.nullable() },
+  list: { input: z.null(), output: z.object({ proxies: z.array(publicProxy), bindings: z.array(bindingSchema), checks: z.record(z.string(), checkSchema), routes: z.record(z.string(), routeStateSchema) }) },
+  machines: { input: z.null(), output: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() })) },
+  providers: { input: z.object({ hostId: z.string() }), output: z.array(z.object({ id: z.string(), name: z.string(), available: z.boolean(), message: z.string() })) },
+  bind: { input: bindingSchema, output: bindingSchema },
+  add: { input: proxyInput, output: publicProxy },
+  remove: { input: z.object({ id: z.string() }), output: z.object({ removed: z.boolean() }) },
+  check: { input: z.object({ hostId: z.string(), proxyId: z.string().nullable() }), output: checkSchema },
+});
+export function redact(p: StoredProxy) { const { username, password, ...rest } = p; return { ...rest, authenticated: !!(username || password) }; }
+export function parseProxyFile(text: string, name: string): z.infer<typeof proxyInput> {
+  const fields = Object.fromEntries([...text.matchAll(/^(Host|Port|Username|Password):[ \t]*(.*)$/gm)].map(m => [m[1]!.toLowerCase(), m[2]!.trim()]));
+  return proxyInput.parse({ name, protocol: 'http', host: fields.host, port: Number(fields.port), username: fields.username ?? '', password: fields.password ?? '' });
+}

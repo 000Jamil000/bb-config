@@ -1,0 +1,13 @@
+@keyframes proxy-breathe {
+  0%, 100% { opacity: 1; box-shadow: 0 0 0 0 rgb(16 185 129 / 0); }
+  50% { opacity: .7; box-shadow: 0 0 0 3px rgb(16 185 129 / .1); }
+}
+.proxy-dot-live { animation: proxy-breathe 3s ease-in-out infinite; }
+.proxy-route-settings { opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
+.proxy-route:hover .proxy-route-settings,
+.proxy-route:focus-within .proxy-route-settings { opacity: 1; pointer-events: auto; }
+@media (hover: none) { .proxy-route-settings { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) {
+  .proxy-dot-live { animation: none; }
+  .proxy-route-settings { transition: none; }
+}

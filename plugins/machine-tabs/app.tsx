@@ -934,13 +934,14 @@ function MachineThreadList(props: PluginThreadListProps) {
     [selectedId, byDay, dayField, matchIds],
   );
 
-  // Last 5: the most recently active threads, also listed in their own groups.
+  // Last 5 shows top-level threads; children remain in their parent groups.
   const recentView = useMemo<ListView | null>(() => {
-    if (shown.length === 0) return null;
     const ids = [...shown]
+      .filter((thread) => thread.parentThreadId == null)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .slice(0, RECENT_COUNT)
       .map((thread) => thread.id);
+    if (ids.length === 0) return null;
     return { ...DEFAULT_VIEW, recent: true, ids: new Set(ids) };
   }, [shown]);
 

@@ -26,9 +26,21 @@ export async function openOriginalHandoff(source: HTMLElement, signal: AbortSign
   const root = source.closest<HTMLElement>("[data-split-pane-id]") ?? source.ownerDocument.body;
   // The toggle and new-tab button are real BB controls; their handlers own panel state.
   available(root.querySelector<HTMLButtonElement>('button[aria-label^="Show right panel"]'))?.click();
-  const newTab = await waitFor(root, () => available(root.querySelector<HTMLButtonElement>("button[data-panel-new-tab]")), signal);
+  const newTab = await waitFor(source.ownerDocument.body, () => {
+    const inline = available(root.querySelector<HTMLButtonElement>("button[data-panel-new-tab]"));
+    if (inline) return inline;
+    // BB can portal the active panel outside the thread pane, with different
+    // wrappers across layouts. Accept only one available native launcher.
+    const buttons = [...source.ownerDocument.querySelectorAll<HTMLButtonElement>("button[data-panel-new-tab]")]
+      .filter((button) => available(button) && !button.disabled);
+    return buttons.length === 1 ? buttons[0]! : null;
+  }, signal);
+  const panel = root.contains(newTab) ? newTab.closest("aside") ?? root : source.ownerDocument.body;
   newTab.click();
-  const page = await waitFor(root, () => available(root.querySelector<HTMLElement>("[data-panel-new-tab-page]")), signal);
+  const page = await waitFor(panel, () => {
+    const pages = [...panel.querySelectorAll<HTMLElement>("[data-panel-new-tab-page]")].filter((page) => available(page));
+    return pages.length === 1 ? pages[0]! : null;
+  }, signal);
   // BB's native action id includes both the owner plugin and its action id.
   const selector = 'button[data-panel-new-tab-item][id="plugin-action:handoff:handoff"]';
   if (!page.querySelector(selector)) {

@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import type { ComponentType } from "react";
+import * as zod from "zod";
 import {
   definePluginApp,
   experimental_Icon as BbIcon,
@@ -395,6 +396,10 @@ async function loadNativeList(
     | undefined;
   const real = runtime?.pluginSdkApp as AnyRecord | undefined;
   if (!runtime || !real) throw new Error("bb's plugin runtime is missing.");
+  // BB 0.49 loads Zod lazily. Our direct import of the native list bypasses
+  // that loader, so provide our declared dependency when the shared slot
+  // has not loaded yet. Preserve BB's own module when it is already present.
+  runtime.zod ??= zod;
   const base = ("default" in real ? real.default : real) as AnyRecord;
 
   const setups = new Map<unknown, (app: unknown) => void>();

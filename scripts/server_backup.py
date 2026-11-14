@@ -53,6 +53,85 @@ def rotate(directory, keep=3):
         old.with_suffix(old.suffix + '.json').unlink(missing_ok=True)
 
 
+def save_json(path, value):
+    temporary = path.with_name(path.name + '.tmp')
+    temporary.write_text(json.dumps(value))
+    temporary.chmod(0o600)
+    os.replace(temporary, path)
+
+
+def read_json(path):
+    return json.loads(path.read_text()) if path.exists() else {}
+
+
+def report_backup_alert(source, kind, cli, now=None):
+    """Publish a durable, deduplicated Needs You activity; never include secrets."""
+    source = Path(source)
+    source.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = source / 'notification-state.json'
+    state = read_json(path)
+    if kind == 'healthy' and not state:
+        return
+    if state.get('kind') != kind:
+        timestamp = max(int((time.time() if now is None else now) * 1000),
+                        state.get('event', {}).get('occurredAt', 0) + 1)
+        titles = {'backup-error': 'Не удалось создать бэкап BB',
+                  'delivery-stale': 'Бэкап BB давно не доставлен на Mac',
+                  'healthy': 'Бэкапы BB снова работают'}
+        bodies = {'backup-error': 'Экспорт или шифрование завершились ошибкой. Открой историю автоматизации; после трёх сбоев BB ставит её на паузу.',
+                  'delivery-stale': 'Более 24 часов нет успешной доставки на Mac. Зашифрованная копия остаётся на Tru; доставка повторяется каждые 30 минут.',
+                  'healthy': 'Зашифрованный бэкап доставлен на Mac и проверен. Предыдущий сбой устранён.'}
+        project = os.environ.get('BB_PROJECT_ID', 'proj_example')
+        automation = os.environ.get('BB_AUTOMATION_ID', 'auto_example')
+        event = {'sourceId': 'automations', 'sourceName': 'Бэкапы BB',
+                 'entityId': 'bb-server-backup:' + automation,
+                 'eventId': uuid.uuid4().hex, 'occurredAt': timestamp,
+                 'projectId': project, 'title': titles[kind], 'body': bodies[kind],
+                 'status': 'ready' if kind == 'healthy' else 'error',
+                 'target': {'panel': 'automations', 'segments': [project, automation]}}
+        state = {'kind': kind, 'event': event, 'pending': True}
+        save_json(path, state)
+    if not state.get('pending'):
+        return
+    try:
+        capability = cli.call('plugin', 'rpc', 'call', 'inbox', 'activityCapabilities', '--json', timeout=15)
+        if capability.get('version') != 1:
+            return
+        payload = source / 'notification-payload.json'
+        save_json(payload, state['event'])
+        result = cli.call('plugin', 'rpc', 'call', 'inbox', 'publishActivity',
+                          '--input-file', str(payload), '--json', timeout=15)
+        if result.get('accepted'):
+            state['pending'] = False
+            save_json(path, state)
+            print('Backup status notification saved in Needs You.')
+    except Exception:
+        # The next tick retries the same event ID/time. Notification failures
+        # must never turn a good backup into a failed one.
+        print('Backup notification pending; will retry on a later tick.')
+
+
+def delivery_succeeded(source, archive, cli, now=None):
+    path = source / 'delivery-state.json'
+    state = read_json(path)
+    if state.get('archive') != archive.name:
+        save_json(path, {'archive': archive.name,
+                         'lastSuccessfulDeliveryAt': time.time() if now is None else now})
+    report_backup_alert(source, 'healthy', cli, now)
+
+
+def delivery_pending(source, cli, now=None):
+    now = time.time() if now is None else now
+    path = source / 'delivery-state.json'
+    state = read_json(path)
+    if 'firstPendingAt' not in state:
+        state['firstPendingAt'] = now
+        save_json(path, state)
+    since = state.get('lastSuccessfulDeliveryAt', state['firstPendingAt'])
+    if now - since >= 24 * 3600:
+        report_backup_alert(source, 'delivery-stale', cli, now)
+
+
 def encrypt_archive(plaintext, ciphertext, recipient):
     executable = shutil.which('age')
     if not executable:
@@ -213,21 +292,25 @@ def tick(args):
             rotate(source, args.keep)
             print('Created and encrypted verified BB server backup (' + str(archive.stat().st_size) + ' bytes).')
         if state.get('delivered'):
+            delivery_succeeded(source, archive, cli)
             return
         try:
             machine = cli.call('machine', 'show', args.destination_host, '--json')
             if machine.get('status') != 'connected':
                 print('Backup retained on server; waiting for Mac to reconnect.')
+                delivery_pending(source, cli)
                 return
             deliver(cli, archive, args.destination_host, args.destination_dir, args.keep)
         except Exception as error:
             # Offline Macs and interrupted deliveries must not pause the daily job.
             print('Delivery pending; next tick will retry. ' + type(error).__name__)
+            delivery_pending(source, cli)
             return
         state['delivered'] = True
         temp = source / 'state.json.tmp'
         temp.write_text(json.dumps(state))
         os.replace(temp, state_file)
+        delivery_succeeded(source, archive, cli)
         print('Verified backup delivered to Mac; retaining ' + str(args.keep) + ' complete copies.')
 
 
@@ -246,7 +329,14 @@ def main():
     args = parser.parse_args()
     if args.keep < 1:
         parser.error('--keep must be positive')
-    tick(args)
+    try:
+        tick(args)
+    except Exception:
+        try:
+            report_backup_alert(Path(args.source_dir).expanduser(), 'backup-error', Cli())
+        except Exception:
+            pass
+        raise
 
 
 if __name__ == '__main__':

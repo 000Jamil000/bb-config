@@ -37,7 +37,7 @@ function ProxiesPage() {
   const [bindings, setBindings] = useState<Binding[]>([]);
   const [routes, setRoutes] = useState<Record<string, RouteState>>({});
   const [checks, setChecks] = useState<Record<string, Check>>({});
-  const [hostId, setHostId] = useState('');
+  const [hostId, setHostId] = useState(() => new URLSearchParams(window.location.search).get('host') ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [adding, setAdding] = useState(false);
@@ -77,7 +77,6 @@ function ProxiesPage() {
   return <div className="h-full overflow-y-auto"><div className="mx-auto max-w-3xl space-y-9 px-6 py-7">
     <header className="flex items-center justify-between gap-4">
       <div><h1 className="text-lg font-semibold tracking-tight">Подключения</h1><p className="mt-1 text-sm text-muted-foreground">Прокси для Codex · проверка каждые 30 секунд</p></div>
-      <Button size="sm" onClick={() => { setError(''); setAdding(true); }}><Icon name="Plus" className="mr-1.5 size-4"/>Добавить прокси</Button>
     </header>
     {error && !adding && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
     <section className="space-y-3">
@@ -107,7 +106,7 @@ function ProxiesPage() {
       <p className="text-xs text-muted-foreground">При смене прокси ответы Codex остановятся. История сохранится.</p>
     </section>
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Прокси <span className="ml-1 opacity-60">{proxies.length}</span></h2><select aria-label="Проверять прокси с машины" title="Машина для проверки" className="max-w-56 truncate rounded bg-transparent py-1 text-xs text-muted-foreground" value={hostId} onChange={e => setHostId(e.target.value)}>{machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Прокси <span className="ml-1 opacity-60">{proxies.length}</span></h2><div className="flex flex-wrap items-center gap-3"><select aria-label="Проверять прокси с машины" title="Машина для проверки" className="max-w-56 truncate rounded bg-transparent py-1 text-xs text-muted-foreground" value={hostId} onChange={e => setHostId(e.target.value)}>{machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><Button size="sm" onClick={() => { setError(''); setAdding(true); }}><Icon name="Plus" className="mr-1.5 size-4"/>Добавить прокси</Button></div></div>
       {!proxies.length ? <button onClick={() => setAdding(true)} className="w-full rounded-xl border border-dashed border-border p-7 text-sm text-muted-foreground hover:bg-muted/30">＋ Добавить первый прокси</button> : <div className="divide-y divide-border/60">{proxies.map(p => {
         const key = `${hostId}:${p.id}`, result = checks[key];
         return <div key={p.id} className="flex items-center gap-3 py-3">
@@ -141,24 +140,29 @@ function RouteBadge() {
   const hostId = environment?.type === 'host' ? environment.hostId ?? null : environment?.type === 'provider' && environment.machine?.type === 'existing' ? environment.machine.hostId : null;
   const environmentId = environment?.type === 'reuse' ? environment.environmentId : null;
   const providerId = selection?.providerId ?? null;
-  const [route, setRoute] = useState<RouteContext | null>(null);
-  const [error, setError] = useState(false);
+  const contextKey = JSON.stringify([threadId, hostId, environmentId, providerId]);
+  const [resolved, setResolved] = useState<{ key: string; route: RouteContext | null; error: boolean } | null>(null);
+  const route = resolved?.key === contextKey ? resolved.route : null;
+  const error = resolved?.key === contextKey && resolved.error;
   const refresh = useCallback(async () => {
-    try { const next = await rpc.call('route_context', { threadId, hostId, environmentId, providerId }); setRoute(next); setError(false); }
-    catch { setRoute(null); setError(true); }
-  }, [rpc, threadId, hostId, environmentId, providerId]);
+    try { const next = await rpc.call('route_context', { threadId, hostId, environmentId, providerId }); setResolved({ key: contextKey, route: next, error: false }); }
+    catch { setResolved({ key: contextKey, route: null, error: true }); }
+  }, [rpc, threadId, hostId, environmentId, providerId, contextKey]);
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 5000); return () => clearInterval(timer); }, [refresh]);
   useRealtime('changed', refresh);
-  if (!route && !error) return null;
-  if (route && route.providerId !== 'codex') return null;
-  const warning = error ? 'Не удалось проверить подключение' : !route?.connected ? 'Машина офлайн' : route.warning || (route.check && !route.check.ok ? route.check.message : null);
-  const detail = route ? `${route.hostName} · Codex · ${route.applied ? 'Проверка каждые 30 секунд' : 'Не применено'}` : 'Подключение Codex';
-  return <div className="proxy-route flex w-fit items-center gap-1.5 px-1 text-xs text-muted-foreground" aria-label="Прокси Codex" title={detail}>
+  const codex = (route?.providerId ?? providerId) === 'codex';
+  const providerName = (route?.providerId ?? providerId) === 'claude-code' ? 'Claude Code' : codex ? 'Codex' : route?.providerId ?? providerId ?? 'Агент';
+  const warning = error ? 'Не удалось проверить подключение' : route && !route.connected ? 'Машина офлайн' : codex && route ? route.warning || (route.check && !route.check.ok ? route.check.message : null) : null;
+  const detail = route ? `${route.hostName} · ${providerName} · ${codex ? route.applied ? 'Проверка каждые 30 секунд' : 'Маршрут не применён плагином' : 'Настройки самого CLI не проверялись; плагин не меняет его маршрут'}` : 'Выбор машины и агента — в настройках подключения';
+  const label = codex && route?.proxyName ? route.proxyName : 'Доступ без прокси';
+  const settingsHost = route?.hostId ?? hostId;
+  const settingsUrl = `/plugins/proxy-manager/proxies${settingsHost ? `?host=${encodeURIComponent(settingsHost)}` : ''}`;
+  return <div className="proxy-route flex w-fit items-center gap-1.5 px-1 text-xs text-muted-foreground" aria-label="Подключение агента" title={detail}>
     <Icon name="Network" className="size-3.5" aria-label="Прокси"/>
-    <Dot live check={route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : true}/>
-    <span>{route?.proxyName ?? 'Напрямую'}</span>
+    <Dot live={codex} check={codex && route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : undefined}/>
+    <span>{label}</span>
     {warning && <span role="img" aria-label={warning} title={warning} className="text-amber-600">⚠</span>}
-    <a href="/plugins/proxy-manager/proxies" aria-label="Настройки прокси" title="Настройки прокси" className="proxy-route-settings inline-flex size-6 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2">
+    <a href={settingsUrl} aria-label="Настройки прокси" title="Настройки прокси" className="proxy-route-settings inline-flex size-6 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2">
       <Icon name="Settings2" className="size-3.5"/>
     </a>
   </div>;

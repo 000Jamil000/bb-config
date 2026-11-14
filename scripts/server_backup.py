@@ -8,6 +8,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 from pathlib import Path
 import subprocess
 import tarfile
@@ -46,10 +47,28 @@ def validate_archive(path):
 
 
 def rotate(directory, keep=3):
-    snapshots = sorted(Path(directory).glob('bb-server-*.tar.gz'), reverse=True)
+    snapshots = sorted(Path(directory).glob('bb-server-*.tar.gz.age'), reverse=True)
     for old in snapshots[keep:]:
         old.unlink()
         old.with_suffix(old.suffix + '.json').unlink(missing_ok=True)
+
+
+def encrypt_archive(plaintext, ciphertext, recipient):
+    executable = shutil.which('age')
+    if not executable:
+        raise RuntimeError('Install age on the server before enabling encrypted backups')
+    temporary = ciphertext.with_name(ciphertext.name + '.partial')
+    try:
+        subprocess.run([executable, '--encrypt', '--recipient', recipient,
+                        '--output', str(temporary), str(plaintext)],
+                       capture_output=True, check=True, timeout=300)
+        temporary.chmod(0o600)
+        with temporary.open('rb') as stream:
+            if stream.read(22) != b'age-encryption.org/v1\n':
+                raise ValueError('age did not produce an encrypted archive')
+        os.replace(temporary, ciphertext)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 class Cli:
@@ -101,7 +120,7 @@ class Cli:
 
 
 # This is executed by the destination's normal BB terminal API. It receives no
-# credentials, only a private incoming directory and the expected archive digest.
+# credentials, only a private incoming directory and the expected ciphertext digest.
 FINALIZE = r'''
 import sys,pathlib,hashlib,base64,os,json,tarfile,shutil
 incoming=pathlib.Path(sys.argv[1]); destination=pathlib.Path(sys.argv[2])
@@ -113,20 +132,26 @@ h=hashlib.sha256()
 with temp.open('rb') as stream:
  for chunk in iter(lambda:stream.read(1048576),b''):h.update(chunk)
 assert h.hexdigest()==expected,'Archive delivery digest mismatch'
-with tarfile.open(temp,'r:gz') as archive:
- m=json.load(archive.extractfile('manifest.json'))
- assert m['format']=='bb-server-archive' and m['version']==2
- for e in m['entries']:
-  assert not e['path'].startswith('/') and '..' not in pathlib.Path(e['path']).parts
-  stream=archive.extractfile('files/'+e['path']); h=hashlib.sha256(); size=0
-  for chunk in iter(lambda:stream.read(1048576),b''):h.update(chunk);size+=len(chunk)
-  assert size==e['size'] and h.hexdigest()==e['sha256'],'Member checksum mismatch'
+encrypted=destination.name.endswith('.age')
+if encrypted:
+ with temp.open('rb') as stream: assert stream.read(22)==b'age-encryption.org/v1\n','Not an age archive'
+else:
+ # Legacy-format validation remains for the migration/retention tests.
+ with tarfile.open(temp,'r:gz') as archive:
+  m=json.load(archive.extractfile('manifest.json'))
+  assert m['format']=='bb-server-archive' and m['version']==2
+  for e in m['entries']:
+   assert not e['path'].startswith('/') and '..' not in pathlib.Path(e['path']).parts
+   stream=archive.extractfile('files/'+e['path']); h=hashlib.sha256(); size=0
+   for chunk in iter(lambda:stream.read(1048576),b''):h.update(chunk);size+=len(chunk)
+   assert size==e['size'] and h.hexdigest()==e['sha256'],'Member checksum mismatch'
 os.replace(temp,destination)
 receipt=destination.with_suffix(destination.suffix+'.json')
-receipt.write_text(json.dumps({'sha256':expected,'sizeBytes':destination.stat().st_size}))
+receipt.write_text(json.dumps({'sha256':expected,'sizeBytes':destination.stat().st_size,'encrypted':encrypted}))
 receipt.chmod(0o600)
 # Delete old complete copies only after the newly delivered copy is verified.
-for old in sorted(destination.parent.glob('bb-server-*.tar.gz'),reverse=True)[keep:]:
+pattern='bb-server-*.tar.gz.age' if encrypted else 'bb-server-*.tar.gz'
+for old in sorted(destination.parent.glob(pattern),reverse=True)[keep:]:
  old.unlink();old.with_suffix(old.suffix+'.json').unlink(missing_ok=True)
 shutil.rmtree(incoming)
 '''
@@ -156,6 +181,8 @@ def tick(args):
     source = Path(args.source_dir).expanduser()
     source.mkdir(parents=True, exist_ok=True, mode=0o700)
     source.chmod(0o700)
+    if not args.recipient:
+        raise RuntimeError('A public age recipient is required; plaintext backups are disabled')
     cli = Cli()
     # Advisory locking also covers manual invocations outside the automation.
     with (source / '.lock').open('a') as lock:
@@ -168,21 +195,23 @@ def tick(args):
         state_file = source / 'state.json'
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
         archive = source / state.get('archive', 'missing')
-        if state.get('day') != day or not archive.is_file() or args.force:
-            archive = source / ('bb-server-' + now.strftime('%Y%m%dT%H%M%S%fZ') + '.tar.gz')
-            cli.call('server', 'export', '--out', str(archive), '--json', timeout=300)
+        if (state.get('day') != day or not archive.is_file() or args.force
+                or state.get('recipient') != args.recipient or not archive.name.endswith('.age')):
+            archive = source / ('bb-server-' + now.strftime('%Y%m%dT%H%M%S%fZ') + '.tar.gz.age')
+            plaintext = source / ('.export-' + uuid.uuid4().hex + '.tar.gz')
             try:
-                validate_archive(archive)
-            except Exception:
-                archive.unlink(missing_ok=True)
-                raise
+                cli.call('server', 'export', '--out', str(plaintext), '--json', timeout=300)
+                validate_archive(plaintext)
+                encrypt_archive(plaintext, archive, args.recipient)
+            finally:
+                plaintext.unlink(missing_ok=True)
             state = {'day': day, 'archive': archive.name, 'sha256': digest(archive),
-                     'delivered': False}
+                     'delivered': False, 'recipient': args.recipient}
             temp = source / 'state.json.tmp'
             temp.write_text(json.dumps(state))
             os.replace(temp, state_file)
             rotate(source, args.keep)
-            print('Created and verified BB server backup (' + str(archive.stat().st_size) + ' bytes).')
+            print('Created and encrypted verified BB server backup (' + str(archive.stat().st_size) + ' bytes).')
         if state.get('delivered'):
             return
         try:
@@ -209,6 +238,11 @@ def main():
     parser.add_argument('--destination-dir', default='/Users/example/Documents/Develop/dev2025/bb-config/.local/backups/daily')
     parser.add_argument('--keep', type=int, default=3)
     parser.add_argument('--force', action='store_true')
+    settings = Path(__file__).resolve().parents[1] / 'config/backup-encryption.json'
+    recipient = os.environ.get('BB_BACKUP_RECIPIENT')
+    if not recipient and settings.is_file():
+        recipient = json.loads(settings.read_text())['recipient']
+    parser.add_argument('--recipient', default=recipient, help='Public age encryption recipient; never a secret identity')
     args = parser.parse_args()
     if args.keep < 1:
         parser.error('--keep must be positive')

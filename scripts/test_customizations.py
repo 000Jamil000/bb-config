@@ -56,8 +56,9 @@ class SnapshotTests(unittest.TestCase):
 class RestoreTests(unittest.TestCase):
     def test_plan_installs_named_catalog_entries_and_keeps_routes_manual(self):
         commands = restore.plan(True)
-        for plugin in ('inbox', 'handoff'):
-            self.assertIn(['bb', 'plugin', 'install', plugin + '@bb-community', '--yes'], commands)
+        self.assertIn(['bb', 'plugin', 'install', 'inbox@bb-community', '--yes'], commands)
+        self.assertIn(['bb', 'plugin', 'install', 'handoff@bb-community', '--yes'], commands)
+        self.assertIn(['bb', 'plugin', 'install', 'path:' + str(restore.ROOT / 'plugins/handoff-button'), '--yes'], commands)
         for command in commands:
             self.assertNotEqual(command[:2], ['bb', 'proxy-manager'])
             if command[:3] == ['bb', 'plugin', 'config']:
@@ -88,6 +89,11 @@ class RestoreTests(unittest.TestCase):
         }), 'builtin:browser-automation')
         self.assertFalse(any(c[:3] == ['bb', 'plugin', 'install'] and 'browser-automation' in c[3]
                              for c in restore.plan(True)))
+
+    def test_local_source_takes_precedence_over_old_catalog_metadata(self):
+        self.assertEqual(restore.install_source({
+            'source': 'path:plugins/handoff-button', 'installSource': 'handoff@bb-community',
+        }), 'path:plugins/handoff-button')
 
 
 class InstructionTests(unittest.TestCase):

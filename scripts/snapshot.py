@@ -23,7 +23,7 @@ def plugin_record(plugin):
     row['name'] = plugin.get('name', plugin['id'])
     source = plugin['source']
     row['source'] = f'path:plugins/{plugin["id"]}' if source.startswith('path:') else source
-    if plugin.get('catalogEntryId'):
+    if plugin.get('catalogEntryId') and not source.startswith('path:'):
         row['installSource'] = plugin['catalogEntryId'] + '@' + plugin['catalogMarketplaceName']
     return row
 

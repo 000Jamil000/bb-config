@@ -21,7 +21,7 @@ def value(data):
 
 
 def install_source(plugin):
-    if plugin['source'].startswith('builtin:'):
+    if plugin['source'].startswith(('builtin:', 'path:')):
         return plugin['source']
     if plugin.get('installSource'):
         return plugin['installSource']

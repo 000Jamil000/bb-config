@@ -8,6 +8,9 @@ import { z } from "zod";
 /** Realtime channel app.tsx listens on after a tab changes. */
 export const TABS_CHANGED = "machine-tabs-changed";
 
+/** Realtime channel: project images were re-read. */
+export const ICONS_CHANGED = "machine-tabs-icons-changed";
+
 const machineSchema = z.object({
   id: z.string(),
   name: z.string(),
@@ -50,6 +53,11 @@ export const rpcContract = defineRpcContract({
     input: z.object({ key: z.string() }),
     output: preferenceResultSchema,
   },
+  /** Project images by project id, as data URLs (see {@link ICON_FILES}). */
+  project_icons: {
+    input: z.object({ refresh: z.boolean().optional() }),
+    output: z.object({ icons: z.record(z.string(), z.string()) }),
+  },
   tabs_state: { input: z.null(), output: stateSchema },
   tabs_set_view: {
     input: z.object({ byDay: z.boolean(), outer: outerSchema }),
@@ -68,7 +76,110 @@ const THREAD_LIST_PLUGIN = "thread-list";
 /** The channel bb's thread list listens on for preference changes. */
 const PREFERENCES_CHANGED = "preferences";
 
+/**
+ * A project's own image, relative to its root: the first that exists is
+ * drawn instead of the two-letter mark.
+ */
+const ICON_FILES = [
+  ".bb/icon.png",
+  ".bb/icon.svg",
+  "favicon.png",
+  "favicon.svg",
+  "favicon.ico",
+] as const;
+const ICON_MIME: Record<string, string> = {
+  png: "image/png",
+  svg: "image/svg+xml",
+  ico: "image/x-icon",
+};
+const ICON_MAX_BYTES = 256 * 1024;
+const ICON_TTL_MS = 5 * 60 * 1000;
+const ICONS_KEY = "project-icons";
+
 export default async function plugin(bb: BbPluginApi) {
+  let iconCache: { at: number; icons: Record<string, string> } | null = null;
+  let iconLoad: Promise<Record<string, string>> | null = null;
+
+  async function readIcon(hostId: string, root: string): Promise<string | null> {
+    const found = await Promise.all(
+      ICON_FILES.map(async (name) => {
+        try {
+          const file = await bb.sdk.files.read({
+            hostId,
+            rootPath: root,
+            path: `${root.replace(/\/+$/, "")}/${name}`,
+          });
+          if (!("content" in file) || typeof file.content !== "string") return null;
+          if (file.sizeBytes === 0 || file.sizeBytes > ICON_MAX_BYTES) return null;
+          const mime = ICON_MIME[name.slice(name.lastIndexOf(".") + 1)]!;
+          const base64 =
+            file.contentEncoding === "base64"
+              ? file.content
+              : Buffer.from(file.content, "utf8").toString("base64");
+          return `data:${mime};base64,${base64}`;
+        } catch {
+          // Missing file, or the machine is offline.
+          return null;
+        }
+      }),
+    );
+    return found.find((icon) => icon !== null) ?? null;
+  }
+
+  async function loadIcons(): Promise<Record<string, string>> {
+    const projects = await bb.sdk.projects.list();
+    const icons: Record<string, string> = {};
+    await Promise.all(
+      projects.map(async (project) => {
+        const sources = [...(project.sources ?? [])].sort(
+          (a, b) => Number(b.isDefault) - Number(a.isDefault),
+        );
+        for (const source of sources) {
+          if (source.type !== "local_path" || !source.hostId || !source.path) continue;
+          const icon = await readIcon(source.hostId, source.path);
+          if (icon !== null) {
+            icons[project.id] = icon;
+            return;
+          }
+        }
+      }),
+    );
+    return icons;
+  }
+
+  function refreshIcons(): Promise<Record<string, string>> {
+    iconLoad ??= loadIcons()
+      .then(async (icons) => {
+        const changed =
+          JSON.stringify(icons) !== JSON.stringify(iconCache?.icons ?? null);
+        iconCache = { at: Date.now(), icons };
+        if (changed) {
+          await bb.storage.kv.set(ICONS_KEY, icons);
+          bb.realtime.publish(ICONS_CHANGED, null);
+        }
+        return icons;
+      })
+      .finally(() => {
+        iconLoad = null;
+      });
+    return iconLoad;
+  }
+
+  /** The last known images at once; stale ones are re-read in the background. */
+  async function projectIcons(refresh: boolean): Promise<Record<string, string>> {
+    if (refresh) return refreshIcons();
+    if (iconCache === null) {
+      const stored = z
+        .record(z.string(), z.string())
+        .safeParse(await bb.storage.kv.get<unknown>(ICONS_KEY));
+      iconCache ??= { at: 0, icons: stored.success ? stored.data : {} };
+    }
+    if (Date.now() - iconCache.at >= ICON_TTL_MS) {
+      void refreshIcons().catch(() => undefined);
+    }
+    return iconCache.icons;
+  }
+
   async function listMachines(): Promise<Machine[]> {
     const hosts = await bb.sdk.hosts.list();
     return hosts
@@ -161,6 +272,9 @@ export default async function plugin(bb: BbPluginApi) {
       } as never);
       return result;
     },
+    async project_icons({ refresh }) {
+      return { icons: await projectIcons(refresh === true) };
+    },
     async tabs_state() {
       return state();
     },
@@ -178,6 +292,7 @@ export default async function plugin(bb: BbPluginApi) {
     commands: [
       { name: "list", summary: "List machines; * marks the active tab", usage: "list" },
       { name: "select", summary: "Switch the tab", usage: "select <machine-id|all>" },
+      { name: "icons", summary: "Re-read project images; lists projects that have one", usage: "icons" },
     ],
     async run(argv) {
       const [command, arg] = argv;
@@ -196,9 +311,20 @@ export default async function plugin(bb: BbPluginApi) {
           next.machines.find((m) => m.id === next.selectedId)?.name ?? "All";
         return { exitCode: 0, stdout: `Selected: ${name}\n` };
       }
+      if (command === "icons") {
+        const icons = await projectIcons(true);
+        const projects = await bb.sdk.projects.list();
+        const lines = projects.map(
+          (project) => `${icons[project.id] ? "*" : " "} ${project.name}`,
+        );
+        return {
+          exitCode: 0,
+          stdout: `${lines.join("\n")}\n\nLooked for: ${ICON_FILES.join(", ")}\n`,
+        };
+      }
       return {
         exitCode: 2,
-        stderr: `Usage: bb ${bb.pluginId} list | select <machine-id|all>\n`,
+        stderr: `Usage: bb ${bb.pluginId} list | select <machine-id|all> | icons\n`,
       };
     },
   });

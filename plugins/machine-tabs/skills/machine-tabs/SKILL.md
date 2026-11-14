@@ -28,3 +28,11 @@ the list is grouped by project.
 
 Switch back to bb's plain list with
 `bb settings ui set sidebar.threadListProvider '"thread-list/thread-list"'`.
+
+## Project images
+
+A thread row and a project header show the project's mark: two letters, or
+the project's own image when its root holds one of `.bb/icon.png`,
+`.bb/icon.svg`, `favicon.png`, `favicon.svg`, `favicon.ico` (first found, up
+to 256 KB). Images are drawn grey. They are re-read every five minutes;
+`bb machine-tabs icons` re-reads them now and lists the projects that have one.

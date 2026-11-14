@@ -28,6 +28,11 @@ import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
 
 const TABS_CHANGED = "machine-tabs-changed";
+const ICONS_CHANGED = "machine-tabs-icons-changed";
+const ICONS_REFRESH_MS = 5 * 60 * 1000;
+// Marks are grey on purpose: they tell projects apart without pulling the eye.
+const GREY_MARK_BG = "oklch(0.6 0 0 / 0.16)";
+const GREY_MARK_FG = "oklch(0.5 0 0)";
 const THREAD_LIST_PLUGIN = "thread-list";
 
 /** The machine whose threads the wrapped list shows; null shows all. */
@@ -62,12 +67,14 @@ const DEFAULT_VIEW: ListView = {
   recent: false,
 };
 
-/** A project's two-letter mark, shown before a thread's title. */
+/** A project's mark, shown before a thread's title. */
 interface ProjectBadge {
   letters: string;
   name: string;
-  /** Null for threads outside any project: a neutral grey mark. */
-  hue: number | null;
+  /** Threads outside any project: an icon instead of letters. */
+  personal: boolean;
+  /** The project's own image (a data URL), drawn instead of the letters. */
+  image: string | null;
 }
 
 /** Badges by thread id; null draws none. */
@@ -181,27 +188,89 @@ function groupByDay<T extends SidebarData>(data: T, field: DayField): T {
   return { ...data, threads, sections };
 }
 
-function ProjectBadgeMark({ badge }: { badge: ProjectBadge }) {
+/** A grey line icon as a CSS image, for headers this plugin does not render. */
+function iconUrl(paths: string): string {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="#7b7b7b" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">${paths}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+}
+const PERSON_ICON = iconUrl(
+  '<circle cx="12" cy="8" r="4"/><path d="M4.5 20.5a7.5 7.5 0 0 1 15 0"/>',
+);
+const PIN_ICON = iconUrl(
+  '<path d="M12 17v5"/><path d="M8 3h8l-1 6 3 4H6l3-4z"/>',
+);
+const DAY_ICON = iconUrl(
+  '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
+);
+
+function ProjectBadgeMark({
+  badge,
+  header = false,
+}: {
+  badge: ProjectBadge;
+  /** In a group header: no agent icon is attached to it. */
+  header?: boolean;
+}) {
   return (
     <span
+      data-machine-tabs-badge={header ? "header" : ""}
       title={badge.name}
-      aria-label={badge.hue === null ? badge.name : `Project ${badge.name}`}
-      className="mr-1.5 inline-flex h-4 min-w-4 items-center justify-center rounded-[4px] px-[3px] align-[-2px] text-[9px] font-semibold leading-none tracking-tight"
+      aria-label={badge.personal ? badge.name : `Project ${badge.name}`}
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center overflow-hidden rounded-[5px] font-semibold leading-none tracking-tight",
+        header ? "size-[18px] text-[9px]" : "mr-2 size-4 rounded-[4px] text-[8px]",
+      )}
       style={
-        badge.hue === null
-          ? {
-              backgroundColor: "oklch(0.6 0 0 / 0.16)",
-              color: "oklch(0.55 0 0)",
-            }
-          : {
-              backgroundColor: `oklch(0.62 0.13 ${badge.hue} / 0.22)`,
-              color: `oklch(0.5 0.14 ${badge.hue})`,
-            }
+        badge.image !== null
+          ? undefined
+          : { backgroundColor: GREY_MARK_BG, color: GREY_MARK_FG }
       }
     >
-      {badge.letters}
+      {badge.image !== null ? (
+        <img
+          src={badge.image}
+          alt=""
+          draggable={false}
+          className="size-full object-contain opacity-80 grayscale"
+        />
+      ) : badge.personal ? (
+<svg
+          viewBox="0 0 24 24"
+          className="size-3"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="2.4"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
+          <circle cx="12" cy="8" r="4" />
+          <path d="M4.5 20.5a7.5 7.5 0 0 1 15 0" />
+        </svg>
+      ) : (
+        badge.letters
+      )}
     </span>
   );
+}
+
+/** Project images by project id; re-read on a timer and on `bb machine-tabs icons`. */
+function useProjectIcons(): Readonly<Record<string, string>> {
+  const rpc = useRpc<typeof rpcContract>();
+  const [icons, setIcons] = useState<Readonly<Record<string, string>>>({});
+  const load = useCallback(() => {
+    rpc.call("project_icons", {}).then(
+      (result) => setIcons(result.icons),
+      () => undefined,
+    );
+  }, [rpc]);
+  useEffect(() => {
+    load();
+    const timer = setInterval(load, ICONS_REFRESH_MS);
+    return () => clearInterval(timer);
+  }, [load]);
+  useRealtime(ICONS_CHANGED, load);
+  return icons;
 }
 
 /** "example-project" → "MO", "ShotMark" → "SM", "root" → "RO". */
@@ -217,12 +286,23 @@ function projectLetters(name: string): string {
   return letters.toUpperCase();
 }
 
-function projectHue(id: string): number {
-  let hash = 0;
-  for (let i = 0; i < id.length; i += 1) {
-    hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+/**
+ * The same marks before the project headers of bb's list, which this plugin
+ * does not render: one generated rule per project.
+ */
+function projectHeaderCss(badges: ReadonlyMap<string, ProjectBadge>): string {
+  const rules: string[] = [];
+  for (const [id, badge] of badges) {
+    if (badge.personal) continue;
+    const mark =
+      badge.image !== null
+        ? `content: ""; background: center / contain no-repeat url("${badge.image}"); filter: grayscale(1); opacity: 0.8;`
+        : `content: ${JSON.stringify(badge.letters)}; background: ${GREY_MARK_BG}; color: ${GREY_MARK_FG};`;
+    rules.push(
+      `[data-machine-tabs-list] [data-sidebar-project-id=${JSON.stringify(id)}] [data-sidebar="group-label"] > span:first-child::before { ${mark} }`,
+    );
   }
-  return hash % 360;
+  return rules.join("\n");
 }
 
 const RECENT_SECTION_ID = "machine-tabs-recent";
@@ -537,7 +617,7 @@ function MenuSection({
 }) {
   return (
     <div role="group" aria-label={title}>
-      <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">
+      <div className="px-2 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
         {title}
       </div>
       {options.map((option) => (
@@ -547,7 +627,7 @@ function MenuSection({
           role="menuitemradio"
           aria-checked={current === option.value}
           onClick={() => onChoose(option.value)}
-          className="flex w-full items-center gap-2 rounded-sm px-2 py-1 text-left text-sm outline-none hover:bg-state-hover focus-visible:bg-state-hover"
+          className="flex w-full items-center gap-2 rounded-sm py-1 pl-4 pr-2 text-left text-sm outline-none hover:bg-state-hover focus-visible:bg-state-hover"
         >
           <span className="flex-1">{option.label}</span>
           {current === option.value ? (
@@ -848,6 +928,72 @@ const HIDE_EMPTY_GROUPS = `
 }
 [data-machine-tabs-recent] [data-sidebar-visibility-group] {
   margin-bottom: 0;
+}
+.bb-thread-title:has(> [data-machine-tabs-badge]) {
+  align-items: center;
+}
+/* Three levels read as three weights of one font: machine or other first
+   level (semibold), project or section (medium), thread (regular). */
+[data-machine-tabs-list] [data-sidebar="group-label"] {
+  font-weight: 600;
+  color: var(--sidebar-foreground, currentColor);
+}
+/* Rows sit a step inside the header they belong to. */
+[data-machine-tabs-list] [data-sidebar="group-label"] + div {
+  margin-left: 10px;
+}
+/* A header is a divider: a hairline runs from its name to the edge, which
+   no thread row has. */
+[data-machine-tabs-list] [data-sidebar="group-label"] > span:first-child::after {
+  content: "";
+  flex: 1 1 0;
+  min-width: 8px;
+  height: 1px;
+  margin-left: 4px;
+  background: var(--border, currentColor);
+  opacity: 0.9;
+}
+[data-machine-tabs-list] [data-sidebar="group-label"] > span:first-child::before {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-right: 3px;
+  border-radius: 5px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+}
+[data-machine-tabs-list] [data-sidebar-visibility-group="threads"] [data-sidebar="group-label"] > span:first-child::before {
+  content: "";
+  background: ${PERSON_ICON} center / 14px no-repeat;
+}
+[data-machine-tabs-list] [data-sidebar-visibility-group="pinned"] [data-sidebar="group-label"] > span:first-child::before {
+  content: "";
+  background: ${PIN_ICON} center / 14px no-repeat;
+}
+[data-machine-tabs-list] [data-sidebar-visibility-group^="section:machine-tabs-day"] [data-sidebar="group-label"] > span:first-child::before {
+  content: "";
+  background: ${DAY_ICON} center / 14px no-repeat;
+}
+/* One mark per row: the agent's icon sits small in the top right corner of
+   the project mark instead of beside it. */
+span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] {
+  position: absolute;
+  left: 9px;
+  top: calc(50% - 13px);
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border-radius: 9999px;
+  background: var(--sidebar, var(--background));
+  box-shadow: 0 0 0 1px var(--sidebar, var(--background));
+}
+span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] > span {
+  width: 10px;
+  height: 10px;
 }`;
 
 function MachineThreadList(props: PluginThreadListProps) {
@@ -945,25 +1091,33 @@ function MachineThreadList(props: PluginThreadListProps) {
     return { ...DEFAULT_VIEW, recent: true, ids: new Set(ids) };
   }, [shown]);
 
-  const groupsByProject = outer === "project" || (outer === "none" && innerMode === "project");
-  const badges = useMemo(() => {
+  const projectIcons = useProjectIcons();
+  const projectBadges = useMemo(() => {
     const map = new Map<string, ProjectBadge>();
-    for (const thread of threads) {
-      const project = projectNames.get(thread.projectId);
-      if (!project) continue;
+    for (const project of projects) {
       map.set(
-        thread.id,
+        project.id,
         project.isPersonal
-          ? { letters: "–", name: "No project", hue: null }
+          ? { letters: "", name: "No project", personal: true, image: null }
           : {
               letters: projectLetters(project.name),
               name: project.name,
-              hue: projectHue(project.id),
+              personal: false,
+              image: projectIcons[project.id] ?? null,
             },
       );
     }
     return map;
-  }, [threads, projectNames]);
+  }, [projects, projectIcons]);
+  const badges = useMemo(() => {
+    const map = new Map<string, ProjectBadge>();
+    for (const thread of threads) {
+      const badge = projectBadges.get(thread.projectId);
+      if (badge) map.set(thread.id, badge);
+    }
+    return map;
+  }, [threads, projectBadges]);
+  const headerCss = useMemo(() => projectHeaderCss(projectBadges), [projectBadges]);
 
   // First-level groups, each a filter for one instance of bb's list.
   const groups = useMemo<OuterGroup[]>(() => {
@@ -1075,6 +1229,7 @@ function MachineThreadList(props: PluginThreadListProps) {
         )}
       </div>
       <style>{HIDE_EMPTY_GROUPS}</style>
+      <style>{headerCss}</style>
       <ProjectBadges.Provider value={badges}>
         {RecentList && recentView && state !== null ? (
           <>
@@ -1093,8 +1248,8 @@ function MachineThreadList(props: PluginThreadListProps) {
         </p>
       ) : null}
       {NativeList && state !== null ? (
-        <ProjectBadges.Provider value={groupsByProject ? null : badges}>
-        <div data-machine-tabs-hide-empty={hideEmpty ? "" : undefined}>
+        <ProjectBadges.Provider value={badges}>
+        <div data-machine-tabs-list="" data-machine-tabs-hide-empty={hideEmpty ? "" : undefined}>
           {outer === "none" ? (
             <MachineFilter.Provider value={baseView}>
               <NativeList key={listKey} {...props} />
@@ -1107,17 +1262,28 @@ function MachineThreadList(props: PluginThreadListProps) {
             groups.map((group) => {
               const isCollapsed = collapsed.has(group.id);
               return (
-                <section key={group.id} className="pb-1">
+                <section
+                  key={group.id}
+                  className="mt-1 border-t border-border pb-1 pt-1 first:mt-0 first:border-t-0 first:pt-0"
+                >
                   <button
                     type="button"
                     aria-expanded={!isCollapsed}
                     onClick={() => toggle(group.id)}
-                    className="group/outer mx-2 flex h-7 w-[calc(100%-1rem)] items-center gap-1.5 rounded-md px-2 text-left text-xs font-semibold text-sidebar-foreground outline-none hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+                    className="group/outer mx-2 flex h-7 w-[calc(100%-1rem)] items-center gap-1.5 rounded-md px-2 text-left text-[13px] font-semibold text-sidebar-foreground outline-none hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-sidebar-ring"
                   >
                     <BbIcon
                       name={isCollapsed ? "ChevronRight" : "ChevronDown"}
                       className="size-3.5 shrink-0 text-muted-foreground"
                     />
+                    {outer === "project" &&
+                    group.filter.projectId !== null &&
+                    projectBadges.has(group.filter.projectId) ? (
+                      <ProjectBadgeMark
+                        badge={projectBadges.get(group.filter.projectId)!}
+                        header
+                      />
+                    ) : null}
                     <span className="min-w-0 truncate">{group.label}</span>
                     <span className="shrink-0 font-normal tabular-nums text-muted-foreground">
                       {group.count}

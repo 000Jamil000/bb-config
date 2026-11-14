@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Read BB settings using its CLI; never export secret settings or runtime state."""
-import json, subprocess, shutil
+import argparse, json, subprocess, shutil
 from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 def bb(*args):
@@ -9,6 +9,14 @@ def save(name, data):
     p = ROOT / 'config' / (name + '.json')
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('--settings-only', action='store_true', help='Save settings without copying installed plugin sources (use from Mac when the server is remote)')
+args = parser.parse_args()
+plugins = bb('plugin','list')['plugins']
+if not args.settings_only:
+    missing = [p['id'] for p in plugins if p['source'].startswith('path:') and not Path(p['rootDir']).is_dir()]
+    if missing:
+        raise SystemExit('Installed plugin sources are on another machine: ' + ', '.join(missing) + '. Use --settings-only; no files were changed.')
 s = bb('settings', 'show')
 general = {k:v for k,v in s['generalSettings'].items() if k not in {'machineServerUrl','machineGitCredentialsEnabled','defaultMachineAccess','onboardingCompletedAt'}}
 save('general', general)
@@ -18,7 +26,6 @@ save('keyboard', s['keybindingOverrides'])
 save('ui', {k:v['value'] for k,v in bb('settings','ui','list')['preferences'].items()})
 save('thread-list', bb('thread-list','prefs','list'))
 save('ai-services', bb('settings','ai-services')['selections'])
-plugins = bb('plugin','list')['plugins']
 manifest=[]
 for p in plugins:
     row={k:p[k] for k in ['id','version','enabled']}
@@ -27,7 +34,7 @@ for p in plugins:
         row['source']='path:plugins/'+p['id']
         src=Path(p['rootDir']); dst=ROOT/'plugins'/p['id']
         # Sync source files; never copy a git directory, dependencies, builds, or logs.
-        if src.resolve() != dst.resolve():
+        if not args.settings_only and src.resolve() != dst.resolve():
             if dst.exists(): shutil.rmtree(dst)
             shutil.copytree(src,dst,ignore=shutil.ignore_patterns('node_modules','dist','.git','.DS_Store','.env','.env.*','*.log','.retry-audit-*','__pycache__'),symlinks=True)
     else: row['source']=source

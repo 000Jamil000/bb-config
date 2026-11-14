@@ -24,7 +24,7 @@ Changing managed routing values outside the plugin also holds later submissions 
 reapplication. Other model settings can still change normally. Core owns retry and
 queue behavior; this plugin does not resend prompts or proxy model APIs.
 
-The composer shows a network icon, gently animated status dot, proxy name, optional warning, and a settings gear visible on hover/focus (always on touch screens). Motion respects reduced-motion settings.
+The composer always shows the connection entry, including new threads, unresolved selections and other agents. With no selected proxy its label is `Доступ без прокси`; configured Codex connections show the proxy name. The gear opens settings with the selected host, and stays visible on hover/focus (always on touch screens). For other CLI providers the tooltip states that their native settings were not checked and their routing is not managed. Delayed responses for a previous composer selection cannot display the old route. Motion respects reduced-motion settings.
 A server-side monitor checks each applied Codex connection every 30 seconds, without model credentials. After the initial/full manual check, heartbeat checks only OpenAI reachability; IP metadata is refreshed by a full manual check. Concurrent checks for the same host/route share one request. The monitor stops with the plugin.
 The settings page leads with machine connections, hides unused CLI controls, and adds proxies through a dialog.
 Hover/focus labels carry details. Green means a recent connectivity check, not proof

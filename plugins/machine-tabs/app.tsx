@@ -199,6 +199,9 @@ const PERSON_ICON = iconUrl(
 const PIN_ICON = iconUrl(
   '<path d="M12 17v5"/><path d="M8 3h8l-1 6 3 4H6l3-4z"/>',
 );
+const RECENT_ICON = iconUrl(
+  '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+);
 const DAY_ICON = iconUrl(
   '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
 );
@@ -303,6 +306,27 @@ function projectHeaderCss(badges: ReadonlyMap<string, ProjectBadge>): string {
     );
   }
   return rules.join("\n");
+}
+
+/**
+ * Projects with no thread, by id rather than by what is on screen: a
+ * collapsed project has no rows either, and must not change places.
+ */
+function emptyProjectsCss(ids: readonly string[]): string {
+  if (ids.length === 0) return "";
+  const group = (suffix: string) =>
+    ids
+      .map(
+        (id) =>
+          `[data-machine-tabs-list] [data-sidebar-visibility-group=${JSON.stringify(`project:${id}`)}]${suffix}`,
+      )
+      .join(",\n");
+  return `
+${group("")} { order: 1; margin-top: -0.75rem; opacity: 0.55; }
+${group(":hover")} { opacity: 1; }
+${group(' [data-sidebar="group-label"] + div')},
+${group(' [data-sidebar="group-label"] > span:first-child::after')},
+${group(' [data-sidebar="group-label"] > span:first-child > button')} { display: none; }`;
 }
 
 const RECENT_SECTION_ID = "machine-tabs-recent";
@@ -917,6 +941,17 @@ const HIDE_EMPTY_GROUPS = `
 [data-machine-tabs-hide-empty] [data-sidebar-visibility-group]:not(:has([data-sidebar-thread-id])):not(:has(button[aria-expanded="false"]:not([aria-haspopup]))) {
   display: none;
 }
+/* Groups with no thread (projects never used here) go below the rest as
+   dim one-line headers: still there for New thread, out of the way. */
+[data-machine-tabs-list] :has(> [data-sidebar-visibility-group]) {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+[data-machine-tabs-list] :has(> [data-sidebar-visibility-group]) > * {
+  margin-top: 0;
+  margin-bottom: 0;
+}
 /* This plugin's sections (days, Last 5) are not bb sections: no New thread
    in section, no rename or delete menu. */
 [data-sidebar-visibility-group^="section:machine-tabs-"] [data-sidebar-trailing-controls] {
@@ -973,6 +1008,10 @@ const HIDE_EMPTY_GROUPS = `
 [data-machine-tabs-list] [data-sidebar-visibility-group="pinned"] [data-sidebar="group-label"] > span:first-child::before {
   content: "";
   background: ${PIN_ICON} center / 14px no-repeat;
+}
+[data-machine-tabs-list] [data-sidebar-visibility-group="section:machine-tabs-recent"] [data-sidebar="group-label"] > span:first-child::before {
+  content: "";
+  background: ${RECENT_ICON} center / 14px no-repeat;
 }
 [data-machine-tabs-list] [data-sidebar-visibility-group^="section:machine-tabs-day"] [data-sidebar="group-label"] > span:first-child::before {
   content: "";
@@ -1165,6 +1204,16 @@ function MachineThreadList(props: PluginThreadListProps) {
   const hideEmpty =
     selectedId !== null || byDay || outer !== "none" || matchIds !== null;
 
+  const emptyCss = useMemo(() => {
+    if (hideEmpty) return "";
+    const used = new Set(shown.map((thread) => thread.projectId));
+    return emptyProjectsCss(
+      projects
+        .filter((project) => !project.isPersonal && !used.has(project.id))
+        .map((project) => project.id),
+    );
+  }, [hideEmpty, shown, projects]);
+
   return (
     <>
       {machines.length < 2 ? null : (
@@ -1230,10 +1279,15 @@ function MachineThreadList(props: PluginThreadListProps) {
       </div>
       <style>{HIDE_EMPTY_GROUPS}</style>
       <style>{headerCss}</style>
+      <style>{emptyCss}</style>
       <ProjectBadges.Provider value={badges}>
         {RecentList && recentView && state !== null ? (
           <>
-            <div data-machine-tabs-hide-empty="" data-machine-tabs-recent="">
+            <div
+              data-machine-tabs-list=""
+              data-machine-tabs-hide-empty=""
+              data-machine-tabs-recent=""
+            >
               <MachineFilter.Provider value={recentView}>
                 <RecentList {...props} />
               </MachineFilter.Provider>

@@ -77,7 +77,6 @@ function ProxiesPage() {
   return <div className="h-full overflow-y-auto"><div className="mx-auto max-w-3xl space-y-9 px-6 py-7">
     <header className="flex items-center justify-between gap-4">
       <div><h1 className="text-lg font-semibold tracking-tight">Подключения</h1><p className="mt-1 text-sm text-muted-foreground">Прокси для Codex · проверка каждые 30 секунд</p></div>
-      <Button size="sm" onClick={() => { setError(''); setAdding(true); }}><Icon name="Plus" className="mr-1.5 size-4"/>Добавить прокси</Button>
     </header>
     {error && !adding && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
     <section className="space-y-3">
@@ -107,7 +106,7 @@ function ProxiesPage() {
       <p className="text-xs text-muted-foreground">При смене прокси ответы Codex остановятся. История сохранится.</p>
     </section>
     <section className="space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Прокси <span className="ml-1 opacity-60">{proxies.length}</span></h2><select aria-label="Проверять прокси с машины" title="Машина для проверки" className="max-w-56 truncate rounded bg-transparent py-1 text-xs text-muted-foreground" value={hostId} onChange={e => setHostId(e.target.value)}>{machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select></div>
+      <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Прокси <span className="ml-1 opacity-60">{proxies.length}</span></h2><div className="flex flex-wrap items-center gap-3"><select aria-label="Проверять прокси с машины" title="Машина для проверки" className="max-w-56 truncate rounded bg-transparent py-1 text-xs text-muted-foreground" value={hostId} onChange={e => setHostId(e.target.value)}>{machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><Button size="sm" onClick={() => { setError(''); setAdding(true); }}><Icon name="Plus" className="mr-1.5 size-4"/>Добавить прокси</Button></div></div>
       {!proxies.length ? <button onClick={() => setAdding(true)} className="w-full rounded-xl border border-dashed border-border p-7 text-sm text-muted-foreground hover:bg-muted/30">＋ Добавить первый прокси</button> : <div className="divide-y divide-border/60">{proxies.map(p => {
         const key = `${hostId}:${p.id}`, result = checks[key];
         return <div key={p.id} className="flex items-center gap-3 py-3">

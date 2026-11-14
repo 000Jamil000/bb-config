@@ -1,53 +1,164 @@
 #!/usr/bin/env python3
-"""Read BB settings using its CLI; never export secret settings or runtime state."""
-import argparse, json, subprocess, shutil
+"""Snapshot BB through its CLI; --check reports drift without writing files."""
+import argparse
+from concurrent.futures import ThreadPoolExecutor
+import json
+import shutil
+import subprocess
 from pathlib import Path
+
 ROOT = Path(__file__).resolve().parents[1]
+
+
 def bb(*args):
-    return json.loads(subprocess.check_output(['bb', *args, '--json'], text=True))
-def save(name, data):
-    p = ROOT / 'config' / (name + '.json')
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
-parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--settings-only', action='store_true', help='Save settings without copying installed plugin sources (use from Mac when the server is remote)')
-args = parser.parse_args()
-plugins = bb('plugin','list')['plugins']
-if not args.settings_only:
-    missing = [p['id'] for p in plugins if p['source'].startswith('path:') and not Path(p['rootDir']).is_dir()]
+    result = subprocess.run(['bb', *args, '--json'], text=True, capture_output=True, timeout=90)
+    if result.returncode:
+        # Never echo settings arguments or command output: they may contain secrets.
+        raise RuntimeError(f'BB command failed: {args[0]} {args[1] if len(args) > 1 else ""}')
+    return json.loads(result.stdout)
+
+
+def plugin_record(plugin):
+    row = {key: plugin[key] for key in ('id', 'version', 'enabled')}
+    row['name'] = plugin.get('name', plugin['id'])
+    source = plugin['source']
+    row['source'] = f'path:plugins/{plugin["id"]}' if source.startswith('path:') else source
+    if plugin.get('catalogEntryId'):
+        row['installSource'] = plugin['catalogEntryId'] + '@' + plugin['catalogMarketplaceName']
+    return row
+
+
+def public_settings(config):
+    return {key: config['values'][key] for key, field in config['schema'].items()
+            if not field.get('secret') and key in config['values']}
+
+
+def collect():
+    """Finish all reads before modifying the repo. No transcripts or auth files."""
+    plugins = bb('plugin', 'list')['plugins']
+    calls = {
+        'settings': ('settings', 'show'),
+        'ui': ('settings', 'ui', 'list'),
+        'thread-list': ('thread-list', 'prefs', 'list'),
+        'ai-services': ('settings', 'ai-services'),
+        'machine-tabs': ('plugin', 'rpc', 'call', 'machine-tabs', 'tabs_state'),
+        'concurrency': ('concurrency-limit', 'status'),
+        'proxy-routing': ('proxy-manager', 'list'),
+    }
+    enabled = {p['id'] for p in plugins if p['enabled']}
+    for name, required in [('thread-list', 'thread-list'), ('machine-tabs', 'machine-tabs'),
+                           ('concurrency', 'concurrency-limit'), ('proxy-routing', 'proxy-manager')]:
+        if required not in enabled:
+            calls.pop(name)
+    for plugin in plugins:
+        if plugin.get('hasSettings'):
+            calls['plugins/' + plugin['id']] = ('plugin', 'config', plugin['id'])
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        futures = {key: pool.submit(bb, *args) for key, args in calls.items()}
+        results = {key: future.result() for key, future in futures.items()}
+    settings = results.pop('settings')
+    values = {
+        'plugins': sorted(map(plugin_record, plugins), key=lambda p: p['id']),
+        'general': {k: v for k, v in settings['generalSettings'].items() if k not in {
+            'machineServerUrl', 'machineGitCredentialsEnabled', 'defaultMachineAccess', 'onboardingCompletedAt'}},
+        'experiments': settings['experiments'],
+        'appearance': {k: settings['appearance'][k] for k in ('themeId', 'customCss', 'faviconColor')},
+        'keyboard': settings['keybindingOverrides'],
+        'ui': {k: v['value'] for k, v in results.pop('ui')['preferences'].items()},
+        'ai-services': results.pop('ai-services')['selections'],
+    }
+    for key, result in results.items():
+        if key.startswith('plugins/'):
+            values[key] = public_settings(result)
+        elif key == 'machine-tabs':
+            values[key] = {k: result[k] for k in ('selectedId', 'byDay', 'outer')}
+        elif key == 'concurrency':
+            values[key] = {k: result[k] for k in ('globalLimit', 'hostOverrides')}
+        elif key == 'proxy-routing':
+            values[key] = {
+                'proxies': [{k: p[k] for k in ('id', 'name', 'protocol', 'host', 'port', 'authenticated') if k in p}
+                            for p in result['proxies']],
+                'bindings': result['bindings'],
+            }
+        else:
+            values[key] = result
+    return values, plugins
+
+
+def changed_files(values, root=ROOT):
+    changed = []
+    for name, data in values.items():
+        path = root / 'config' / (name + '.json')
+        try:
+            same = json.loads(path.read_text()) == data
+        except (FileNotFoundError, json.JSONDecodeError):
+            same = False
+        if not same:
+            changed.append(path)
+    active_configs = {name for name in values if name.startswith('plugins/')}
+    changed.extend(p for p in sorted((root / 'config/plugins').glob('*.json'))
+                   if 'plugins/' + p.stem not in active_configs)
+    return changed
+
+
+def write_snapshot(values, root=ROOT):
+    for name, data in values.items():
+        path = root / 'config' / (name + '.json')
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix('.json.tmp')
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+        tmp.replace(path)
+    for path in (root / 'config/plugins').glob('*.json'):
+        if 'plugins/' + path.stem not in values:
+            path.unlink()
+
+
+def copy_sources(plugins):
+    sources = [p for p in plugins if p['source'].startswith('path:')]
+    missing = [p['id'] for p in sources if not Path(p['rootDir']).is_dir()]
     if missing:
-        raise SystemExit('Installed plugin sources are on another machine: ' + ', '.join(missing) + '. Use --settings-only; no files were changed.')
-s = bb('settings', 'show')
-general = {k:v for k,v in s['generalSettings'].items() if k not in {'machineServerUrl','machineGitCredentialsEnabled','defaultMachineAccess','onboardingCompletedAt'}}
-save('general', general)
-save('experiments', s['experiments'])
-save('appearance', {k:s['appearance'][k] for k in ['themeId','customCss','faviconColor']})
-save('keyboard', s['keybindingOverrides'])
-save('ui', {k:v['value'] for k,v in bb('settings','ui','list')['preferences'].items()})
-save('thread-list', bb('thread-list','prefs','list'))
-save('ai-services', bb('settings','ai-services')['selections'])
-manifest=[]
-for p in plugins:
-    row={k:p[k] for k in ['id','version','enabled']}
-    source=p['source']
-    if source.startswith('path:'):
-        row['source']='path:plugins/'+p['id']
-        src=Path(p['rootDir']); dst=ROOT/'plugins'/p['id']
-        # Sync source files; never copy a git directory, dependencies, builds, or logs.
-        if not args.settings_only and src.resolve() != dst.resolve():
-            if dst.exists(): shutil.rmtree(dst)
-            shutil.copytree(src,dst,ignore=shutil.ignore_patterns('node_modules','dist','.git','.DS_Store','.env','.env.*','*.log','.retry-audit-*','__pycache__'),symlinks=True)
-    else: row['source']=source
-    manifest.append(row)
-    if p.get('hasSettings'):
-        config=bb('plugin','config',p['id'])
-        values={k:config['values'][k] for k,field in config['schema'].items() if not field.get('secret') and k in config['values']}
-        save('plugins/'+p['id'],values)
-save('plugins',manifest)
-print('Snapshot updated. Review git diff before committing; credentials and runtime data are excluded.')
-tabs=bb('plugin','rpc','call','machine-tabs','tabs_state')
-save('machine-tabs', {k:tabs[k] for k in ['selectedId','byDay','outer']})
-limits=bb('concurrency-limit','status')
-save('concurrency', {k:limits[k] for k in ['globalLimit','hostOverrides']})
-proxy=bb('proxy-manager','list')
-save('proxy-routing', {'proxies':[{k:p[k] for k in ['id','name','protocol','host','port','authenticated'] if k in p} for p in proxy['proxies']], 'bindings':proxy['bindings']})
+        raise RuntimeError('Plugin sources are on another machine: ' + ', '.join(missing) +
+                           '. Use --settings-only; no files were changed.')
+    dirty = subprocess.check_output(['git', 'status', '--porcelain', '--', 'plugins'], cwd=ROOT, text=True)
+    if dirty.strip():
+        raise RuntimeError('Uncommitted plugin changes: use --settings-only; no files were changed.')
+    for plugin in sources:
+        src, dst = Path(plugin['rootDir']), ROOT / 'plugins' / plugin['id']
+        if src.resolve() == dst.resolve():
+            continue
+        if dst.exists():
+            shutil.rmtree(dst)
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns(
+            'node_modules', 'dist', '.git', '.DS_Store', '.env', '.env.*', '*.log',
+            '.retry-audit-*', '__pycache__'), symlinks=True)
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--settings-only', action='store_true', help='Do not copy installed plugin sources')
+    parser.add_argument('--check', action='store_true', help='Read-only drift check; exit 1 if snapshot is stale')
+    args = parser.parse_args()
+    try:
+        values, plugins = collect()
+        changed = changed_files(values)
+        if args.check:
+            if changed:
+                print('BB customised: save these settings in bb-config:')
+                for path in changed:
+                    print('  ' + str(path.relative_to(ROOT)))
+                print('Run: python3 scripts/snapshot.py --settings-only; review and stage the diff.')
+                return 1
+            print('BB settings and installed plugins match the repository.')
+            return 0
+        if not args.settings_only:
+            copy_sources(plugins)
+        write_snapshot(values)
+        print('Snapshot updated. Review git diff; secret settings and runtime data are excluded.')
+        return 0
+    except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
+        print(f'Snapshot failed: {error}')
+        return 2
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

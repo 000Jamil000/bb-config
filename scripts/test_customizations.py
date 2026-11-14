@@ -1,0 +1,110 @@
+import contextlib
+import copy
+import io
+import json
+from pathlib import Path
+import tempfile
+import unittest
+from unittest.mock import patch
+
+import restore
+import setup_tracking
+import snapshot
+
+
+class SnapshotTests(unittest.TestCase):
+    def test_secret_fields_are_excluded_even_when_they_have_values(self):
+        self.assertEqual(snapshot.public_settings({
+            'schema': {'telegramBotToken': {'secret': True}, 'toastEnabled': {'type': 'boolean'}},
+            'values': {'telegramBotToken': 'must-not-export', 'toastEnabled': True, 'unknown': 'private'},
+        }), {'toastEnabled': True})
+
+    def test_manifest_records_catalog_identity_and_portable_local_path(self):
+        self.assertEqual(snapshot.plugin_record({
+            'id': 'inbox', 'name': 'Needs You', 'version': '0.2.1', 'enabled': True,
+            'source': 'git:https://example.org/inbox@semver:^0.2.0',
+            'catalogEntryId': 'inbox', 'catalogMarketplaceName': 'bb-community',
+        })['installSource'], 'inbox@bb-community')
+        self.assertEqual(snapshot.plugin_record({
+            'id': 'mine', 'version': '1', 'enabled': True, 'source': 'path:/root/private/mine',
+        })['source'], 'path:plugins/mine')
+
+    def test_drift_check_does_not_write_and_detects_removed_plugin_config(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            old = root / 'config/plugins/removed.json'
+            old.parent.mkdir(parents=True)
+            old.write_text('{}')
+            expected = {'plugins': [], 'plugins/inbox': {'toastEnabled': True}}
+            before = {p: p.read_bytes() for p in root.rglob('*.json')}
+            self.assertEqual(len(snapshot.changed_files(expected, root)), 3)
+            self.assertEqual({p: p.read_bytes() for p in root.rglob('*.json')}, before)
+            snapshot.write_snapshot(expected, root)
+            self.assertFalse(old.exists())
+            self.assertEqual(snapshot.changed_files(expected, root), [])
+
+    def test_failed_read_never_starts_writes_or_source_copy(self):
+        with patch.object(snapshot, 'collect', side_effect=RuntimeError('unavailable')), \
+                patch.object(snapshot, 'write_snapshot') as write, \
+                patch.object(snapshot, 'copy_sources') as copy_sources, \
+                patch('sys.argv', ['snapshot.py']), contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(snapshot.main(), 2)
+            write.assert_not_called()
+            copy_sources.assert_not_called()
+
+
+class RestoreTests(unittest.TestCase):
+    def test_plan_installs_named_catalog_entries_and_keeps_routes_manual(self):
+        commands = restore.plan(True)
+        for plugin in ('inbox', 'handoff'):
+            self.assertIn(['bb', 'plugin', 'install', plugin + '@bb-community', '--yes'], commands)
+        for command in commands:
+            self.assertNotEqual(command[:2], ['bb', 'proxy-manager'])
+            if command[:3] == ['bb', 'plugin', 'config']:
+                self.assertNotIn(command[3], restore.MANUAL_SETTINGS)
+            if command[:3] in (['bb', 'plugin', 'enable'], ['bb', 'plugin', 'disable']):
+                self.assertNotIn(command[3], restore.MANUAL_STATES)
+        self.assertTrue(any(c[:3] == ['bb', 'plugin', 'disable'] for c in commands))
+
+    def test_saved_strings_remain_single_arguments(self):
+        original = restore.read
+        dangerous_text = 'literal $(touch /tmp/not-executed); `id`\nsecond line'
+        def read(name, root=restore.ROOT):
+            data = copy.deepcopy(original(name, root))
+            if name == 'general':
+                data['managedBranchPrefix'] = dangerous_text
+            return data
+        with patch.object(restore, 'read', side_effect=read):
+            commands = restore.plan()
+        self.assertIn(['bb', 'settings', 'general', 'managedBranchPrefix', dangerous_text], commands)
+
+    def test_internal_semver_source_is_converted_for_cli(self):
+        self.assertEqual(restore.install_source({'source': 'git:https://example.org/p.git@semver:^1.0'}),
+                         'git:https://example.org/p.git@^1.0')
+
+    def test_builtin_catalog_metadata_does_not_trigger_reinstall(self):
+        self.assertEqual(restore.install_source({
+            'source': 'builtin:browser-automation', 'installSource': 'browser-automation@bb-official',
+        }), 'builtin:browser-automation')
+        self.assertFalse(any(c[:3] == ['bb', 'plugin', 'install'] and 'browser-automation' in c[3]
+                             for c in restore.plan(True)))
+
+
+class InstructionTests(unittest.TestCase):
+    def test_rule_update_is_idempotent_and_preserves_other_instructions(self):
+        rule = '[bb-config tracking]\nremember\n[/bb-config tracking]'
+        merged = setup_tracking.merge_instructions('other private rules', rule)
+        self.assertEqual(setup_tracking.merge_instructions(merged, rule), merged)
+        newer = rule.replace('remember', 'remember again')
+        self.assertEqual(setup_tracking.merge_instructions(merged, newer),
+                         'other private rules\n\n' + newer)
+
+    def test_bb_and_native_providers_share_one_instruction_source(self):
+        root = Path(__file__).resolve().parents[1]
+        self.assertTrue((root / '.bb/AGENTS.md').is_symlink())
+        self.assertEqual((root / '.bb/AGENTS.md').resolve(), root / 'AGENTS.md')
+        self.assertEqual((root / 'CLAUDE.md').read_text().strip(), '@AGENTS.md')
+
+
+if __name__ == '__main__':
+    unittest.main()

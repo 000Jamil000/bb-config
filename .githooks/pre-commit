@@ -1,0 +1,12 @@
+#!/bin/sh
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+if [ "${BB_CONFIG_SKIP_CHECK:-}" = 1 ]; then
+    echo 'BB snapshot check explicitly skipped (BB_CONFIG_SKIP_CHECK=1).' >&2
+    exit 0
+fi
+python3 scripts/snapshot.py --check
+if ! git diff --quiet -- config || [ -n "$(git ls-files --others --exclude-standard -- config)" ]; then
+    echo 'BB snapshot has unstaged changes. Review and stage config/ before committing.' >&2
+    exit 1
+fi

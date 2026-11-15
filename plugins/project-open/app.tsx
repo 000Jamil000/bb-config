@@ -26,7 +26,9 @@ function useThreadAnchors() {
         if (!trailing) continue;
         const element = document.createElement('span');
         element.dataset.projectOpenControls = '';
-        trailing.prepend(element);
+        const controls = trailing.querySelector<HTMLElement>('[data-sidebar-row-controls]');
+        if (!controls) continue;
+        controls.prepend(element);
         mounts.set(row, { threadId: row.dataset.sidebarThreadId!, element });
       }
       setAnchors(previous => {
@@ -44,10 +46,14 @@ function useThreadAnchors() {
 }
 const CSS = `
 [data-project-open-controls], [data-project-open-header] { position:relative; z-index:31; display:inline-flex; flex:0 0 56px; align-items:center; width:56px; overflow:visible; opacity:0; pointer-events:none; transition:opacity 100ms ease; }
-[data-sidebar-thread-trailing]:has(> [data-project-open-controls]) { position:relative; }
-[data-project-open-controls] { position:absolute; right:calc(100% + 30px); top:50%; transform:translateY(-50%); background:var(--sidebar-accent); box-shadow:-6px 0 6px var(--sidebar-accent); }
-[data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] > [data-project-open-controls],
-[data-sidebar-rename-row]:focus-within > [data-sidebar-thread-trailing] > [data-project-open-controls],
+@media (hover:hover) {
+[data-sidebar-row-controls]:has(> [data-project-open-controls]) { gap:0; background:var(--sidebar-accent); box-shadow:-6px 0 6px var(--sidebar-accent); }
+[data-sidebar-row-controls]:has(> [data-project-open-controls]) > button { width:20px; height:24px; }
+}
+[data-project-open-controls] { position:relative; width:40px; flex-basis:40px; }
+[data-project-open-controls] .project-open-button { width:20px; height:24px; flex-basis:20px; }
+[data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-sidebar-rename-row]:focus-within > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
 [data-testid="app-page-header-content-row"]:hover [data-project-open-header],
 [data-testid="app-page-header-content-row"]:focus-within [data-project-open-header] { opacity:1; pointer-events:auto; }
 .project-open-button { display:inline-flex; flex:0 0 28px; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; color:var(--muted-foreground); background:transparent; border:0; cursor:pointer; }

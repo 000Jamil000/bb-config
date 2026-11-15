@@ -32,7 +32,7 @@
 }
 
 /* Keep host controls and their handlers; only their visual ordering changes. */
-[data-proxy-context-row] { flex-wrap: wrap; gap: 4px; }
+[data-proxy-context-row] { flex-wrap: nowrap; gap: 4px; }
 [data-proxy-context-row] > [data-proxy-context-part="project"] { order: 0; max-width: 10rem; }
 [data-proxy-context-row] > [data-proxy-context-part="branch"] { order: 1; display: inline-flex !important; flex: 0 1 auto; max-width: 8rem; }
 [data-proxy-context-row] > [data-proxy-context-part="machine"] { order: 2; max-width: 8rem; }
@@ -43,3 +43,12 @@
   [data-proxy-context-row] > [data-proxy-context-part="branch"],
   [data-proxy-context-row] > [data-proxy-context-part="machine"] { max-width: 7rem; }
 }
+
+@media (max-width: 640px) {
+  [data-proxy-context-row] { overflow:hidden; }
+  [data-proxy-context-row] > [data-proxy-context-part="branch"] { min-width:0; max-width:7rem; }
+  [data-proxy-context-row] > [data-proxy-context-part="proxy"] { flex:0 1 auto; }
+  .proxy-footer-mount .proxy-route { padding-inline:3px; gap:4px; }
+}
+
+@media (max-width:640px) and (pointer:coarse) { .proxy-footer-mount .proxy-route { height:44px; } }

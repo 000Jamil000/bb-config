@@ -24,3 +24,9 @@ and the first publication of an existing local branch. It does not fetch.
 Tracking refs reflect the last fetch/push. Status refreshes every 5 seconds
 only while the button’s RPC read is watched; closing the UI stops the timer.
 The host read neither commits nor pushes; a click still only sends `пуш`.
+
+On touch screens up to 640 px wide, Push sits beside the existing Changed
+files control when present, otherwise beside the branch. Its label remains
+visible and the touch target is 44 px tall. Pointer down preserves composer
+focus, so collapsing the draft does not remove the target before click.
+Desktop placement remains beside the branch.

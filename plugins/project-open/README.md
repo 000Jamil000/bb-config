@@ -87,3 +87,9 @@ helper watchdog or guaranteed transparent recovery. An unreachable SSH target
 requires restored connectivity and may require ejecting/reopening the disk.
 The helper neither provides a VPN/proxy route nor maintains an offline project
 copy. Every remote host needs an explicit private SSH/root mapping.
+
+On touch clients no sidebar shortcuts are mounted: hidden controls must not
+intercept row taps. Header folder shortcuts on iPhone/iPad/Android open BB’s
+original New tab file search for that thread, never the macOS URL handler.
+The macOS handler is used only on a Mac desktop; other desktop clients use
+BB’s native Open behavior.

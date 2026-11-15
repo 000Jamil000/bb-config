@@ -4,8 +4,8 @@ import { definePluginApp, useSdk, useBbNavigate, useSettings, useComposer, exper
   experimental_Icon as Icon } from '@get-bb/plugin-sdk/app';
 import { toast } from 'sonner';
 import * as Tooltip from '@radix-ui/react-tooltip';
-import { openNativeTerminal, openNativeWorkspace, waitFor } from './native';
-import { finderFolderUrl } from './folder-target';
+import { openNativeTerminal, openNativeWorkspace, openNativeFiles, waitFor } from './native';
+import { finderFolderUrl, folderClientMode } from './folder-target';
 
 type Anchor = { threadId: string; element: HTMLElement };
 function useThreadAnchors() {
@@ -15,9 +15,11 @@ function useThreadAnchors() {
     let frame = 0;
     const scan = () => {
       frame = 0;
-      const rows = new Set(document.querySelectorAll<HTMLElement>('a[data-sidebar-thread-id]'));
+      const desktop = window.matchMedia('(hover:hover) and (pointer:fine)').matches;
+      const rows = new Set(desktop ? document.querySelectorAll<HTMLElement>('a[data-sidebar-thread-id]') : []);
       for (const [row, anchor] of mounts) {
         if (!rows.has(row) || !anchor.element.isConnected || row.dataset.sidebarThreadId !== anchor.threadId) {
+          row.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-project-offset');
           anchor.element.remove(); mounts.delete(row);
         }
       }
@@ -32,27 +34,64 @@ function useThreadAnchors() {
         controls.prepend(element);
         mounts.set(row, { threadId: row.dataset.sidebarThreadId!, element });
       }
+      // Native project links and child expanders live outside the hover toolbar.
+      // Keep both before the full toolbar, including our two icons.
+      for (const [link, anchor] of mounts) {
+        const row = link.closest<HTMLElement>('[data-sidebar-rename-row]');
+        if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
+          row?.style.removeProperty('--project-open-project-offset');
+          continue;
+        }
+        const shortcuts = [...row?.querySelectorAll<HTMLElement>('[data-sidebar-thread-cross-project], button[aria-label^="Expand "][aria-label$=" threads"], button[aria-label^="Collapse "][aria-label$=" threads"]') ?? []];
+        const toolbar = anchor.element.closest<HTMLElement>('[data-sidebar-row-controls]');
+        if (!row || !shortcuts.length || !toolbar || !anchor.element.childElementCount) continue;
+        for (const shortcut of shortcuts) shortcut.dataset.projectOpenNativeControl = '';
+        const oldOffset = parseFloat(row.style.getPropertyValue('--project-open-project-offset')) || 0;
+        const originalRight = Math.max(...shortcuts.map(shortcut => shortcut.getBoundingClientRect().right)) - (row.matches(':hover, :focus-within') ? oldOffset : 0);
+        const offset = Math.min(0, toolbar.getBoundingClientRect().left - originalRight - 2);
+        row.style.setProperty('--project-open-project-offset', `${offset}px`);
+      }
       setAnchors(previous => {
         const next = [...mounts.values()];
         return next.length === previous.length && next.every((a, i) => a === previous[i]) ? previous : next;
       });
     };
-    const observer = new MutationObserver(() => { if (!frame) frame = requestAnimationFrame(scan); });
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(scan); };
+    const pointer = window.matchMedia('(hover:hover) and (pointer:fine)');
+    pointer.addEventListener('change', schedule);
+    window.addEventListener('resize', schedule);
+    const observer = new MutationObserver(schedule);
     observer.observe(document.body, { childList: true, subtree: true, attributes: true,
       attributeFilter: ['data-sidebar-thread-id'] });
     scan();
-    return () => { observer.disconnect(); cancelAnimationFrame(frame); for (const a of mounts.values()) a.element.remove(); };
+    return () => {
+      observer.disconnect(); cancelAnimationFrame(frame);
+      pointer.removeEventListener('change', schedule);
+      window.removeEventListener('resize', schedule);
+      for (const [link, a] of mounts) {
+        link.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-project-offset');
+        link.closest('[data-sidebar-rename-row]')?.querySelectorAll('[data-project-open-native-control]').forEach(element => element.removeAttribute('data-project-open-native-control'));
+        a.element.remove();
+      }
+    };
   }, []);
   return anchors;
 }
 const CSS = `
 [data-project-open-controls], [data-project-open-header] { position:relative; z-index:31; display:inline-flex; flex:0 0 56px; align-items:center; width:56px; overflow:visible; opacity:0; pointer-events:none; transition:opacity 100ms ease; }
 @media (hover:hover) {
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]) { column-gap:0; }
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]) > span:has(> a[data-sidebar-thread-id]) { padding-right:0; }
+[data-sidebar-thread-trailing]:has([data-project-open-controls]) > span > span { width:20px; }
 [data-sidebar-row-controls]:has(> [data-project-open-controls]) { gap:0; background:var(--sidebar-accent); box-shadow:-6px 0 6px var(--sidebar-accent); }
 [data-sidebar-row-controls]:has(> [data-project-open-controls]) > button { width:20px; height:24px; }
 }
 [data-project-open-controls] { position:relative; width:40px; flex-basis:40px; }
 [data-project-open-controls] .project-open-button { width:20px; height:24px; flex-basis:20px; }
+@media (hover:hover) and (pointer:fine) {
+[data-sidebar-rename-row]:hover > span [data-project-open-native-control],
+[data-sidebar-rename-row]:focus-within > span [data-project-open-native-control] { transform:translateX(var(--project-open-project-offset, 0px)); background:var(--sidebar-accent); box-shadow:-4px 0 4px var(--sidebar-accent); }
+}
 [data-project-open-header] { opacity:1; pointer-events:auto; }
 [data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
 [data-sidebar-rename-row]:focus-within > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
@@ -70,6 +109,10 @@ const CSS = `
 .project-open-tooltip-host { font-weight:500; }
 .project-open-tooltip-path { min-width:0; font-family:var(--font-mono, monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 @media (hover:none) { [data-project-open-controls], [data-project-open-header] { flex-basis:64px; width:64px; opacity:1; pointer-events:auto; } .project-open-button { flex-basis:32px; width:32px; height:36px; } }
+@media (hover:none), (pointer:coarse) { [data-project-open-controls], [data-project-open-controls] * { display:none !important; pointer-events:none !important; } }
+@media (pointer:coarse) {
+[data-sidebar-rename-row] button[aria-expanded][aria-label$=" threads"] { width:36px; height:36px; flex:0 0 36px; touch-action:manipulation; }
+}
 @media (prefers-reduced-motion:reduce) { [data-project-open-controls], [data-project-open-header] { transition:none; } }
 `;
 
@@ -166,7 +209,10 @@ function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: strin
         const environment = await sdk.environments.get({ environmentId: thread.environmentId, signal: controller.signal });
         if (!environment.path) throw new Error('У треда нет рабочей папки.');
         if (!values) throw new Error('Настройки открытия папки ещё загружаются.');
-        if (values.finderHelper === true) {
+        const mode = folderClientMode({ userAgent: navigator.userAgent, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints,
+          compactTouch: window.matchMedia('(max-width:640px) and (pointer:coarse)').matches }, values.finderHelper === true);
+        if (mode === 'files') return openNativeFiles(await getRoot(), controller.signal);
+        if (mode === 'finder') {
           const url = finderFolderUrl(environment.hostId, environment.path);
           if (!navigate.openUrl(url)) throw new Error('На этом устройстве недоступен обработчик Finder.');
           return;

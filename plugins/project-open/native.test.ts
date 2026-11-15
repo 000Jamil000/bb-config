@@ -1,8 +1,17 @@
 // @vitest-environment jsdom
 import { afterEach, expect, it, vi } from 'vitest';
-import { openNativeTerminal, openNativeWorkspace, uniqueButton, waitFor } from './native';
+import { openNativeTerminal, openNativeWorkspace, openNativeFiles, uniqueButton, waitFor } from './native';
 
 afterEach(() => { document.body.innerHTML = ''; vi.useRealTimers(); });
+
+it('opens only the selected thread native file search without launching an external app', async () => {
+  document.body.innerHTML = '<section id="other"><button data-panel-new-tab></button></section><section id="selected"><button data-panel-new-tab></button></section>';
+  const other = vi.fn(), selected = vi.fn();
+  document.querySelector('#other button')!.addEventListener('click', other);
+  document.querySelector('#selected button')!.addEventListener('click', selected);
+  await openNativeFiles(document.querySelector<HTMLElement>('#selected')!, new AbortController().signal);
+  expect(selected).toHaveBeenCalledOnce(); expect(other).not.toHaveBeenCalled();
+});
 
 it('does not choose between multiple visible native controls', () => {
   document.body.innerHTML = '<button data-panel-new-tab></button><button data-panel-new-tab></button>';

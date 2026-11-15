@@ -23,10 +23,11 @@ afterEach(async () => {
   root = undefined; document.body.innerHTML = ''; vi.clearAllMocks();
   state.composer.text = 'Несохранённый черновик'; state.composer.isSubmittingBlocked = false;
   state.status = { state: 'ready', message: 'Есть изменения' };
+  vi.unstubAllGlobals();
 });
 
-async function mount() {
-  document.body.innerHTML = '<div data-app-composer><div><button aria-label="Branch">main</button></div><div id="root"></div></div>';
+async function mount(withChanges = false) {
+  document.body.innerHTML = `<div data-app-composer>${withChanges ? '<div><button id="thread-prompt-banner-git-toggle">Changes</button></div>' : ''}<div><button aria-label="Branch">main</button></div><div id="root"></div></div>`;
   root = createRoot(document.getElementById('root')!);
   await act(async () => root!.render(<PushButton />));
   return document.querySelector<HTMLButtonElement>('[data-push-thread-button]')!;
@@ -62,5 +63,16 @@ it.each(['clean', 'unavailable'])('does not send a request when Git is %s', asyn
   const button = await mount();
   expect(button.disabled).toBe(true);
   await act(async () => button.click());
+  expect(state.send).not.toHaveBeenCalled();
+});
+
+it('places the phone action beside changes and preserves focus on pointer down', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const button = await mount(true);
+  expect(button.parentElement?.dataset.pushButtonLocation).toBe('changes');
+  expect(button.parentElement?.previousElementSibling?.id).toBe('thread-prompt-banner-git-toggle');
+  const down = new MouseEvent('pointerdown', { bubbles: true, cancelable: true, button: 0 });
+  await act(async () => { button.dispatchEvent(down); });
+  expect(down.defaultPrevented).toBe(true);
   expect(state.send).not.toHaveBeenCalled();
 });

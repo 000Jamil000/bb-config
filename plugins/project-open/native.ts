@@ -29,7 +29,7 @@ export function uniqueButton(root: ParentNode, selector: string): HTMLButtonElem
   return buttons.length === 1 ? buttons[0]! : null;
 }
 
-export async function openNativeTerminal(root: HTMLElement, signal: AbortSignal): Promise<void> {
+async function openNativeNewTab(root: HTMLElement, signal: AbortSignal): Promise<HTMLElement> {
   uniqueButton(root, 'button[aria-label^="Show right panel"]')?.click();
   const launcher = await waitFor(document.body, () =>
     uniqueButton(root, 'button[data-panel-new-tab]') ??
@@ -37,6 +37,16 @@ export async function openNativeTerminal(root: HTMLElement, signal: AbortSignal)
       ? uniqueButton(document.body, 'button[data-panel-new-tab]') : null), signal);
   const panel = root.contains(launcher) ? root : launcher.closest<HTMLElement>('aside') ?? document.body;
   launcher.click();
+  return panel;
+}
+
+/** BB's native New tab contains its workspace file search. No external app URL. */
+export async function openNativeFiles(root: HTMLElement, signal: AbortSignal): Promise<void> {
+  await openNativeNewTab(root, signal);
+}
+
+export async function openNativeTerminal(root: HTMLElement, signal: AbortSignal): Promise<void> {
+  const panel = await openNativeNewTab(root, signal);
   const action = await waitFor(document.body, () => uniqueButton(panel,
     'button[data-panel-new-tab-item][id="file-search-result-start-terminal"]'), signal);
   action.click();

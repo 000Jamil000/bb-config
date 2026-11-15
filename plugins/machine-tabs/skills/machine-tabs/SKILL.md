@@ -18,7 +18,8 @@ adds, above it:
 - A filter field: matches thread titles and group headers (project, machine,
   day), ignoring case and a wrong RU/EN keyboard layout.
 - A "Last 5" block: the five most recently updated threads, which also stay
-  in their own groups.
+  in their own groups. Parent/child links are preserved, so BB’s original
+  expand/collapse controls, child rows and activity indicators also work here.
 
 Project groups automatically sort by their latest visible thread's `updatedAt`
 (newest first), including nested projects and projects used as the outer group.

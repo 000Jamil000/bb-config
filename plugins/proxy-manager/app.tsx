@@ -198,7 +198,10 @@ function RouteBadge() {
   const settingsParams = new URLSearchParams({ returnTo: window.location.pathname + window.location.search + window.location.hash });
   if (settingsHost) settingsParams.set('host', settingsHost);
   const settingsUrl = `/plugins/proxy-manager/proxies?${settingsParams}`;
-  const chip = <a href={settingsUrl} onClick={event => {
+  const chip = <a href={settingsUrl} onPointerDown={event => {
+    if (event.button === 0) event.preventDefault();
+    event.stopPropagation();
+  }} onClick={event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
     event.preventDefault();
     connectionOrigin = { path: window.location.pathname + window.location.search + window.location.hash, hostId: settingsHost };
@@ -206,7 +209,7 @@ function RouteBadge() {
   }} className="proxy-route inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 text-xs leading-tight text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Настройки прокси · ${label}`} title={warning ? `${detail} · ${warning}` : detail}>
     <Icon name="Network" className="size-3.5 shrink-0"/>
     <Dot live={codex} check={codex && route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : undefined}/>
-    <span className="min-w-0 truncate">{label}</span>
+    <span className="proxy-route-label min-w-0 truncate">{label}</span>
     {warning && <span role="img" aria-label={warning} className="shrink-0 text-amber-600">⚠</span>}
   </a>;
   return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(chip, footerTarget) : chip}</>;

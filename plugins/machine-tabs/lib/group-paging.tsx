@@ -98,7 +98,7 @@ export const GROUP_PAGING_CSS = `
 .machine-tabs-pager button:hover { text-decoration: underline; text-underline-offset: 3px; }
 .machine-tabs-pager:focus-within, .machine-tabs-pager:hover { opacity: 1; }
 .machine-tabs-pager button:focus-visible { outline: 2px solid var(--sidebar-ring); outline-offset: 2px; }
-.machine-tabs-page-count { margin-left: auto; font-size: 10px; font-variant-numeric: tabular-nums; opacity: .7; }
-@media (hover: none) { .machine-tabs-pager { opacity: .7; min-height: 32px; } }
+.machine-tabs-page-count { margin-left: auto; flex-shrink:0; white-space:nowrap; font-size: 10px; font-variant-numeric: tabular-nums; opacity: .7; }
+@media (hover: none) { .machine-tabs-pager { opacity: .7; min-height: 32px; gap:6px; padding-inline:8px; } }
 @media (prefers-reduced-motion: reduce) { .machine-tabs-pager { transition: none; } }
 `;

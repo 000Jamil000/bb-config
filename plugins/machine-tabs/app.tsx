@@ -57,7 +57,7 @@ interface ListView {
   dayField: DayField;
   /** Only these threads (the search filter, or the Last 5 block); null is no limit. */
   ids: ReadonlySet<string> | null;
-  /** Draw the threads as one flat "Last 5" section. */
+  /** Draw the threads as one "Last 5" section, preserving native parent/child trees. */
   recent: boolean;
 }
 
@@ -335,7 +335,7 @@ ${group(' [data-sidebar="group-label"] > span:first-child > button')} { display:
 
 const RECENT_SECTION_ID = "machine-tabs-recent";
 
-/** The view's threads as one flat section, whatever they are pinned or nested under. */
+/** One recent section, preserving parents so BB renders its own child controls. */
 function asRecentSection<T extends SidebarData>(data: T, view: ListView): T {
   const threads = data.threads
     .filter((thread) => view.ids?.has(thread.id))
@@ -343,7 +343,6 @@ function asRecentSection<T extends SidebarData>(data: T, view: ListView): T {
       ...thread,
       isPinned: false,
       pinnedAt: null,
-      parentThreadId: null,
       sectionId: RECENT_SECTION_ID,
     }));
   return {
@@ -357,7 +356,7 @@ function asRecentSection<T extends SidebarData>(data: T, view: ListView): T {
 
 /**
  * Two instances of bb's list: "main" follows the user's preferences; "recent"
- * is pinned to the flat organization, so the Last 5 block looks the same
+ * uses chronological organization, so the Last 5 block looks the same
  * whatever grouping the main list uses.
  */
 type ListKind = "main" | "recent";
@@ -454,7 +453,7 @@ async function loadNativeList(
   };
 
   if (kind === "recent") {
-    // Its own preferences: read bb's, force the flat layout, save nothing.
+    // Keep a chronological section, but native child expansion stays shared.
     const useRealRpc = base.useRpc as () => {
       call(method: string, input: unknown): Promise<AnyRecord>;
     };
@@ -475,13 +474,17 @@ async function loadNativeList(
               };
             }
             const { key, value } = (input ?? {}) as AnyRecord;
+            if (method === "setPreference" && key === "collapsedThreads") return rpc.call(method, input);
             return { key, value: value ?? RECENT_PREFERENCES[String(key)] };
           },
         }),
         [rpc],
       );
     };
-    wrapped.useRealtime = () => undefined;
+    const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
+    wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
+      if (channel === "preferences" && (payload as AnyRecord)?.key === "collapsedThreads") handler(payload);
+    });
   }
 
   const url = `${bundle.jsUrl}${separator}machine_tabs=${kind}-${Date.now().toString(36)}`;
@@ -1128,10 +1131,9 @@ function MachineThreadList(props: PluginThreadListProps) {
     [selectedId, byDay, dayField, matchIds],
   );
 
-  // Last 5 shows top-level threads; children remain in their parent groups.
+  // Include descendants: BB owns the hierarchy, expander and child activity.
   const recentView = useMemo<ListView | null>(() => {
     const ids = [...shown]
-      .filter((thread) => thread.parentThreadId == null)
       .sort((a, b) => b.updatedAt - a.updatedAt)
       .map((thread) => thread.id);
     if (ids.length === 0) return null;

@@ -6,15 +6,17 @@ export default function pushButton(bb: BbPluginApi) {
   bb.rpc.register(contract, {
     async status({ threadId }, context) {
       const signal = context.experimental_signal;
+      let hostName: string | undefined;
       try {
         const thread = await bb.sdk.threads.get({ threadId, signal });
         if (!thread.environmentId) return { state: 'unavailable' as const, message: 'У треда нет рабочей папки' };
         const environment = await bb.sdk.environments.get({ environmentId: thread.environmentId, signal });
         const machine = await bb.sdk.hosts.get({ hostId: environment.hostId, signal });
-        if (!environment.path || machine.status !== 'connected') return { state: 'unavailable' as const, message: 'Машина или папка недоступна' };
-        return await host.call('status', { path: environment.path }, { hostId: environment.hostId, signal, timeoutMs: 8000 });
+        hostName = machine.name;
+        if (!environment.path || machine.status !== 'connected') return { state: 'unavailable' as const, message: 'Машина или папка недоступна', hostName };
+        return { ...await host.call('status', { path: environment.path }, { hostId: environment.hostId, signal, timeoutMs: 8000 }), hostName };
       } catch {
-        return { state: 'unavailable' as const, message: 'Не удалось проверить Git в папке треда' };
+        return { state: 'unavailable' as const, message: 'Не удалось проверить Git в папке треда', ...(hostName ? { hostName } : {}) };
       }
     },
   });

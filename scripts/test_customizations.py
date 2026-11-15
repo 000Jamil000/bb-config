@@ -65,6 +65,21 @@ class SnapshotTests(unittest.TestCase):
 
 
 class RestoreTests(unittest.TestCase):
+    def test_voice_patch_settings_wait_until_the_patch_is_installed(self):
+        original = restore.read
+
+        def read(name, root=restore.ROOT):
+            if name == 'plugins/voice-mode':
+                return {'connection': 'plugin', 'voice': 'marin', 'vadThreshold': 0.7,
+                        'silenceDurationMs': 900, 'noiseReduction': 'far_field'}
+            return original(name, root)
+
+        with patch.object(restore, 'read', side_effect=read):
+            commands = restore.plan()
+        voice = [c for c in commands if c[:4] == ['bb', 'plugin', 'config', 'voice-mode']]
+        self.assertTrue(any(c[5] == 'connection' for c in voice))
+        self.assertFalse(any(c[5] in restore.MANUAL_PLUGIN_KEYS['voice-mode'] for c in voice))
+
     def test_private_dictionary_overrides_defaults_and_lists_replace(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

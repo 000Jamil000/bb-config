@@ -1,0 +1,251 @@
+{
+  "version": "0.1.15",
+  "changes": [
+    {
+      "file": "app.css",
+      "before": "[data-voice-mode-send] [data-promptbox-submit-group] {",
+      "after": "[data-voice-mode-send] [data-promptbox-submit-group]:not(:has(button[aria-label=\"Start voice input\"])) {"
+    },
+    {
+      "file": "server.ts",
+      "before": "export type BrowserToServer = { type: \"AUDIO\"; base64Data: string } | { type: \"END\" };",
+      "after": "export type BrowserToServer = { type: \"AUDIO\"; base64Data: string } | { type: \"CLIENT_READY\" } | { type: \"END\" };"
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"You are the voice of a coding agent workspace. The user talks to you hands-free while a separate coding agent does the work in a bb thread.\",",
+      "after": "    \"Ты — голос текущего агента в BB. Говори по-русски, коротко, спокойно и от первого лица: «Проверяю», «Исправил», «Мне нужно уточнить». Не называй агента в третьем лице и не говори, что передаёшь задачу другому агенту. Внутренние инструменты делегирования всё равно обязательны. Не утверждай, что работа выполнена, пока результат не подтверждён инструментом или событием BB. Не добавляй светские фразы, благодарности и предложения помощи без запроса.\","
+    },
+    {
+      "file": "server.ts",
+      "before": "    voice: { type: \"select\", label: \"Voice\", options: [...VOICES], default: \"marin\" },",
+      "after": "    voice: { type: \"select\", label: \"Voice\", options: [...VOICES], default: \"marin\" },\n    vadThreshold: {\n      type: \"number\", label: \"Speech activation threshold\",\n      description: \"Higher values reduce noise-triggered interruptions but may miss quiet speech. Applies to the next session.\",\n      default: 0.7, experimental_schema: z.number().min(0.1).max(0.95),\n    },\n    silenceDurationMs: {\n      type: \"number\", label: \"Pause before answering (ms)\",\n      default: 900, experimental_schema: z.number().int().min(300).max(2500),\n    },\n    noiseReduction: {\n      type: \"select\", label: \"Microphone noise reduction\",\n      options: [\"far_field\", \"near_field\"], default: \"far_field\",\n    },"
+    },
+    {
+      "file": "server.ts",
+      "before": "    let ready = false;",
+      "after": "    let ready = false;\n    let greeted = false;\n    let userStartedSpeaking = false;\n    let vadThreshold = 0.7;\n    let silenceDurationMs = 900;\n    let noiseReduction = \"far_field\";"
+    },
+    {
+      "file": "server.ts",
+      "before": "    function onSpeechStarted() {\n      lastActivity = Date.now();",
+      "after": "    function onSpeechStarted() {\n      userStartedSpeaking = true;\n      lastActivity = Date.now();"
+    },
+    {
+      "file": "server.ts",
+      "before": "                transcription: { model: \"gpt-4o-mini-transcribe\" },\n                turn_detection: { type: \"semantic_vad\", create_response: true, interrupt_response: true },",
+      "after": "                noise_reduction: { type: noiseReduction },\n                transcription: { model: \"gpt-4o-mini-transcribe\", language: \"ru\" },\n                turn_detection: { type: \"server_vad\", threshold: vadThreshold, prefix_padding_ms: 300, silence_duration_ms: silenceDurationMs, create_response: true, interrupt_response: true },"
+    },
+    {
+      "file": "server.ts",
+      "before": "      messageText = current.messageText === \"rewritten\" ? \"rewritten\" : \"verbatim\";",
+      "after": "      messageText = current.messageText === \"rewritten\" ? \"rewritten\" : \"verbatim\";\n      vadThreshold = current.vadThreshold;\n      silenceDurationMs = current.silenceDurationMs;\n      noiseReduction = current.noiseReduction;"
+    },
+    {
+      "file": "server.ts",
+      "before": "        } else if (message.type === \"END\") shutdown();",
+      "after": "        } else if (message.type === \"CLIENT_READY\" && ready && !greeted) {\n          greeted = true;\n          // Speak only after the client has acquired its mic and player. A\n          // greeting must never summarize untrusted context or invoke tools.\n          if (!userStartedSpeaking && !responseActive) {\n            responseActive = true;\n            toUpstream({\n              type: \"response.create\",\n              response: {\n                conversation: \"none\", input: [], tool_choice: \"none\",\n                instructions: \"Скажи по-русски ровно одну фразу: «Я готов. Что сделать?» Ничего не добавляй. Не вызывай инструменты.\",\n              },\n            });\n          }\n        } else if (message.type === \"END\") shutdown();"
+    },
+    {
+      "file": "session.ts",
+      "before": "import { BARGE_IN_CHUNKS, BARGE_IN_RMS, Player, startMic } from \"./audio\";",
+      "after": "import { Player, startMic } from \"./audio\";"
+    },
+    {
+      "file": "session.ts",
+      "before": "            let loudChunks = 0;\n",
+      "after": ""
+    },
+    {
+      "file": "session.ts",
+      "before": "              loudChunks = rms > BARGE_IN_RMS ? loudChunks + 1 : 0;\n              if (loudChunks >= BARGE_IN_CHUNKS && player.playing) {\n                player.interrupt();\n                this.set({ phase: \"listening\" });\n              }\n",
+      "after": "              // Only server speech detection interrupts playback. Volume alone\n              // mistakes taps, bumps and echo for the user's speech.\n"
+    },
+    {
+      "file": "session.ts",
+      "before": "            this.set({ phase: \"listening\" });\n          } catch (error) {",
+      "after": "            this.set({ phase: \"listening\" });\n            send({ type: \"CLIENT_READY\" });\n          } catch (error) {"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "  it(\"relays mic audio upstream, dropping oversized frames\", async () => {",
+      "after": "  it(\"greets exactly once after the microphone is ready, without tools or thread context\", async () => {\n    const { browser, upstream, harness } = await liveSession();\n    expect(upstream.ofType(\"response.create\")).toHaveLength(0);\n    await browser.receive(JSON.stringify({ type: \"CLIENT_READY\" }));\n    await browser.receive(JSON.stringify({ type: \"CLIENT_READY\" }));\n    const responses = upstream.ofType(\"response.create\");\n    expect(responses).toHaveLength(1);\n    expect(responses[0]).toMatchObject({ response: {\n      conversation: \"none\", input: [], tool_choice: \"none\",\n      instructions: expect.stringContaining(\"Я готов. Что сделать?\"),\n    }});\n    expect(harness.sdk.callsTo(\"threads.send\")).toHaveLength(0);\n  });\n\n  it(\"does not greet over a user who speaks before microphone readiness\", async () => {\n    const { browser, upstream } = await liveSession();\n    upstream.emit({ type: \"input_audio_buffer.speech_started\" });\n    await browser.receive(JSON.stringify({ type: \"CLIENT_READY\" }));\n    expect(upstream.ofType(\"response.create\")).toHaveLength(0);\n  });\n\n  it(\"ignores premature readiness and still greets after a successful connection\", async () => {\n    const { browser } = await startSession({ settings: { openaiApiKey: \"sk-test\" } });\n    const upstream = FakeUpstream.last!;\n    await browser.receive(JSON.stringify({ type: \"CLIENT_READY\" }));\n    expect(upstream.ofType(\"response.create\")).toHaveLength(0);\n    upstream.open();\n    upstream.emit({ type: \"session.updated\" });\n    await browser.receive(JSON.stringify({ type: \"CLIENT_READY\" }));\n    expect(upstream.ofType(\"response.create\")).toHaveLength(1);\n  });\n\n  it(\"uses Russian and a noise-resistant speech detector while preserving intentional interruptions\", async () => {\n    const { upstream } = await liveSession();\n    const [update] = upstream.ofType(\"session.update\") as { session: Record<string, any> }[];\n    expect(update!.session.audio.input).toMatchObject({\n      noise_reduction: { type: \"far_field\" },\n      transcription: { language: \"ru\" },\n      turn_detection: { type: \"server_vad\", threshold: 0.7, silence_duration_ms: 900, interrupt_response: true },\n    });\n    expect(update!.session.instructions).toContain(\"от первого лица\");\n  });\n\n  it(\"relays mic audio upstream, dropping oversized frames\", async () => {"
+    },
+    {
+      "file": "server.ts",
+      "before": "function sessionInstructions(mode: MessageText): string {",
+      "after": "export const GREETINGS = [\n  \"Я готов. Что сделать?\",\n  \"На связи. Что делаем?\",\n  \"Слушаю. С чего начнём?\",\n  \"Готов к работе. Какая задача?\",\n  \"Я здесь. Что проверим?\",\n  \"Подключился. Что нужно?\",\n  \"Готов. Давай задачу.\",\n  \"Слушаю тебя. Какой план?\",\n  \"На месте. За что берёмся?\",\n  \"Готов. Что сегодня исправляем?\",\n  \"Всё готово. Начнём?\",\n  \"Я на связи. Что посмотрим?\",\n  \"Слушаю. Что нужно проверить?\",\n  \"Готов. С чего начнём работу?\",\n  \"Я здесь. Давай по делу.\",\n  \"Микрофон твой, работа моя. Что делаем?\",\n  \"Баги, прячьтесь. Какая задача?\",\n  \"Кофе виртуальный, готовность настоящая. Начнём?\",\n  \"Мозги прогреты. Что решаем?\",\n  \"Клавиатура отдыхает. Что делаем?\",\n  \"Давай устроим коду техосмотр. С чего начнём?\",\n  \"Руки свободны, задачи принимаются. Что сделать?\",\n  \"Готов навести порядок. Где начнём?\",\n  \"На связи. Какой баг сегодня главный?\",\n  \"Включился. Пора творить порядок.\",\n  \"Слушаю. Какую загадку разбираем?\",\n  \"Готов. Погнали разбираться.\",\n  \"Код подождёт твоей команды. Что делаем?\",\n  \"Рабочий настрой включён. Какая задача?\",\n  \"Без лишних церемоний. Что сделать?\"\n] as const;\n\n/** Uniform choice among all greetings except the previous one. */\nexport function pickGreeting(previous: string | null, random: () => number = Math.random): string {\n  const choices = GREETINGS.filter((greeting) => greeting !== previous);\n  return choices[Math.floor(random() * choices.length)]!;\n}\n\nfunction sessionInstructions(mode: MessageText): string {"
+    },
+    {
+      "file": "server.ts",
+      "before": "  // One live session per bb server: starting another ends the last.",
+      "after": "  let previousGreeting: string | null = null;\n  // One live session per bb server: starting another ends the last."
+    },
+    {
+      "file": "server.ts",
+      "before": "            responseActive = true;\n            toUpstream({\n              type: \"response.create\",",
+      "after": "            responseActive = true;\n            const greeting = pickGreeting(previousGreeting);\n            previousGreeting = greeting;\n            toUpstream({\n              type: \"response.create\","
+    },
+    {
+      "file": "server.ts",
+      "before": "                instructions: \"Скажи по-русски ровно одну фразу: «Я готов. Что сделать?» Ничего не добавляй. Не вызывай инструменты.\",",
+      "after": "                instructions: `Скажи по-русски ровно эту фразу: «${greeting}» Ничего не добавляй. Не вызывай инструменты.`,"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "import plugin from \"../server\";",
+      "after": "import plugin, { GREETINGS, pickGreeting } from \"../server\";"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "      instructions: expect.stringContaining(\"Я готов. Что сделать?\"),",
+      "after": "      instructions: expect.stringMatching(/Скажи по-русски ровно эту фразу: «.+» Ничего не добавляй/),"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "describe(\"connection\", () => {",
+      "after": "describe(\"greeting choices\", () => {\n  it(\"provides thirty distinct greetings and excludes the last at both random boundaries\", () => {\n    expect(GREETINGS).toHaveLength(30);\n    expect(new Set(GREETINGS).size).toBe(30);\n    for (const previous of GREETINGS) {\n      for (const random of [() => 0, () => 0.999999]) {\n        expect(pickGreeting(previous, random)).not.toBe(previous);\n        expect(GREETINGS).toContain(pickGreeting(previous, random));\n      }\n    }\n  });\n});\n\ndescribe(\"connection\", () => {"
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"You cannot read files, run commands, or write code yourself. For any real work or question about the project, call send_to_agent, then say a short confirmation. It forwards the user's own words exactly as they said them, so don't repeat their request back to them.\",",
+      "after": "    \"Для любых задач и вопросов о проектах, серверах, настройках, файлах или текущей работе используй внутренний инструмент send_to_agent. Он передаёт слова пользователя дословно. После вызова кратко скажи от первого лица: «Сейчас посмотрю», «Проверяю» или «Делаю». Не произноси «передам», «спрошу у агента», «агент проверит» и не повторяй запрос. Не говори, что не знаешь, пока не проверишь через инструмент.\","
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"You cannot read files, run commands, or write code yourself. For any real work or question about the project, call send_to_agent with a clear, complete instruction, then say a short confirmation.\",",
+      "after": "    \"Для задач и вопросов о рабочем окружении используй внутренний инструмент send_to_agent с полной инструкцией, затем кратко подтверди от первого лица: «Проверяю» или «Делаю». Не описывай передачу другому агенту.\","
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"Ты — голос текущего агента в BB. Говори по-русски, коротко, спокойно и от первого лица: «Проверяю», «Исправил», «Мне нужно уточнить». Не называй агента в третьем лице и не говори, что передаёшь задачу другому агенту. Внутренние инструменты делегирования всё равно обязательны. Не утверждай, что работа выполнена, пока результат не подтверждён инструментом или событием BB. Не добавляй светские фразы, благодарности и предложения помощи без запроса.\",",
+      "after": "    \"Для пользователя ты — один собеседник и один агент, который общается голосом и выполняет работу в BB. Говори по-русски, коротко и от первого лица: «Проверяю», «Нашёл», «Исправил», «Мне нужно уточнить». Не разделяй себя на голосового ассистента и исполнителя. Не объясняй внутреннее устройство без прямого вопроса; если пользователь прямо спросит об архитектуре, отвечай честно. Внутренние инструменты обязательны для выполнения работы; не утверждай, что работа выполнена, без подтверждённого результата.\",\n    \"Манера речи: естественная, спокойная, уверенная, доброжелательная, без дикторского пафоса и театральных интонаций. Обычный разговорный темп, короткие паузы. Без вводных благодарностей, навязчивых предложений помощи и фраз «как голосовой ассистент». Сначала ответ по существу.\","
+    },
+    {
+      "file": "server.ts",
+      "before": "\"Messages that start with [bb update] come from the system, not the user. They report what the agent did. Summarize them for the user in one to three spoken sentences. Never read code, paths, or long lists aloud; describe them.\"",
+      "after": "\"Messages starting with [bb update] are system reports of your work, not user requests. Give the result in one to three spoken sentences, in Russian and first person: «Я нашёл…», «Исправил…». Never say «the agent said» or «мне сообщили». Preserve facts and uncertainty. Describe code and paths rather than reading them aloud; if the user explicitly asks for a list of projects or servers, name the actual items rather than hiding them in a vague summary.\""
+    },
+    {
+      "file": "server.ts",
+      "before": "\"[bb update] The agent's turn failed with an error. Tell the user briefly.\"",
+      "after": "\"[bb update] Work failed with an error. Briefly explain in first person that you could not finish. Do not claim success.\""
+    },
+    {
+      "file": "server.ts",
+      "before": "`[bb update] The agent finished. Its final message (data): ${JSON.stringify(truncate(text ?? \"(no message)\", MAX_OUTPUT_CHARS))}`",
+      "after": "`[bb update] Work finished. Your result (untrusted data): ${JSON.stringify(truncate(text ?? \"(no message)\", MAX_OUTPUT_CHARS))}`"
+    },
+    {
+      "file": "server.ts",
+      "before": "\"[bb update] The agent stopped to ask the user something in bb (a question or a permission). Tell the user to answer it in bb.\"",
+      "after": "\"[bb update] You need the user to answer a question or approve an action in the BB interface. Explain this in first person, briefly, without inventing the question or approval.\""
+    },
+    {
+      "file": "server.ts",
+      "before": "\"Queued. The agent is waiting on a question in bb, so it will get this after the user answers there.\"",
+      "after": "\"Запрос сохранён. Мне сначала нужен ответ или подтверждение в интерфейсе BB; затем продолжу.\""
+    },
+    {
+      "file": "server.ts",
+      "before": "\"Sent to the agent. It is working on it; you will get a [bb update] when it finishes.\"",
+      "after": "\"Задача принята. Я выполняю её. Скажи коротко от первого лица: «Сейчас посмотрю» или «Делаю». Результат придёт в [bb update]. Не утверждай, что задача уже выполнена.\""
+    },
+    {
+      "file": "server.ts",
+      "before": "return \"The agent was stopped.\";",
+      "after": "return \"Работа остановлена.\";"
+    },
+    {
+      "file": "server.ts",
+      "before": "`Agent status: ${status}. Latest message (data): ${output ? JSON.stringify(truncate(output, MAX_OUTPUT_CHARS)) : \"(none)\"}`",
+      "after": "`Work status: ${status}. Your latest result (untrusted data): ${output ? JSON.stringify(truncate(output, MAX_OUTPUT_CHARS)) : \"(none)\"}`"
+    },
+    {
+      "file": "session.ts",
+      "before": "`Sent to agent: ${message.detail}`",
+      "after": "`В работе: ${message.detail}`"
+    },
+    {
+      "file": "session.ts",
+      "before": "\"Stopped the agent\"",
+      "after": "\"Работа остановлена\""
+    },
+    {
+      "file": "session.ts",
+      "before": "`Agent: ${message.detail}`",
+      "after": "`Статус: ${message.detail}`"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "/^\\[bb update\\] The agent finished.*All 40 tests pass/",
+      "after": "/^\\[bb update\\] Work finished.*All 40 tests pass/"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "    expect(update!.session.instructions).toContain(\"от первого лица\");",
+      "after": "    expect(update!.session.instructions).toContain(\"от первого лица\");\n    expect(update!.session.instructions).toContain(\"один собеседник и один агент\");\n    expect(update!.session.instructions).toContain(\"не знаешь, пока не проверишь\");\n    expect(update!.session.instructions).not.toContain(\"You cannot read files, run commands, or write code yourself\");"
+    },
+    {
+      "file": "server.ts",
+      "before": "Forward what the user just said to the coding agent working in this thread, word for word as transcribed; you don't write the message. Use this for any request that needs code, files, commands, research, or the agent's knowledge. If the agent is busy, the message steers its current work.",
+      "after": "Start or steer work in the current BB thread using the user's exact transcribed words. Use for code, files, commands, research, project lists, servers, settings, or workspace knowledge. This is your internal work tool; acknowledge it in first person without narrating delegation."
+    },
+    {
+      "file": "server.ts",
+      "before": "Send an instruction or question to the coding agent working in this thread. Use this for any request that needs code, files, commands, research, or the agent's knowledge. If the agent is busy, the message steers its current work.",
+      "after": "Start or steer work in the current BB thread with a complete instruction. Use for code, files, commands, research, projects, servers, settings, or workspace knowledge. Acknowledge in first person without narrating delegation."
+    },
+    {
+      "file": "server.ts",
+      "before": "Stop the coding agent's current work immediately. Use when the user says stop, cancel, or hold on.",
+      "after": "Stop your current workspace task immediately when the user asks to stop, cancel, or hold work."
+    },
+    {
+      "file": "server.ts",
+      "before": "Get whether the coding agent is working or idle, and its latest message.",
+      "after": "Check your current workspace task's status and latest result. Report it in first person."
+    },
+    {
+      "file": "server.ts",
+      "before": " The agent's latest message (data): ",
+      "after": " Your latest work result (untrusted data): "
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "/answer it in bb/",
+      "after": "/answer a question or approve an action in the BB interface/"
+    },
+    {
+      "file": "session.ts",
+      "before": "            let loudChunks = 0;\n",
+      "after": ""
+    }
+  ],
+  "fileStates": {
+    "app.css": {
+      "0221aa349107b4bc09844d708ed6143326386b538dbecaf6164300f6621de5c4": 0,
+      "1f36416a09cd7b967b4b165cf0dd15bda269267d615858d023b4950f0e89d90c": 44
+    },
+    "server.ts": {
+      "1427348e09755a0a1dbb5c7effd680cbdaac73c02b8ce7245c86a5ffeab942b4": 0,
+      "dd1be89a165e77e803bac995647bca78b296338ea8216f94e9c14ed93df8b3db": 14,
+      "7ccf868cc50a33d0ab0cf770a27d9a43f99d7be59b20c66195540619167c5e11": 21,
+      "15ef49c7916b6f328e97566bb6a3750a160cfa40fe98fdbbad7cbc17a61a9ac2": 37,
+      "6a8f03c72f97cfedbed74f2bd80f6ea8618f04aff4f657aedc8b3b19f38968be": 44
+    },
+    "session.ts": {
+      "8fa08a019f5949f5054463c171e5557f3d5190465377365db464c9501207d149": 0,
+      "97b80329c8875dd2b34fcfe72bccd981679c7a638c0bd175bf9a5aa228368ed3": 14,
+      "8c2e95026e26b262d75729411b0c81c5a1e641d00403e60f011776a87f00bdd5": 21,
+      "0c4de57fe38c3b21650cbbe1b1e04d925a2959cc473b80e51b0dd71035f778ad": 44
+    },
+    "test/server.test.ts": {
+      "595aef96bccec5b3e355b3070d826203c4818afe4848f63859f46f6ca6672600": 0,
+      "b92bf687494d1126c9b1005e0d00fe7ee9750960ee01d596a7f0bba820397d87": 14,
+      "e0f2aa976e26ee457dbb1757abcbec169194cc77949a0b194c96dbad125a35ac": 21,
+      "330533bae67852bdf99681ec2bebf745ad7b66051c64b903c423dda06bffdc65": 42,
+      "7b03afb387663320989fbe97a4a21b1c847579662ec0d1bf8fa920ec2f58fab6": 44
+    }
+  }
+}

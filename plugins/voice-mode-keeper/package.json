@@ -1,0 +1,40 @@
+{
+  "name": "bb-plugin-voice-mode-keeper",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Voice Mode Keeper",
+    "description": "Keep Voice Mode customizations across compatible catalog updates, with staged validation and automatic rollback.",
+    "branding": {
+      "icon": "Shield"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ],
+    "app": "./app.tsx"
+  },
+  "dependencies": {
+    "@get-bb/plugin-sdk": "0.6.132",
+    "vitest": "^4.1.11",
+    "typescript": "^5.7.0",
+    "better-sqlite3": "^12.11.1",
+    "zod": "^4.6.5",
+    "cron-parser": "^5.5.0",
+    "hono": "^4.11.9"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "sonner": "^1.7.4"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

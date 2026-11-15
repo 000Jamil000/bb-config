@@ -10,6 +10,9 @@ ROOT = Path(__file__).resolve().parents[1]
 # These may change connectivity or provider routing. Preserve for explicit setup.
 MANUAL_SETTINGS = {'connect', 'proxy-manager', 'provider-acp'}
 MANUAL_STATES = {'connect', 'bb--connect-next', 'account-pool'}
+# Added by the reviewed managed-source patch, absent from the catalog release.
+# plugins/voice-mode/apply.py restores these after building the patched plugin.
+MANUAL_PLUGIN_KEYS = {'voice-mode': {'vadThreshold', 'silenceDurationMs', 'noiseReduction'}}
 
 
 def read(name, root=ROOT):
@@ -83,6 +86,8 @@ def plan(install_plugins=False, root=ROOT):
         if name in MANUAL_SETTINGS:
             continue
         for key, data in read('plugins/' + name, root).items():
+            if key in MANUAL_PLUGIN_KEYS.get(name, set()):
+                continue
             commands.append(['bb', 'plugin', 'config', name, 'set', key, value(data)])
     for key, data in read('ui', root).items():
         commands.append(['bb', 'settings', 'ui', 'set', key, value(data)])

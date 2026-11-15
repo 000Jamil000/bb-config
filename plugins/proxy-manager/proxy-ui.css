@@ -3,13 +3,8 @@
   50% { opacity: .7; box-shadow: 0 0 0 3px rgb(16 185 129 / .1); }
 }
 .proxy-dot-live { animation: proxy-breathe 3s ease-in-out infinite; }
-.proxy-route-settings { opacity: 0; pointer-events: none; transition: opacity 150ms ease; }
-.proxy-route:hover .proxy-route-settings,
-.proxy-route:focus-within .proxy-route-settings { opacity: 1; pointer-events: auto; }
-@media (hover: none) { .proxy-route-settings { opacity: 1; pointer-events: auto; } }
 @media (prefers-reduced-motion: reduce) {
   .proxy-dot-live { animation: none; }
-  .proxy-route-settings { transition: none; }
 }
 /* Keep route feedback inside the row on narrow screens. */
 .proxy-machine-controls { max-width: 60%; }
@@ -34,4 +29,17 @@
   top: 50%;
   width: 13px;
   border-top: 2px solid var(--border);
+}
+
+/* Keep host controls and their handlers; only their visual ordering changes. */
+[data-proxy-context-row] { flex-wrap: wrap; gap: 4px; }
+[data-proxy-context-row] > [data-proxy-context-part="project"] { order: 0; max-width: 10rem; }
+[data-proxy-context-row] > [data-proxy-context-part="branch"] { order: 1; display: inline-flex !important; flex: 0 1 auto; max-width: 8rem; }
+[data-proxy-context-row] > [data-proxy-context-part="machine"] { order: 2; max-width: 8rem; }
+[data-proxy-context-row] > [data-proxy-context-part="proxy"] { order: 3; display: inline-flex; min-width: 0; max-width: 12rem; }
+[data-proxy-context-row] > [data-proxy-context-part="plus"] { order: 4; }
+@media (max-width: 480px) {
+  [data-proxy-context-row] > [data-proxy-context-part="project"],
+  [data-proxy-context-row] > [data-proxy-context-part="branch"],
+  [data-proxy-context-row] > [data-proxy-context-part="machine"] { max-width: 7rem; }
 }

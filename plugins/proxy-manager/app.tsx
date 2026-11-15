@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent, type SVGProps } from 'react';
 import { definePluginApp, useRealtime, useRpc, useComposer, useBbNavigate } from '@get-bb/plugin-sdk/app';
+import { createPortal } from 'react-dom';
+import { installComposerFooter, registerFooterRoute } from './composer-footer';
 import type { rpcContract, Check, RouteContext, RouteState } from './contract';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -166,6 +168,9 @@ function ProxiesPage() {
 
 function RouteBadge() {
   const navigate = useBbNavigate();
+  const [anchor, setAnchor] = useState<HTMLSpanElement | null>(null);
+  const [footerTarget, setFooterTarget] = useState<HTMLElement | null>(null);
+  useEffect(() => anchor ? registerFooterRoute(anchor, setFooterTarget) : undefined, [anchor]);
   const composer = useComposer();
   const rpc = useRpc<typeof rpcContract>();
   const selection = composer.selection;
@@ -188,28 +193,28 @@ function RouteBadge() {
   const providerName = (route?.providerId ?? providerId) === 'claude-code' ? 'Claude Code' : codex ? 'Codex' : route?.providerId ?? providerId ?? 'Агент';
   const warning = error ? 'Не удалось проверить подключение' : route && !route.connected ? 'Машина офлайн' : codex && route ? route.warning || (route.check && !route.check.ok ? route.check.message : null) : null;
   const detail = route ? `${route.hostName} · ${providerName} · ${codex ? route.applied ? 'Проверка каждые 30 секунд' : 'Маршрут не применён плагином' : 'Настройки самого CLI не проверялись; плагин не меняет его маршрут'}` : 'Выбор машины и агента — в настройках подключения';
-  const label = codex && route?.proxyName ? route.proxyName : 'Доступ без прокси';
+  const label = !codex ? 'Прокси CLI' : route?.proxyName ?? 'Без прокси';
   const settingsHost = route?.hostId ?? hostId;
   const settingsParams = new URLSearchParams({ returnTo: window.location.pathname + window.location.search + window.location.hash });
   if (settingsHost) settingsParams.set('host', settingsHost);
   const settingsUrl = `/plugins/proxy-manager/proxies?${settingsParams}`;
-  return <div className="proxy-route flex w-fit items-center gap-1.5 px-1 text-xs text-muted-foreground" aria-label="Подключение агента" title={detail}>
-    <Icon name="Network" className="size-3.5" aria-label="Прокси"/>
+  const chip = <a href={settingsUrl} onClick={event => {
+    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+    event.preventDefault();
+    connectionOrigin = { path: window.location.pathname + window.location.search + window.location.hash, hostId: settingsHost };
+    navigate.toPluginPanel('proxies');
+  }} className="proxy-route inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 text-xs leading-tight text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Настройки прокси · ${label}`} title={warning ? `${detail} · ${warning}` : detail}>
+    <Icon name="Network" className="size-3.5 shrink-0"/>
     <Dot live={codex} check={codex && route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : undefined}/>
-    <span>{label}</span>
-    {warning && <span role="img" aria-label={warning} title={warning} className="text-amber-600">⚠</span>}
-    <a href={settingsUrl} onClick={event => {
-      if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-      event.preventDefault();
-      connectionOrigin = { path: window.location.pathname + window.location.search + window.location.hash, hostId: settingsHost };
-      navigate.toPluginPanel('proxies');
-    }} aria-label="Настройки прокси" title="Настройки прокси" className="proxy-route-settings inline-flex size-6 items-center justify-center rounded hover:bg-muted focus-visible:outline focus-visible:outline-2">
-      <Icon name="Settings2" className="size-3.5"/>
-    </a>
-  </div>;
+    <span className="min-w-0 truncate">{label}</span>
+    {warning && <span role="img" aria-label={warning} className="shrink-0 text-amber-600">⚠</span>}
+  </a>;
+  return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(chip, footerTarget) : chip}</>;
+
 }
 export default definePluginApp(app => {
-  app.composer.customize({ id: 'proxy-route', banners: [{ id: 'route', chrome: 'bare', component: RouteBadge }] });
+  app.contentScripts.register({ id: 'composer-route-footer', mount: ({ signal }) => installComposerFooter(signal) });
+  app.composer.customize({ id: 'proxy-route', scopes: ['thread', 'new-thread'], actions: [{ id: 'route', component: RouteBadge }] });
   app.slots.navPanel({ id: 'proxies', title: 'Прокси', icon: 'Network', path: 'proxies', component: ProxiesPage });
   app.slots.settingsSection({ id: 'connections', title: 'Прокси и подключения', component: ProxiesPage });
 });

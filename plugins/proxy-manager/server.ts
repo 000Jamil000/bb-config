@@ -63,7 +63,7 @@ export default async function plugin(bb: BbPluginApi) {
   async function bind(input: z.infer<typeof bindingSchema>) { return serialize(async () => {
     const machine = await bb.sdk.hosts.get({ hostId: input.hostId });
     if (machine.status !== 'connected') throw new Error('Машина недоступна');
-    const available = await providers(input.hostId);
+    const available = await providers(input.hostId, true);
     if (input.providerId !== 'codex' || !available.some(p => p.id === input.providerId && p.available)) throw new Error('CLI недоступен или пока не поддерживается');
     if (input.proxyId !== null && !(await read()).some(p => p.id === input.proxyId)) throw new Error('Прокси не найден');
     const proxy = input.proxyId === null ? null : (await read()).find(p => p.id === input.proxyId)!;
@@ -71,7 +71,7 @@ export default async function plugin(bb: BbPluginApi) {
     const next = (await bindings()).filter(b => b.hostId !== input.hostId || b.providerId !== input.providerId);
     await bb.storage.kv.set('bindings', [...next, input]); bb.realtime.publish('changed', {}); await bb.experimental_hooks.recheck('message.dispatch'); return input;
   }); }
-  async function providers(hostId: string) {
+  async function loadProviders(hostId: string) {
     const [catalog, installation] = await Promise.all([
       bb.sdk.providers.list({ hostId }), bb.sdk.hosts.providerCliStatus({ hostId }),
     ]);
@@ -79,8 +79,22 @@ export default async function plugin(bb: BbPluginApi) {
       const cli = installation[p.id];
       const available = p.available && cli?.installed === true && !cli.versionUnsupported;
       const message = !cli ? 'Не удалось подтвердить наличие CLI' : !cli.installed ? 'CLI не установлен' : cli.versionUnsupported ? 'Версия CLI не поддерживается' : !p.available ? 'Провайдер недоступен' : 'CLI доступен';
-      return { id: p.id, name: p.displayName, available, message };
+      return { id: p.id, name: p.displayName, installed: cli?.installed === true, available, message };
     });
+  }
+  const providerCache = new Map<string, { entries: Awaited<ReturnType<typeof loadProviders>>; expiresAt: number }>();
+  const providerRequests = new Map<string, Promise<Awaited<ReturnType<typeof loadProviders>>>>();
+  async function providers(hostId: string, force = false) {
+    const cached = providerCache.get(hostId);
+    if (!force && cached && Date.now() < cached.expiresAt) return cached.entries;
+    const running = providerRequests.get(hostId);
+    if (running) return running;
+    const request = loadProviders(hostId).then(entries => {
+      providerCache.set(hostId, { entries, expiresAt: Date.now() + 60_000 });
+      return entries;
+    }).finally(() => providerRequests.delete(hostId));
+    providerRequests.set(hostId, request);
+    return request;
   }
   bb.background.service('connection-monitor', {
     async start(signal) {
@@ -119,7 +133,7 @@ export default async function plugin(bb: BbPluginApi) {
     },
     list, add, bind, remove: ({ id }) => remove(id), check: ({ hostId, proxyId }) => check(hostId, proxyId),
     machines: async () => (await bb.sdk.hosts.list()).map(h => ({ id: h.id, name: h.name, connected: h.status === 'connected' })),
-    providers: ({ hostId }) => providers(hostId),
+    providers: ({ hostId, force }) => providers(hostId, force),
   });
   bb.events.on('thread.idle', async ({ thread }) => {
     const armed = await bb.storage.kv.get<z.infer<typeof bindingSchema> & { threadId: string }>('armed');

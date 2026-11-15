@@ -34,7 +34,7 @@ export const rpcContract = defineRpcContract({
   route_context: { input: z.object({ threadId: z.string().nullable(), hostId: z.string().nullable(), environmentId: z.string().nullable(), providerId: z.string().nullable() }), output: routeContextSchema.nullable() },
   list: { input: z.null(), output: z.object({ proxies: z.array(publicProxy), bindings: z.array(bindingSchema), checks: z.record(z.string(), checkSchema), routes: z.record(z.string(), routeStateSchema) }) },
   machines: { input: z.null(), output: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() })) },
-  providers: { input: z.object({ hostId: z.string() }), output: z.array(z.object({ id: z.string(), name: z.string(), available: z.boolean(), message: z.string() })) },
+  providers: { input: z.object({ hostId: z.string(), force: z.boolean().optional() }), output: z.array(z.object({ id: z.string(), name: z.string(), installed: z.boolean(), available: z.boolean(), message: z.string() })) },
   bind: { input: bindingSchema, output: bindingSchema },
   add: { input: proxyInput, output: publicProxy },
   remove: { input: z.object({ id: z.string() }), output: z.object({ removed: z.boolean() }) },

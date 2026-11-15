@@ -11,3 +11,27 @@
   .proxy-dot-live { animation: none; }
   .proxy-route-settings { transition: none; }
 }
+/* Keep route feedback inside the row on narrow screens. */
+.proxy-machine-controls { max-width: 60%; }
+@media (max-width: 480px) {
+  .proxy-page { padding-inline: 12px; }
+  .proxy-agent-row { column-gap: 8px; }
+  .proxy-machine-controls select { width: 112px; }
+}
+
+.proxy-machine-summary::-webkit-details-marker { display: none; }
+.proxy-machine-chevron { transition: transform 150ms ease; }
+.proxy-machine-group[open] > summary .proxy-machine-chevron { transform: rotate(90deg); }
+@media (prefers-reduced-motion: reduce) {
+  .proxy-machine-chevron { transition: none; }
+}
+
+/* Branch connectors meet each agent row, whose route stays in the same surface. */
+.proxy-agent-row::before {
+  content: '';
+  position: absolute;
+  left: -14px;
+  top: 50%;
+  width: 13px;
+  border-top: 2px solid var(--border);
+}

@@ -20,7 +20,6 @@ export function PushButton() {
   useEffect(() => {
     const shell = marker.current?.closest<HTMLElement>('[data-app-composer]');
     if (!shell || !threadId) return;
-    const mobile = window.matchMedia?.('(max-width:640px) and (pointer:coarse)');
     let mount: HTMLElement | null = null;
     let projectMount: HTMLElement | null = null;
     let frame = 0;
@@ -47,7 +46,7 @@ export function PushButton() {
       }
       const changes = shell.querySelector<HTMLElement>('#thread-prompt-banner-git-toggle');
       // A collapsed composer can omit the branch footer while keeping its Git banner.
-      const anchor = mobile?.matches && changes ? changes : branch;
+      const anchor = changes ?? branch;
       if (!anchor?.parentElement) { mount?.remove(); mount = null; setTarget(null); return; }
       const location = anchor === changes ? 'changes' : 'branch';
       if (mount?.isConnected && mount.previousElementSibling === anchor) {
@@ -66,11 +65,10 @@ export function PushButton() {
       setTarget(mount);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(scan); };
-    mobile?.addEventListener('change', schedule);
     const observer = new MutationObserver(schedule);
     observer.observe(shell, { childList: true, subtree: true, attributes: true, attributeFilter: ['data-proxy-context-part'] });
     scan();
-    return () => { observer.disconnect(); mobile?.removeEventListener('change', schedule); cancelAnimationFrame(frame); mount?.remove(); projectMount?.remove(); };
+    return () => { observer.disconnect(); cancelAnimationFrame(frame); mount?.remove(); projectMount?.remove(); };
   }, [threadId]);
 
   return <><style>{`

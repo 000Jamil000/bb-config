@@ -66,8 +66,8 @@ it.each(['clean', 'unavailable'])('does not send a request when Git is %s', asyn
   expect(state.send).not.toHaveBeenCalled();
 });
 
-it('places the phone action beside changes and preserves focus on pointer down', async () => {
-  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+it.each([true, false])('places the action beside changes and preserves focus (touch=%s)', async touch => {
+  vi.stubGlobal('matchMedia', () => ({ matches: touch, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
   const button = await mount(true);
   expect(button.parentElement?.dataset.pushButtonLocation).toBe('changes');
   expect(button.parentElement?.previousElementSibling?.id).toBe('thread-prompt-banner-git-toggle');

@@ -220,32 +220,106 @@
       "file": "session.ts",
       "before": "            let loudChunks = 0;\n",
       "after": ""
+    },
+    {
+      "file": "compact-hosts.ts",
+      "before": "export interface CompactComposer {",
+      "after": "import type { ComposerSelection } from \"@get-bb/plugin-sdk/app\";\n\n/** A visible user-clicked voice start creates a normal thread, never a hidden worker. */\nexport function newVoiceThreadRequest(projectId: string, selection: ComposerSelection) {\n  if (!projectId.trim()) throw new Error(\"Сначала выбери проект.\");\n  return {\n    ...selection,\n    projectId,\n    environment: selection.environment ?? { type: \"project-default\" as const },\n    title: \"Голосовой разговор\",\n    prompt: \"[Voice Mode] Пользователь включил голосовой режим нового разговора. Пока задачи по проекту нет: не запускай команды и не меняй файлы. Коротко подтверди готовность и жди голосового запроса.\",\n  };\n}\n\nexport interface CompactComposer {"
+    },
+    {
+      "file": "app.tsx",
+      "before": "  useSettings,",
+      "after": "  useSettings,\n  useSdk,"
+    },
+    {
+      "file": "app.tsx",
+      "before": "import { compactThreadComposers, planCompactHosts, type CompactComposer }",
+      "after": "import { compactThreadComposers, planCompactHosts, newVoiceThreadRequest, type CompactComposer }"
+    },
+    {
+      "file": "app.tsx",
+      "before": "function ThreadComposerVoice({",
+      "after": "function NewThreadVoice() {\n  const composer = useComposer();\n  const sdk = useSdk();\n  const navigate = useBbNavigate();\n  const [starting, setStarting] = useState(false);\n  const [error, setError] = useState<string | null>(null);\n  const busy = useRef(false);\n  const mounted = useRef(true);\n  useEffect(() => {\n    mounted.current = true;\n    return () => { mounted.current = false; };\n  }, []);\n  if (composer.scope.kind !== \"new-thread\") return null;\n  const projectId = composer.scope.projectId;\n  const selection = composer.selection;\n  const canStart = !!projectId && !!selection && composer.isEmpty && !composer.isSubmitting;\n  async function start() {\n    if (busy.current || !canStart || !projectId || !selection) return;\n    busy.current = true;\n    setStarting(true);\n    setError(null);\n    try {\n      // Forward the exact visible project, environment, model and permissions.\n      // Never replace the draft or guess a machine from the sidebar selection.\n      const thread = await sdk.threads.spawn(newVoiceThreadRequest(projectId, selection));\n      if (!mounted.current) return;\n      const session = sessionFor(thread.id);\n      await session.start();\n      if (!mounted.current) { await session.stop(); return; }\n      navigate.toThread(thread.id);\n    } catch (cause) {\n      if (mounted.current) setError(cause instanceof Error ? cause.message : \"Не удалось открыть голосовой разговор.\");\n    } finally {\n      busy.current = false;\n      if (mounted.current) setStarting(false);\n    }\n  }\n  return (\n    <div className=\"flex w-full flex-col gap-1 py-1\">\n      <button type=\"button\" onClick={() => void start()} disabled={!canStart || starting}\n        aria-label=\"Начать новый голосовой разговор\" aria-busy={starting}\n        title={composer.isEmpty ? \"Создать новый тред и включить Voice Mode\" : \"Отправь или очисти черновик, чтобы начать новый голосовой разговор\"}\n        className=\"inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-50\">\n        <svg viewBox=\"0 0 16 16\" fill=\"currentColor\" aria-hidden className=\"size-4\">\n          {[4, 8, 12, 8, 4].map((h, i) => <rect key={i} x={1.5+i*2.75} y={(16-h)/2} width={1.75} height={h} rx={0.875} />)}\n        </svg>\n        {starting ? \"Создаю разговор…\" : \"Voice Mode — новый разговор\"}\n      </button>\n      {error && <p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>}\n    </div>\n  );\n}\n\nfunction ThreadComposerVoice({"
+    },
+    {
+      "file": "app.tsx",
+      "before": "export default definePluginApp((app) => {",
+      "after": "export default definePluginApp((app) => {\n  app.composer.customize({\n    id: \"new-thread-voice-mode\",\n    scopes: [\"new-thread\"],\n    banners: [{ id: \"start-voice-mode\", chrome: \"bare\", component: NewThreadVoice }],\n  });"
+    },
+    {
+      "file": "test/compact-hosts.test.ts",
+      "before": "   thread(\"d\", { scope: { kind: \"thread\" } }),\n    ]);\n    expect(kept.map((composer) => composer.key)).toEqual([\"a\"]);\n  });\n});\n",
+      "after": "   thread(\"d\", { scope: { kind: \"thread\" } }),\n    ]);\n    expect(kept.map((composer) => composer.key)).toEqual([\"a\"]);\n  });\n});\n\nimport { newVoiceThreadRequest } from \"../compact-hosts\";\n\ndescribe(\"new thread voice start\", () => {\n  it(\"preserves the selected machine, environment, provider, model and permissions\", () => {\n    const environment = { type: \"reuse\" as const, environmentId: \"environment-example\" };\n    const request = newVoiceThreadRequest(\"project-selected\", {\n      projectId: \"project-stale\", environment, providerId: \"codex\", model: \"selected-model\",\n      reasoningLevel: \"high\", serviceTier: \"default\", permissionMode: \"accept-edits\",\n    });\n    expect(request.projectId).toBe(\"project-selected\");\n    expect(request.environment).toEqual(environment);\n    expect(request.providerId).toBe(\"codex\");\n    expect(request.model).toBe(\"selected-model\");\n    expect(request.reasoningLevel).toBe(\"high\");\n    expect(request.serviceTier).toBe(\"default\");\n    expect(request.permissionMode).toBe(\"accept-edits\");\n    expect(request.prompt).toContain(\"не запускай команды и не меняй файлы\");\n  });\n  it(\"uses the project default environment only when no environment was selected\", () => {\n    expect(newVoiceThreadRequest(\"project-example\", {}).environment).toEqual({ type: \"project-default\" });\n  });\n  it(\"refuses an unresolved project\", () => {\n    expect(() => newVoiceThreadRequest(\"\", {})).toThrow();\n  });\n});\n"
+    },
+    {
+      "file": "compact-hosts.ts",
+      "before": "export interface CompactComposer {",
+      "after": "/** Place the compact new-thread action beside the host mic, with cleanup. */\nexport function mountNewVoiceButton(anchor: HTMLElement, onHost: (host: HTMLElement | null) => void): () => void {\n  const shell = anchor.closest(\"[data-app-composer]\") ?? anchor.closest(\"form\");\n  if (!shell) return () => {};\n  const portal = document.createElement(\"span\");\n  portal.className = \"voice-mode-host\";\n  portal.setAttribute(\"data-bb-plugin-root\", \"\");\n  portal.setAttribute(\"data-bb-plugin\", \"voice-mode\");\n  let frame = 0;\n  let current: HTMLElement | null = null;\n  const place = () => {\n    frame = 0;\n    const form = anchor.closest(\"form\") ?? shell.querySelector(\"form[data-promptbox]\");\n    const group = form?.querySelector(\"[data-promptbox-submit-group]\");\n    if (group && portal.nextSibling !== group) group.before(portal);\n    if (!group) portal.remove();\n    const next = portal.isConnected ? portal : null;\n    if (next !== current) { current = next; onHost(next); }\n  };\n  const schedule = () => { if (!frame) frame = requestAnimationFrame(place); };\n  const observer = new MutationObserver(schedule);\n  observer.observe(shell, { childList: true, subtree: true });\n  place();\n  return () => { observer.disconnect(); cancelAnimationFrame(frame); portal.remove(); onHost(null); };\n}\n\nexport interface CompactComposer {"
+    },
+    {
+      "file": "app.tsx",
+      "before": "planCompactHosts, newVoiceThreadRequest, type CompactComposer",
+      "after": "planCompactHosts, newVoiceThreadRequest, mountNewVoiceButton, type CompactComposer"
+    },
+    {
+      "file": "app.tsx",
+      "before": "  const mounted = useRef(true);\n  useEffect(() => {",
+      "after": "  const mounted = useRef(true);\n  const anchor = useRef<HTMLSpanElement>(null);\n  const [host, setHost] = useState<HTMLElement | null>(null);\n  useEffect(() => anchor.current ? mountNewVoiceButton(anchor.current, setHost) : undefined, []);\n  useEffect(() => {"
+    },
+    {
+      "file": "app.tsx",
+      "before": "  return (\n    <div className=\"flex w-full flex-col gap-1 py-1\">\n      <button type=\"button\" onClick={() => void start()} disabled={!canStart || starting}",
+      "after": "  const button = (\n      <button type=\"button\" onClick={() => void start()} disabled={!canStart || starting}"
+    },
+    {
+      "file": "app.tsx",
+      "before": "        className=\"inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-lg border border-border bg-foreground px-3 py-2 text-sm font-medium text-background disabled:opacity-50\">",
+      "after": "        className=\"ml-1 inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-foreground text-background disabled:opacity-50 max-md:pointer-coarse:h-10 max-md:pointer-coarse:w-10\">"
+    },
+    {
+      "file": "app.tsx",
+      "before": "        {starting ? \"Создаю разговор…\" : \"Voice Mode — новый разговор\"}\n      </button>\n      {error && <p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>}\n    </div>\n  );",
+      "after": "        <span className=\"sr-only\">{starting ? \"Создаю разговор…\" : \"Voice Mode\"}</span>\n      </button>\n  );\n  return <><span ref={anchor} hidden />{host ? createPortal(button, host) : button}\n    {error && <p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>}</>;"
     }
   ],
   "fileStates": {
     "app.css": {
       "0221aa349107b4bc09844d708ed6143326386b538dbecaf6164300f6621de5c4": 0,
-      "1f36416a09cd7b967b4b165cf0dd15bda269267d615858d023b4950f0e89d90c": 44
+      "1f36416a09cd7b967b4b165cf0dd15bda269267d615858d023b4950f0e89d90c": 56
     },
     "server.ts": {
       "1427348e09755a0a1dbb5c7effd680cbdaac73c02b8ce7245c86a5ffeab942b4": 0,
       "dd1be89a165e77e803bac995647bca78b296338ea8216f94e9c14ed93df8b3db": 14,
       "7ccf868cc50a33d0ab0cf770a27d9a43f99d7be59b20c66195540619167c5e11": 21,
       "15ef49c7916b6f328e97566bb6a3750a160cfa40fe98fdbbad7cbc17a61a9ac2": 37,
-      "6a8f03c72f97cfedbed74f2bd80f6ea8618f04aff4f657aedc8b3b19f38968be": 44
+      "6a8f03c72f97cfedbed74f2bd80f6ea8618f04aff4f657aedc8b3b19f38968be": 56
     },
     "session.ts": {
       "8fa08a019f5949f5054463c171e5557f3d5190465377365db464c9501207d149": 0,
       "97b80329c8875dd2b34fcfe72bccd981679c7a638c0bd175bf9a5aa228368ed3": 14,
       "8c2e95026e26b262d75729411b0c81c5a1e641d00403e60f011776a87f00bdd5": 21,
-      "0c4de57fe38c3b21650cbbe1b1e04d925a2959cc473b80e51b0dd71035f778ad": 44
+      "0c4de57fe38c3b21650cbbe1b1e04d925a2959cc473b80e51b0dd71035f778ad": 56
     },
     "test/server.test.ts": {
       "595aef96bccec5b3e355b3070d826203c4818afe4848f63859f46f6ca6672600": 0,
       "b92bf687494d1126c9b1005e0d00fe7ee9750960ee01d596a7f0bba820397d87": 14,
       "e0f2aa976e26ee457dbb1757abcbec169194cc77949a0b194c96dbad125a35ac": 21,
       "330533bae67852bdf99681ec2bebf745ad7b66051c64b903c423dda06bffdc65": 42,
-      "7b03afb387663320989fbe97a4a21b1c847579662ec0d1bf8fa920ec2f58fab6": 44
+      "7b03afb387663320989fbe97a4a21b1c847579662ec0d1bf8fa920ec2f58fab6": 56
+    },
+    "app.tsx": {
+      "667ac8899120a2d137b06d0822a62da9b1e7005dcfb4b8336e6cfe6143883900": 44,
+      "5f0526092842249651fe9c072849c0609129e17d917d94fb20febf3953bfeaeb": 50,
+      "3a59355922d39ec99599869f4a15064dfc8bd8fe483cd408412cb5e05690499f": 56
+    },
+    "compact-hosts.ts": {
+      "2c4925203638dcb6c41558fcdded317d0439ad2a4b264de1faae39f495a23cd1": 44,
+      "39c7b3bf225d6e9f1773baf3ffcda0f78dddb66e2942d5cd638bf893e6c328e4": 50,
+      "382c22e19cac1b563b4187d668c0447e54ef4599ad088856458390b53824d3da": 56
+    },
+    "test/compact-hosts.test.ts": {
+      "1ba0d83ee9caf519b98eb8c955489f8dcb125edbf76411190da9d9c41d6acc07": 44,
+      "0b752d8a5feafda131796c537ca9083fee116163e0f56a67fa308bbf19c64b59": 56
     }
   }
 }

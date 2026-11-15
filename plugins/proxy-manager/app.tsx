@@ -199,7 +199,7 @@ function RouteBadge() {
   if (settingsHost) settingsParams.set('host', settingsHost);
   const settingsUrl = `/plugins/proxy-manager/proxies?${settingsParams}`;
   const chip = <a href={settingsUrl} onPointerDown={event => {
-    if (event.button === 0) event.preventDefault();
+    if (event.pointerType === 'mouse' && event.button === 0) event.preventDefault();
     event.stopPropagation();
   }} onClick={event => {
     if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
@@ -212,7 +212,13 @@ function RouteBadge() {
     <span className="proxy-route-label min-w-0 truncate">{label}</span>
     {warning && <span role="img" aria-label={warning} className="shrink-0 text-amber-600">⚠</span>}
   </a>;
-  return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(chip, footerTarget) : chip}</>;
+  const machineVisible = footerTarget?.parentElement?.querySelector('button[aria-label="Machine"]');
+  const machineResolved = !!(threadId || hostId || environmentId);
+  const footer = <span className="proxy-footer-content">
+    {machineResolved && route?.hostName && !machineVisible && <span className="proxy-footer-machine" title={`Текущая машина: ${route.hostName}`}><Icon name="Laptop" className="size-3.5 shrink-0"/><span className="min-w-0 truncate">{route.hostName}</span></span>}
+    {chip}
+  </span>;
+  return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(footer, footerTarget) : chip}</>;
 
 }
 export default definePluginApp(app => {

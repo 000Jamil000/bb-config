@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Проверка футера рядом с полем ввода</title>
+<style>
+:root { --foreground:#eee; --border:#444; }
+* { box-sizing:border-box; }
+body { margin:0; height:100dvh; background:#151515; color:#eee; font:14px system-ui; }
+header { padding:16px; border-bottom:1px solid #333; }
+main { padding:16px; }
+[data-app-composer] { position:fixed; bottom:12px; left:16px; right:16px; }
+form { position:relative; z-index:1; border:1px solid #444; border-radius:16px; background:#151515; padding:12px; }
+textarea { width:100%; height:90px; resize:none; background:transparent; border:0; color:#eee; font:16px system-ui; }
+.actions { height:40px; display:flex; align-items:center; gap:12px; min-width:0; overflow:hidden; }
+button { height:32px; flex-shrink:0; display:inline-flex; align-items:center; gap:6px; border:0; background:transparent; color:#ddd; font:14px system-ui; padding:0 4px; cursor:pointer; white-space:nowrap; }
+.context-footer { display:flex; align-items:center; gap:8px; height:32px; min-height:32px; margin-top:8px; }
+.context-row { display:flex; min-width:0; flex:1; }
+.context-footer > :not(.context-row) { flex-shrink:0; }
+.proxy-route { display:flex; }
+.truncate { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.permission { color:#ff853b; }
+@layer base {
+  [data-promptbox-compact-label] { display:none; }
+  @container promptbox-shell (width <= 34rem) {
+    [data-promptbox-shell] [data-promptbox-full-label] { display:none !important; }
+    [data-promptbox-shell] [data-promptbox-compact-label] { display:block; }
+    [data-promptbox-shell] [data-promptbox-shrinkable-control] { flex-shrink:1 !important; }
+  }
+  @container promptbox-shell (width <= 22rem) {
+    [data-promptbox-shell] [data-promptbox-hide-tiny] { display:none !important; }
+  }
+}
+</style>
+<link rel="stylesheet" href="../dist/app.css">
+<header>Проверка: поле ввода и штатный футер высотой 32 px</header>
+<main>При уменьшении высоты окна имитируется доступная область над клавиатурой.</main>
+<section data-app-composer data-promptbox-shell style="container-name:promptbox-shell;container-type:inline-size">
+<span id="new-voice-anchor" hidden></span>
+  <form data-promptbox>
+    <textarea aria-label="Сообщение" placeholder="Написать сообщение"></textarea>
+    <div class="actions"><button>+</button><button>6.1-Sol⌄</button><button>Handoff</button><span data-promptbox-submit-group><button aria-label="Start voice input">Микрофон</button></span></div>
+  </form>
+  <div class="context-footer">
+    <div class="context-row" data-proxy-context-row>
+      <button data-proxy-context-part="project"><span data-option-display data-promptbox-full-label>bb-config</span><span data-promptbox-compact-label>bb</span>⌄</button>
+      <span data-proxy-context-part="branch"><button><span data-option-display data-promptbox-full-label>main</span><span data-promptbox-compact-label>m</span>⌄</button></span>
+      <button aria-label="Machine" data-promptbox-shrinkable-control data-promptbox-hide-tiny data-proxy-context-part="machine"><span data-option-display data-promptbox-full-label>Tru</span><span data-promptbox-compact-label>T</span>⌄</button>
+      <span class="proxy-footer-mount" data-proxy-context-part="proxy"><button class="proxy-route"><span class="proxy-route-label truncate">Без прокси</span>⌄</button></span>
+    </div>
+    <button class="permission">Full⌄</button><span>74%</span>
+  </div>
+</section>
+<script>
+window.checkFooterLayout = () => {
+  const form = document.querySelector('form').getBoundingClientRect();
+  const row = document.querySelector('[data-proxy-context-row]');
+  const footer = document.querySelector('.context-footer').getBoundingClientRect();
+  const bounds = row.getBoundingClientRect();
+  row.scrollLeft = row.scrollWidth;
+  const route = row.querySelector('.proxy-route').getBoundingClientRect();
+  const labels = [...row.querySelectorAll('[data-option-display],.proxy-route-label')];
+  const result = {
+    width:innerWidth, height:innerHeight,
+    belowInput:bounds.top>=form.bottom && footer.top>=form.bottom,
+    fixedHeight:bounds.height<=32 && footer.height<=32,
+    withinViewport:footer.bottom<=innerHeight && form.top>=0,
+    noPageOverflow:document.documentElement.scrollWidth<=innerWidth,
+    routeReachable:route.right<=bounds.right+1 && route.left>=bounds.left-1,
+    labelsReadable:labels.every(el=>el.getBoundingClientRect().width>0 && el.scrollWidth<=el.clientWidth+1),
+  };
+  row.scrollLeft = 0;
+  return result;
+};
+</script>
+</html>

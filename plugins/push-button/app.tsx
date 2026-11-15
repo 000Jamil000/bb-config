@@ -27,12 +27,13 @@ export function PushButton() {
       let branch = shell.querySelector<HTMLElement>('[data-promptbox-hide-branch-compact], button[aria-label="Branch"]')
         ?? shell.querySelector('[data-icon="GitBranch"], [data-icon="GitMerge"]')?.closest<HTMLElement>('button');
       while (branch?.parentElement?.matches('[data-bb-plugin-root][data-bb-plugin].contents')) branch = branch.parentElement;
-      if (!branch?.parentElement) { mount?.remove(); mount = null; setTarget(null); return; }
       const changes = shell.querySelector<HTMLElement>('#thread-prompt-banner-git-toggle');
+      // A collapsed composer can omit the branch footer while keeping its Git banner.
       const anchor = mobile?.matches && changes ? changes : branch;
+      if (!anchor?.parentElement) { mount?.remove(); mount = null; setTarget(null); return; }
       const location = anchor === changes ? 'changes' : 'branch';
       if (mount?.isConnected && mount.previousElementSibling === anchor) {
-        mount.style.order = location === 'branch' ? getComputedStyle(branch).order : '0';
+        mount.style.order = location === 'branch' ? getComputedStyle(anchor).order : '0';
         return;
       }
       mount?.remove();
@@ -42,7 +43,7 @@ export function PushButton() {
       mount.setAttribute('data-bb-plugin-root', '');
       mount.setAttribute('data-bb-plugin', 'push-button');
       mount.style.display = 'inline-flex';
-      mount.style.order = location === 'branch' ? getComputedStyle(branch).order : '0';
+      mount.style.order = location === 'branch' ? getComputedStyle(anchor).order : '0';
       anchor.after(mount);
       setTarget(mount);
     };

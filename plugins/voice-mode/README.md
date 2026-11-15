@@ -12,6 +12,16 @@ Changes:
   This also covers work-tool descriptions, acknowledgments, results and status
   reports: one conversational identity, accurate results, no delegation narration.
   Direct questions about architecture must still be answered truthfully.
+- A compact waveform button beside the native microphone starts Voice Mode
+  from the new-thread screen, including phone layouts. No full-width banner is
+  shown. It creates a normal visible thread with the selected
+  project, environment/machine, provider, model and permissions, sends a brief
+  readiness-only setup message, then opens voice and navigates to that thread.
+  It never replaces a nonempty draft; the button is disabled until the draft is
+  sent or cleared. Navigating away while creation is pending prevents a delayed
+  microphone activation. The setup uses the existing agent allowance.
+  Its placement helper follows composer rerenders and releases its observer
+  and portal on unmount; the fallback is also a compact button.
 - A random short Russian greeting from 30 serious and playful phrases after
   the client microphone and audio player are ready. The previous phrase is
   excluded during the lifetime of the loaded plugin (a reload resets it).
@@ -63,7 +73,7 @@ dev dependencies using `npm test` and `npm run typecheck` before applying.
 `mobile-check.js` is a Browser Automation fixture at 390 px: dictation remains
 visible while idle, is owned by the live voice pill during a session, and
 returns when the session ends. This fixture is not a signed-in mobile device
-test. The upstream suite plus added regressions passes 48 tests, including
+test. The upstream suite plus added regressions passes 51 tests, including
 30 unique greetings and exclusion of the last choice. A live
 subscription check accepted the noise settings and returned the spoken phrase
 «Я готов. Что сделать?» without provider errors.

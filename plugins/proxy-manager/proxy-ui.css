@@ -44,11 +44,65 @@
   [data-proxy-context-row] > [data-proxy-context-part="machine"] { max-width: 7rem; }
 }
 
+.proxy-footer-content { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; max-width: 100%; }
+.proxy-footer-machine { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; font-size: 12px; }
+
 @media (max-width: 640px) {
-  [data-proxy-context-row] { overflow:hidden; }
-  [data-proxy-context-row] > [data-proxy-context-part="branch"] { min-width:0; max-width:7rem; }
-  [data-proxy-context-row] > [data-proxy-context-part="proxy"] { flex:0 1 auto; }
-  .proxy-footer-mount .proxy-route { padding-inline:3px; gap:4px; }
+  /* The host reserves one footer line, including above the iOS keyboard.
+     Keep that height; scroll horizontally rather than grow behind the editor. */
+  [data-proxy-context-row] {
+    display: flex !important;
+    flex-wrap: nowrap;
+    min-width: 0;
+    max-width: 100%;
+    height: 32px;
+    overflow-x: auto;
+    overflow-y: hidden;
+    overscroll-behavior-x: contain;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    column-gap: 8px;
+  }
+  [data-proxy-context-row]::-webkit-scrollbar { display: none; }
+  [data-proxy-context-row] > [data-proxy-context-part] {
+    flex: 0 0 auto;
+    min-width: 0;
+    width: auto;
+    max-width: none;
+    color: var(--foreground);
+    flex-shrink: 0 !important;
+  }
+  [data-proxy-context-row] > [data-proxy-context-part="branch"] {
+    flex: 0 0 auto;
+    max-width: none;
+  }
+  .proxy-footer-machine { font-size: 14px; }
+  [data-proxy-context-row] [data-option-display],
+  .proxy-footer-mount .proxy-route-label {
+    max-width: none;
+    color: var(--foreground);
+    font-size: 14px;
+  }
+  .proxy-footer-mount .proxy-route {
+    height: 32px;
+    min-height: 0;
+    padding-inline: 6px;
+    gap: 6px;
+    justify-content: flex-start;
+    font-size: 14px;
+    line-height: 20px;
+  }
 }
 
-@media (max-width:640px) and (pointer:coarse) { .proxy-footer-mount .proxy-route { height:44px; } }
+/* Match the host base layer: its compact-label rules are !important. */
+@layer base {
+  @media (max-width: 640px) {
+  /* BB's container queries hide labels and force shrinking on narrow
+     composers. A scrolling line has room for the complete controls. */
+  [data-proxy-context-row][data-proxy-context-row] [data-promptbox-full-label] { display: inline !important; max-inline-size: none; }
+  [data-proxy-context-row][data-proxy-context-row] [data-promptbox-compact-label] { display: none !important; }
+  [data-proxy-context-row][data-proxy-context-row] [data-promptbox-shrinkable-control] { flex-shrink: 0 !important; max-width: none; }
+  [data-proxy-context-row][data-proxy-context-row] [data-promptbox-hide-branch-compact],
+  [data-proxy-context-row][data-proxy-context-row] [data-promptbox-hide-tiny] { display: inline-flex !important; }
+  }
+}

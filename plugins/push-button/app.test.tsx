@@ -26,8 +26,8 @@ afterEach(async () => {
   vi.unstubAllGlobals();
 });
 
-async function mount(withChanges = false) {
-  document.body.innerHTML = `<div data-app-composer>${withChanges ? '<div><button id="thread-prompt-banner-git-toggle">Changes</button></div>' : ''}<div><button aria-label="Branch">main</button></div><div id="root"></div></div>`;
+async function mount(withChanges = false, withBranch = true) {
+  document.body.innerHTML = `<div data-app-composer>${withChanges ? '<div><button id="thread-prompt-banner-git-toggle">Changes</button></div>' : ''}${withBranch ? '<div><button aria-label="Branch">main</button></div>' : ''}<div id="root"></div></div>`;
   root = createRoot(document.getElementById('root')!);
   await act(async () => root!.render(<PushButton />));
   return document.querySelector<HTMLButtonElement>('[data-push-thread-button]')!;
@@ -75,4 +75,25 @@ it('places the phone action beside changes and preserves focus on pointer down',
   await act(async () => { button.dispatchEvent(down); });
   expect(down.defaultPrevented).toBe(true);
   expect(state.send).not.toHaveBeenCalled();
+});
+
+it('keeps the phone push action beside changes when the collapsed composer has no branch footer', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const button = await mount(true, false);
+  expect(button).not.toBeNull();
+  expect(button.disabled).toBe(false);
+  expect(button.parentElement?.dataset.pushButtonLocation).toBe('changes');
+  expect(button.parentElement?.previousElementSibling?.id).toBe('thread-prompt-banner-git-toggle');
+});
+
+it('preserves the changes action when the composer removes its branch row', async () => {
+  vi.stubGlobal('matchMedia', () => ({ matches: true, addEventListener: vi.fn(), removeEventListener: vi.fn() }));
+  const button = await mount(true);
+  await act(async () => {
+    document.querySelector('button[aria-label="Branch"]')!.parentElement!.remove();
+    await new Promise(resolve => setTimeout(resolve, 60));
+  });
+  expect(document.querySelector('[data-push-thread-button]')).toBe(button);
+  expect(button.isConnected).toBe(true);
+  expect(button.parentElement?.dataset.pushButtonLocation).toBe('changes');
 });

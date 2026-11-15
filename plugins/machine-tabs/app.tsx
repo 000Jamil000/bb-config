@@ -1025,6 +1025,22 @@ const HIDE_EMPTY_GROUPS = `
   content: "";
   background: ${DAY_ICON} center / 14px no-repeat;
 }
+/* Touch rows have no mouse-hover toolbar. Empty trailing cells must not
+   shorten the title; real progress/attention indicators keep their space. */
+@media (hover: none) {
+  [data-machine-tabs-list] [data-sidebar-rename-row] .bb-sidebar-hover-actions-inset,
+  [data-machine-tabs-list] [data-sidebar-rename-row] [style*="--bb-sidebar-hover-actions-inset"] {
+    padding-right: 0 !important;
+  }
+  [data-machine-tabs-list] [data-sidebar-rename-row]:not(:has(
+    [data-sidebar-thread-trailing-indicator],
+    [data-sidebar-hover-actions-open="true"],
+    [data-sidebar-hover-actions-mobile="always"],
+    [data-thread-actions-trigger][data-state="open"]
+  )) > [data-sidebar-thread-trailing] {
+    display: none;
+  }
+}
 /* One mark per row: the agent's icon sits small in the top right corner of
    the project mark instead of beside it. */
 span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] {

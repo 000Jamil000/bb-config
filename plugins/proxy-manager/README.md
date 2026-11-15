@@ -42,3 +42,25 @@ Commands:
 
 Build: `npm run check`, `npm test`, `bb plugin build`.
 See TEST_RESULTS.md for the original integration correction and subsequent native tests.
+## Mobile composer footer
+
+At widths up to 640 px the existing controls remain in the host's 32 px footer
+line. Labels use 14 px text; controls do not shrink into unreadable fragments.
+The line scrolls horizontally, without increasing the composer's reserved
+height or putting controls behind the input when the keyboard opens. Original
+controls, handlers and agent routes remain unchanged. Wider windows retain
+their existing layout.
+
+After building, `tests/footer-layout.html` loads the compiled stylesheet and
+checks the footer together with the input and the
+host's fixed footer height. `window.checkFooterLayout()` verifies no overlap,
+no page overflow, readable labels and access to the last control by scrolling.
+Checked in Chrome at widths 320/390/430/1024 px and heights 844/500/420 px;
+reduced heights represent the area available above a keyboard. The fixture
+includes the host compact-label rules and asserts labels have visible boxes.
+This does not
+replace a real iOS keyboard test. Refresh the app to load rebuilt styles.
+
+Full names and machine controls override the host compact rules in the same CSS
+base layer. If no native machine picker exists, the current machine name is shown
+as read-only text beside the route. Touch events preserve horizontal scrolling.

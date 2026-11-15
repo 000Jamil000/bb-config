@@ -305,6 +305,13 @@
     "source": "path:plugins/proxy-manager"
   },
   {
+    "id": "push-button",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Push Button",
+    "source": "path:plugins/push-button"
+  },
+  {
     "id": "push-notifications",
     "version": "0.1.0",
     "enabled": true,

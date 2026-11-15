@@ -1,0 +1,38 @@
+{
+  "name": "bb-plugin-push-button",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Push Button",
+    "description": "Send a push request to the current thread from the branch row. Does not run Git.",
+    "branding": {
+      "icon": "ArrowUp"
+    },
+    "app": "./app.tsx",
+    "server": "./server.ts",
+    "host": "./host.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.132",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "jsdom": "^27.0.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "sonner": "^1.7.4",
+    "typescript": "^5.7.0",
+    "vitest": "^4.1.10"
+  }
+}

@@ -1,8 +1,8 @@
 # Project Open
 
-Two folder/terminal icons on project rows and thread headers. Desktop controls
-appear on hover or keyboard focus; their space is reserved so BB’s controls do
-not move. The new icons precede native Open; native Open and the panel toggle
+Two folder/terminal icons on thread rows and thread headers. Desktop controls
+appear on hover or keyboard focus. Sidebar shortcuts overlay the title’s right
+edge without reserving space; header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
 remain adjacent. BB’s sidebar renderer and menus are preserved.
 
 The terminal uses BB’s original New tab → Start terminal, scoped to the thread
@@ -61,8 +61,9 @@ bb plugin build .
 bb plugin install . --yes
 ```
 
-Rebuild/reload Machine Tabs too: it adds `data-machine-tabs-host-id` to existing
-containers so repeated project names select the correct source machine.
+Sidebar controls use the row’s thread ID and resolve its environment at activation,
+including its host and worktree. Project groups have no folder/terminal shortcuts.
+Machine Tabs is not required for resolving a folder.
 Header controls are mounted from the thread’s composer banner scope, then
 portalled to its own header. They use the actual thread ID even in split panes.
 DOM markers and accessible labels must be rechecked after BB UI updates.

@@ -27,6 +27,7 @@ import {
 import type { PluginThreadListProps } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
+import { projectsByLatestThread } from "./lib/project-order";
 
 const TABS_CHANGED = "machine-tabs-changed";
 const ICONS_CHANGED = "machine-tabs-icons-changed";
@@ -425,7 +426,10 @@ async function loadNativeList(
       return useMemo(() => {
         if (view.recent) return asRecentSection(result, view);
         const filtered = applyFilters(result, view);
-        return view.byDay ? groupByDay(filtered, view.dayField) : filtered;
+        const ordered = filtered.projects
+          ? { ...filtered, projects: projectsByLatestThread(filtered.projects, filtered.threads) }
+          : filtered;
+        return view.byDay ? groupByDay(ordered, view.dayField) : ordered;
       }, [result, view]);
     },
   };
@@ -1171,7 +1175,7 @@ function MachineThreadList(props: PluginThreadListProps) {
     const none = { machineId: selectedId, projectId: null, day: null };
     if (outer === "project") {
       for (const thread of shown) bump(thread.projectId);
-      return projects
+      return projectsByLatestThread(projects, shown)
         .filter((project) => count.has(project.id))
         .map((project) => ({
           id: `project:${project.id}`,

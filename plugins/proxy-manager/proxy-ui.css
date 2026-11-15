@@ -44,8 +44,6 @@
   [data-proxy-context-row] > [data-proxy-context-part="machine"] { max-width: 7rem; }
 }
 
-.proxy-footer-content { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; min-width: 0; max-width: 100%; }
-.proxy-footer-machine { display: inline-flex; align-items: center; gap: 6px; min-width: 0; white-space: nowrap; font-size: 12px; }
 
 @media (max-width: 640px) {
   /* The host reserves one footer line, including above the iOS keyboard.
@@ -76,7 +74,6 @@
     flex: 0 0 auto;
     max-width: none;
   }
-  .proxy-footer-machine { font-size: 14px; }
   [data-proxy-context-row] [data-option-display],
   .proxy-footer-mount .proxy-route-label {
     max-width: none;

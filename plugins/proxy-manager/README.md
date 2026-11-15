@@ -62,5 +62,5 @@ This does not
 replace a real iOS keyboard test. Refresh the app to load rebuilt styles.
 
 Full names and machine controls override the host compact rules in the same CSS
-base layer. If no native machine picker exists, the current machine name is shown
-as read-only text beside the route. Touch events preserve horizontal scrolling.
+base layer. The native machine label is preserved, including its read-only form;
+no second machine label is added beside the route. Touch events preserve horizontal scrolling.

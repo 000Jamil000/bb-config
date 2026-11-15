@@ -212,13 +212,7 @@ function RouteBadge() {
     <span className="proxy-route-label min-w-0 truncate">{label}</span>
     {warning && <span role="img" aria-label={warning} className="shrink-0 text-amber-600">⚠</span>}
   </a>;
-  const machineVisible = footerTarget?.parentElement?.querySelector('button[aria-label="Machine"]');
-  const machineResolved = !!(threadId || hostId || environmentId);
-  const footer = <span className="proxy-footer-content">
-    {machineResolved && route?.hostName && !machineVisible && <span className="proxy-footer-machine" title={`Текущая машина: ${route.hostName}`}><Icon name="Laptop" className="size-3.5 shrink-0"/><span className="min-w-0 truncate">{route.hostName}</span></span>}
-    {chip}
-  </span>;
-  return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(footer, footerTarget) : chip}</>;
+  return <><span ref={setAnchor} hidden data-proxy-route-anchor=""/>{footerTarget ? createPortal(chip, footerTarget) : chip}</>;
 
 }
 export default definePluginApp(app => {

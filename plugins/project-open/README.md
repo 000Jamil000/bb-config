@@ -1,7 +1,10 @@
 # Project Open
 
-Two folder/terminal icons on thread rows and thread headers. Desktop controls
-appear on hover or keyboard focus. Sidebar shortcuts overlay the title’s right
+Two folder/terminal icons on thread rows and thread headers. Sidebar controls
+appear on hover or keyboard focus; header controls stay visible. Both buttons
+show a custom tooltip after 100 ms with the action, machine name and full
+thread environment path. Destination data comes from BB’s live sidebar and
+is refreshed through the thread/environment/host SDK when the tooltip opens. Sidebar shortcuts overlay the title’s right
 edge without reserving space; header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
 remain adjacent. BB’s sidebar renderer and menus are preserved.
 
@@ -75,3 +78,12 @@ and cached files must not be committed or copied into the settings snapshot.
 The handler’s private config must be restored separately; see the repository’s
 private customization notes. Disabling the plugin removes the icons without
 replacing BB’s original controls.
+
+Connection lifecycle: the macOS helper starts rclone on demand, without a
+LaunchAgent. Each configured remote host reuses its existing local server and
+mount. After reboot the next activation creates the connection again; it does
+not automatically restore Finder windows. Network/VPN interruptions have no
+helper watchdog or guaranteed transparent recovery. An unreachable SSH target
+requires restored connectivity and may require ejecting/reopening the disk.
+The helper neither provides a VPN/proxy route nor maintains an offline project
+copy. Every remote host needs an explicit private SSH/root mapping.

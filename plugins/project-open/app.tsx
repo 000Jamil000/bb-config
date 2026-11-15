@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { definePluginApp, useSdk, useBbNavigate, useSettings, useComposer,
+import { definePluginApp, useSdk, useBbNavigate, useSettings, useComposer, experimental_useSidebarThreads,
   experimental_Icon as Icon } from '@get-bb/plugin-sdk/app';
 import { toast } from 'sonner';
+import * as Tooltip from '@radix-ui/react-tooltip';
 import { openNativeTerminal, openNativeWorkspace, waitFor } from './native';
 import { finderFolderUrl } from './folder-target';
 
@@ -52,6 +53,7 @@ const CSS = `
 }
 [data-project-open-controls] { position:relative; width:40px; flex-basis:40px; }
 [data-project-open-controls] .project-open-button { width:20px; height:24px; flex-basis:20px; }
+[data-project-open-header] { opacity:1; pointer-events:auto; }
 [data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
 [data-sidebar-rename-row]:focus-within > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
 [data-testid="app-page-header-content-row"]:hover [data-project-open-header],
@@ -60,6 +62,13 @@ const CSS = `
 .project-open-button:hover { background:var(--state-hover); color:var(--foreground); }
 .project-open-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
 .project-open-button:disabled { opacity:.4; cursor:wait; }
+.project-open-tooltip { z-index:10000; max-width:min(460px, calc(100vw - 16px)); padding:10px 12px; border-radius:8px; background:var(--foreground); color:var(--background); box-shadow:0 4px 12px #0002; font-size:12px; line-height:1.4; pointer-events:none; }
+.project-open-tooltip-action { font-weight:600; margin-bottom:7px; }
+.project-open-tooltip-row { display:flex; align-items:flex-start; gap:7px; }
+.project-open-tooltip-row + .project-open-tooltip-row { margin-top:5px; }
+.project-open-tooltip-row > svg { width:14px; height:14px; flex-shrink:0; margin-top:1px; opacity:.8; }
+.project-open-tooltip-host { font-weight:500; }
+.project-open-tooltip-path { min-width:0; font-family:var(--font-mono, monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
 @media (hover:none) { [data-project-open-controls], [data-project-open-header] { flex-basis:64px; width:64px; opacity:1; pointer-events:auto; } .project-open-button { flex-basis:32px; width:32px; height:36px; } }
 @media (prefers-reduced-motion:reduce) { [data-project-open-controls], [data-project-open-header] { transition:none; } }
 `;
@@ -95,16 +104,50 @@ function HeaderBridge() {
 function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: string }) {
   const sdk = useSdk(), navigate = useBbNavigate();
   const { values } = useSettings();
+  const { threads } = experimental_useSidebarThreads();
+  const sidebarThread = threads.find(thread => thread.id === threadId);
+  const [tooltipOpen, setTooltipOpen] = useState<string | null>(null);
+  const tooltipTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hideTooltip = () => {
+    if (tooltipTimer.current) clearTimeout(tooltipTimer.current);
+    tooltipTimer.current = null;
+    setTooltipOpen(null);
+  };
+  useEffect(() => () => { if (tooltipTimer.current) clearTimeout(tooltipTimer.current); }, []);
+  const [destination, setDestination] = useState<{ threadId: string; hostName: string; path: string; error?: string } | null>(null);
+  useEffect(() => {
+    if (!tooltipOpen) return;
+    const controller = new AbortController();
+    setDestination(null);
+    void (async () => {
+      const thread = await sdk.threads.get({ threadId, signal: controller.signal });
+      if (!thread.environmentId) throw new Error('У треда нет рабочей папки.');
+      const environment = await sdk.environments.get({ environmentId: thread.environmentId, signal: controller.signal });
+      if (!environment.path) throw new Error('У треда нет рабочей папки.');
+      const host = await sdk.hosts.get({ hostId: environment.hostId, signal: controller.signal });
+      if (!controller.signal.aborted) setDestination({ threadId, hostName: host.name, path: environment.path });
+    })().catch(error => {
+      if (!controller.signal.aborted) setDestination({ threadId, hostName: '', path: '', error: error instanceof Error ? error.message : String(error) });
+    });
+    return () => controller.abort();
+  }, [sdk, threadId, tooltipOpen]);
+  const currentDestination = destination?.threadId === threadId ? destination : null;
+  const hostName = currentDestination?.hostName || sidebarThread?.host?.name;
+  const path = currentDestination?.path || sidebarThread?.environment?.path;
   const [busy, setBusy] = useState(false);
   const pending = useRef<AbortController | null>(null);
   useEffect(() => () => pending.current?.abort(), []);
-  return <>{(['folder', 'terminal'] as const).map(kind => <button type="button" key={kind}
+  return <Tooltip.Provider delayDuration={100} skipDelayDuration={300}>{(['folder', 'terminal'] as const).map(kind => <Tooltip.Root key={kind}
+    open={tooltipOpen === kind} onOpenChange={open => { if (!open) hideTooltip(); }}>
+    <Tooltip.Trigger asChild><button type="button"
     className="project-open-button" disabled={busy || !values}
     aria-label={kind === 'folder' ? 'Открыть папку треда' : 'Открыть терминал треда в BB'}
-    title={kind === 'folder' ? 'Открыть папку треда в Finder' : 'Открыть терминал треда в BB'}
+    onPointerEnter={() => { hideTooltip(); tooltipTimer.current = setTimeout(() => setTooltipOpen(kind), 100); }}
+    onPointerLeave={hideTooltip} onFocus={() => { hideTooltip(); setTooltipOpen(kind); }} onBlur={hideTooltip}
     onPointerDown={event => event.stopPropagation()} onDoubleClick={event => event.stopPropagation()}
     onClick={event => {
       event.stopPropagation(); event.preventDefault();
+      hideTooltip();
       if (pending.current) return;
       const controller = new AbortController(); pending.current = controller; setBusy(true);
       void (async () => {
@@ -132,7 +175,15 @@ function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: strin
       })()
         .catch(error => { if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : String(error)); })
         .finally(() => { if (!controller.signal.aborted) { pending.current = null; setBusy(false); } });
-    }}><Icon name={kind === 'folder' ? 'FolderOpen' : 'Terminal'} className="size-4" /></button>)}</>;
+    }}><Icon name={kind === 'folder' ? 'FolderOpen' : 'Terminal'} className="size-4" /></button></Tooltip.Trigger>
+    <Tooltip.Portal><Tooltip.Content className="project-open-tooltip" side="bottom" sideOffset={6} collisionPadding={8}>
+      <div className="project-open-tooltip-action">{kind === 'folder' ? 'Открыть папку' : 'Открыть терминал в BB'}</div>
+      {currentDestination?.error ? <div>{currentDestination.error}</div> : <>
+        <div className="project-open-tooltip-row"><Icon name="Laptop" aria-hidden="true" /><span className="project-open-tooltip-host">{hostName || 'Уточняю машину…'}</span></div>
+        <div className="project-open-tooltip-row"><Icon name="Folder" aria-hidden="true" /><code className="project-open-tooltip-path">{path || 'Уточняю путь…'}</code></div>
+      </>}
+    </Tooltip.Content></Tooltip.Portal>
+  </Tooltip.Root>)}</Tooltip.Provider>;
 }
 
 function ProjectControls() {

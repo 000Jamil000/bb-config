@@ -15,18 +15,20 @@
     "server": "./server.ts",
     "app": "./app.tsx"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@radix-ui/react-tooltip": "^1.4.1"
+  },
   "devDependencies": {
     "@get-bb/plugin-sdk": "0.6.132",
     "@types/node": "^22.0.0",
     "@types/react": "^19.0.0",
     "@types/react-dom": "^19.0.0",
+    "jsdom": "^27.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "sonner": "^1.7.4",
     "typescript": "^5.7.0",
-    "vitest": "^4.1.10",
-    "jsdom": "^27.0.0"
+    "vitest": "^4.1.10"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

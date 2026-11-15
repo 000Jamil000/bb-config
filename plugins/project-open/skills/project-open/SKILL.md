@@ -4,7 +4,8 @@ description: Diagnose Project Open’s Finder folder buttons and original BB ter
 ---
 
 Project Open adds hover/focus folder and terminal icons on individual thread
-rows and in thread headers. Do not replace BB’s sidebar, menus or terminal.
+rows and always-visible icons in thread headers. Both buttons have fast custom
+tooltips with the machine name and full environment path. Do not replace BB’s sidebar, menus or terminal.
 Resolve host/path from the selected thread’s environment, never a project source.
 Header scope comes from the real thread composer; never infer a thread from
 only the URL when split panes are open.

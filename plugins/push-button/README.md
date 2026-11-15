@@ -30,3 +30,9 @@ files control when present, otherwise beside the branch. Its label remains
 visible and the touch target is 44 px tall. Pointer down preserves composer
 focus, so collapsing the draft does not remove the target before click.
 Desktop placement remains beside the branch.
+
+The project name is shown first in the existing composer status bar when it
+has no native project control. It scrolls horizontally with the other footer
+items on phones. No project or machine banner is added above Git changes.
+Project metadata comes from the thread via the SDK; failure to resolve it
+does not block Git status. Unmount removes the added footer element.

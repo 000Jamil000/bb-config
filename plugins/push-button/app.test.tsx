@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 
 const state = vi.hoisted(() => ({
   send: vi.fn(),
-  status: { state: 'ready', message: 'Есть изменения' },
+  status: { state: 'ready', message: 'Есть изменения' } as { state: string; message: string; projectName?: string; hostName?: string },
   composer: { scope: { kind: 'thread', threadId: 'selected-thread' }, text: 'Несохранённый черновик', isSubmitting: false, isSubmittingBlocked: false },
 }));
 vi.mock('@get-bb/plugin-sdk/app', () => ({
@@ -96,4 +96,17 @@ it('preserves the changes action when the composer removes its branch row', asyn
   expect(document.querySelector('[data-push-thread-button]')).toBe(button);
   expect(button.isConnected).toBe(true);
   expect(button.parentElement?.dataset.pushButtonLocation).toBe('changes');
+});
+
+it('shows the project in the footer, without adding a banner above changes', async () => {
+  state.status = { state: 'ready', message: 'Есть изменения', projectName: 'Example project', hostName: 'Example host' };
+  await mount(true);
+  const project = document.querySelector('[aria-label="Проект: Example project"]')!;
+  const branch = document.querySelector('button[aria-label="Branch"]')!;
+  expect(project.parentElement?.parentElement).toBe(branch.parentElement);
+  expect(project.parentElement?.dataset.proxyContextPart).toBe('project');
+  expect(project.parentElement?.style.order).toBe('-1');
+  expect(document.querySelector('.push-button-machine')).toBeNull();
+  await act(async () => root!.unmount()); root = undefined;
+  expect(document.querySelector('[data-push-project-mount]')).toBeNull();
 });

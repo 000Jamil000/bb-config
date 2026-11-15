@@ -7,16 +7,21 @@ export default function pushButton(bb: BbPluginApi) {
     async status({ threadId }, context) {
       const signal = context.experimental_signal;
       let hostName: string | undefined;
+      let projectName: string | undefined;
       try {
         const thread = await bb.sdk.threads.get({ threadId, signal });
-        if (!thread.environmentId) return { state: 'unavailable' as const, message: 'У треда нет рабочей папки' };
+        try {
+          const project = await bb.sdk.projects.get({ projectId: thread.projectId, signal });
+          projectName = project.name;
+        } catch { /* Project metadata must not block Git status. */ }
+        if (!thread.environmentId) return { state: 'unavailable' as const, message: 'У треда нет рабочей папки', projectName };
         const environment = await bb.sdk.environments.get({ environmentId: thread.environmentId, signal });
         const machine = await bb.sdk.hosts.get({ hostId: environment.hostId, signal });
         hostName = machine.name;
-        if (!environment.path || machine.status !== 'connected') return { state: 'unavailable' as const, message: 'Машина или папка недоступна', hostName };
-        return { ...await host.call('status', { path: environment.path }, { hostId: environment.hostId, signal, timeoutMs: 8000 }), hostName };
+        if (!environment.path || machine.status !== 'connected') return { state: 'unavailable' as const, message: 'Машина или папка недоступна', hostName, projectName };
+        return { ...await host.call('status', { path: environment.path }, { hostId: environment.hostId, signal, timeoutMs: 8000 }), hostName, projectName };
       } catch {
-        return { state: 'unavailable' as const, message: 'Не удалось проверить Git в папке треда', ...(hostName ? { hostName } : {}) };
+        return { state: 'unavailable' as const, message: 'Не удалось проверить Git в папке треда', hostName, projectName };
       }
     },
   });

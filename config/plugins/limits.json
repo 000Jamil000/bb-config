@@ -1,0 +1,10 @@
+{
+  "refreshSeconds": "120",
+  "codexOfflineFallback": true,
+  "showClaudeCode": true,
+  "showCodex": true,
+  "showAcpCursor": true,
+  "showZaiGlm": true,
+  "showKimiCode": true,
+  "collapsedProvider": "auto"
+}

@@ -1,6 +1,7 @@
 import { definePluginApp } from "@get-bb/plugin-sdk/app";
 
-const WEB_BB_URL = "https://example.getbb.app";
+// The server resolves its configured public URL; no personal address in source.
+const WEB_BB_URL = "/api/v1/plugins/web-bb-button/http/open";
 
 export default definePluginApp((app) => {
   app.contentScripts.register({

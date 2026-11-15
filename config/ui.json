@@ -1,0 +1,31 @@
+{
+  "sidebar.organizationMode": "chronological",
+  "sidebar.threadGrouping.environment": "auto",
+  "sidebar.chronologicalSort": "updated",
+  "sidebar.sortDirection": "default",
+  "sidebar.sectionOrder": [
+    "pinned",
+    "projects",
+    "threads"
+  ],
+  "sidebar.manualSectionOrder": [
+    "pinned",
+    "sections",
+    "threads"
+  ],
+  "sidebar.machineSectionOrder": [
+    "pinned",
+    "machines",
+    "threads"
+  ],
+  "sidebar.hiddenGroups": [],
+  "sidebar.footerOrder": [],
+  "sidebar.hiddenFooterItems": [],
+  "sidebar.pluginPanelOrder": [],
+  "sidebar.visiblePluginPanels": null,
+  "sidebar.navigationProvider": "__automatic__",
+  "sidebar.threadListProvider": "machine-tabs/machine-tabs",
+  "composer.provider": "__automatic__",
+  "infoPanel.collapsedSections": [],
+  "threadContextCard.pinned": true
+}

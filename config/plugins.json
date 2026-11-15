@@ -1,0 +1,349 @@
+[
+  {
+    "id": "account-pool",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "Account Pooler [Experimental]",
+    "source": "builtin:account-pool"
+  },
+  {
+    "id": "agent-annotations",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Agent Annotations",
+    "source": "builtin:agent-annotations"
+  },
+  {
+    "id": "ask-user-question",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "Ask User Question",
+    "source": "builtin:ask-user-question"
+  },
+  {
+    "id": "automations",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Automations",
+    "source": "builtin:automations"
+  },
+  {
+    "id": "bb--composer",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Composer",
+    "source": "builtin:composer"
+  },
+  {
+    "id": "bb--connect-next",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "bb connect next (beta)",
+    "source": "builtin:connect-next"
+  },
+  {
+    "id": "bb--git",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Git",
+    "source": "builtin:git"
+  },
+  {
+    "id": "bb--github-pr-status",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "GitHub PR Status",
+    "source": "builtin:github-pr-status"
+  },
+  {
+    "id": "bb--github-star",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "GitHub Star",
+    "source": "builtin:github-star"
+  },
+  {
+    "id": "bb--mcp",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "MCP server",
+    "source": "builtin:mcp"
+  },
+  {
+    "id": "bb--prompt-library",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Prompt Library",
+    "source": "builtin:prompt-library"
+  },
+  {
+    "id": "bb--provider-usage",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Provider usage",
+    "source": "builtin:provider-usage"
+  },
+  {
+    "id": "bb--storage-retention",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "Storage & retention [Experimental]",
+    "source": "builtin:storage-retention"
+  },
+  {
+    "id": "bb-account",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "bb account",
+    "source": "builtin:bb-account"
+  },
+  {
+    "id": "bb-ai",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "bb cloud AI",
+    "source": "builtin:bb-ai"
+  },
+  {
+    "id": "bb-guide",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "BB guide",
+    "source": "builtin:bb-guide"
+  },
+  {
+    "id": "browser-automation",
+    "version": "0.1.1",
+    "enabled": true,
+    "name": "Browser Automation",
+    "source": "builtin:browser-automation",
+    "installSource": "browser-automation@bb-official"
+  },
+  {
+    "id": "concurrency-limit",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Concurrency limit",
+    "source": "builtin:concurrency-limit"
+  },
+  {
+    "id": "connect",
+    "version": "0.1.1",
+    "enabled": true,
+    "name": "bb connect",
+    "source": "builtin:connect"
+  },
+  {
+    "id": "custom-instructions",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Custom instructions",
+    "source": "builtin:custom-instructions"
+  },
+  {
+    "id": "drafts",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Drafts",
+    "source": "builtin:drafts"
+  },
+  {
+    "id": "environment-git-worktree",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Worktree",
+    "source": "builtin:environment-git-worktree"
+  },
+  {
+    "id": "environment-personal-workspace",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Personal workspace",
+    "source": "builtin:environment-personal-workspace"
+  },
+  {
+    "id": "environment-project-checkout",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Project checkout",
+    "source": "builtin:environment-project-checkout"
+  },
+  {
+    "id": "handoff",
+    "version": "0.7.4",
+    "enabled": true,
+    "name": "Handoff",
+    "source": "git:https://github.com/vburojevic/bb-plugin-handoff.git@semver:>=0.7.0",
+    "installSource": "handoff@bb-community"
+  },
+  {
+    "id": "handoff-button",
+    "version": "0.1.2",
+    "enabled": true,
+    "name": "Handoff Button",
+    "source": "path:plugins/handoff-button"
+  },
+  {
+    "id": "inbox",
+    "version": "0.2.1",
+    "enabled": true,
+    "name": "Needs You",
+    "source": "git:https://github.com/notpritam/bb-plugin-inbox.git@semver:^0.2.0",
+    "installSource": "inbox@bb-community"
+  },
+  {
+    "id": "inline-vis",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Inline visualizations",
+    "source": "builtin:inline-vis"
+  },
+  {
+    "id": "keep-awake",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Keep Awake",
+    "source": "builtin:keep-awake"
+  },
+  {
+    "id": "limits",
+    "version": "1.1.8",
+    "enabled": true,
+    "name": "Limits",
+    "source": "git:https://github.com/artwist-polyakov/bb-plugins.git@semver:limits/:^1.0.0",
+    "installSource": "limits@bb-community"
+  },
+  {
+    "id": "machine-tabs",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Machine Tabs",
+    "source": "path:plugins/machine-tabs"
+  },
+  {
+    "id": "monaco-editor",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "File Editor",
+    "source": "builtin:monaco-editor"
+  },
+  {
+    "id": "navigation",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Navigation",
+    "source": "builtin:navigation"
+  },
+  {
+    "id": "pdf-preview",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "PDF preview",
+    "source": "builtin:pdf-preview"
+  },
+  {
+    "id": "plugin-api-docs",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "Plugin Guide",
+    "source": "builtin:plugin-api-docs"
+  },
+  {
+    "id": "plugin-api-tester",
+    "version": "0.1.0",
+    "enabled": false,
+    "name": "Plugin API Tester",
+    "source": "builtin:plugin-api-tester"
+  },
+  {
+    "id": "provider-acp",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "ACP providers",
+    "source": "builtin:provider-acp"
+  },
+  {
+    "id": "provider-claude-code",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Claude Code provider",
+    "source": "builtin:provider-claude-code"
+  },
+  {
+    "id": "provider-codex",
+    "version": "0.1.1",
+    "enabled": true,
+    "name": "Codex provider",
+    "source": "builtin:provider-codex"
+  },
+  {
+    "id": "provider-pi",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Pi provider",
+    "source": "builtin:provider-pi"
+  },
+  {
+    "id": "provider-retry",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Provider retry",
+    "source": "builtin:provider-retry"
+  },
+  {
+    "id": "proxy-manager",
+    "version": "0.2.1",
+    "enabled": true,
+    "name": "Proxy Manager",
+    "source": "path:plugins/proxy-manager"
+  },
+  {
+    "id": "push-notifications",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Push notifications",
+    "source": "builtin:push-notifications"
+  },
+  {
+    "id": "scheduled-send",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Send later",
+    "source": "builtin:scheduled-send"
+  },
+  {
+    "id": "secrets",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Secrets",
+    "source": "builtin:secrets"
+  },
+  {
+    "id": "side-chat",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Side chat",
+    "source": "builtin:side-chat"
+  },
+  {
+    "id": "thread-list",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Thread list",
+    "source": "builtin:thread-list"
+  },
+  {
+    "id": "web-bb-button",
+    "version": "0.1.1",
+    "enabled": true,
+    "name": "Web BB Button",
+    "source": "path:plugins/web-bb-button"
+  },
+  {
+    "id": "workflows",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Workflows",
+    "source": "builtin:workflows"
+  }
+]

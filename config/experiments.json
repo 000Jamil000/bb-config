@@ -1,0 +1,14 @@
+{
+  "compactExpiredCache": false,
+  "dismissReadNotifications": false,
+  "narrowPluginCss": false,
+  "serverMove": true,
+  "performanceDiagnostics": false,
+  "pluginUpdates": false,
+  "resumeThreadsAfterRestart": false,
+  "skipFocusedThreadNotifications": false,
+  "threadContextCard": false,
+  "threadRowMetadata": false,
+  "timelinePush": false,
+  "updateWhenIdle": false
+}

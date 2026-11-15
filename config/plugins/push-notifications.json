@@ -1,0 +1,8 @@
+{
+  "mobileEnabled": true,
+  "webEnabled": true,
+  "desktopEnabled": true,
+  "defaultLevel": "all",
+  "childLevel": "input-only",
+  "expoPushUrl": "https://exp.host/--/api/v2/push/send"
+}

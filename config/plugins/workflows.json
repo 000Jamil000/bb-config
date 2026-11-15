@@ -1,0 +1,8 @@
+{
+  "maxActiveRuns": 4,
+  "maxConcurrentAgents": 8,
+  "maxAgentCalls": 100,
+  "totalRunTimeoutMs": 86400000,
+  "retentionDays": 7,
+  "maxNotificationBytes": 16384
+}

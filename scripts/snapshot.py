@@ -88,7 +88,7 @@ def collect():
 def changed_files(values, root=ROOT):
     changed = []
     for name, data in values.items():
-        path = root / 'config' / (name + '.json')
+        path = root / '.local/config' / (name + '.json')
         try:
             same = json.loads(path.read_text()) == data
         except (FileNotFoundError, json.JSONDecodeError):
@@ -96,19 +96,20 @@ def changed_files(values, root=ROOT):
         if not same:
             changed.append(path)
     active_configs = {name for name in values if name.startswith('plugins/')}
-    changed.extend(p for p in sorted((root / 'config/plugins').glob('*.json'))
+    changed.extend(p for p in sorted((root / '.local/config/plugins').glob('*.json'))
                    if 'plugins/' + p.stem not in active_configs)
     return changed
 
 
 def write_snapshot(values, root=ROOT):
     for name, data in values.items():
-        path = root / 'config' / (name + '.json')
-        path.parent.mkdir(parents=True, exist_ok=True)
+        path = root / '.local/config' / (name + '.json')
+        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         tmp = path.with_suffix('.json.tmp')
         tmp.write_text(json.dumps(data, ensure_ascii=False, indent=2) + '\n')
+        tmp.chmod(0o600)
         tmp.replace(path)
-    for path in (root / 'config/plugins').glob('*.json'):
+    for path in (root / '.local/config/plugins').glob('*.json'):
         if 'plugins/' + path.stem not in values:
             path.unlink()
 
@@ -146,14 +147,14 @@ def main():
                 print('BB customised: save these settings in bb-config:')
                 for path in changed:
                     print('  ' + str(path.relative_to(ROOT)))
-                print('Run: python3 scripts/snapshot.py --settings-only; review and stage the diff.')
+                print('Run: python3 scripts/snapshot.py --settings-only (private .local/config/).')
                 return 1
-            print('BB settings and installed plugins match the repository.')
+            print('BB settings and installed plugins match the private .local/config/ snapshot.')
             return 0
         if not args.settings_only:
             copy_sources(plugins)
         write_snapshot(values)
-        print('Snapshot updated. Review git diff; secret settings and runtime data are excluded.')
+        print('Private snapshot updated in .local/config/. Public config/ was not changed; secrets are excluded.')
         return 0
     except (RuntimeError, subprocess.SubprocessError, OSError, ValueError) as error:
         print(f'Snapshot failed: {error}')

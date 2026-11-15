@@ -1,0 +1,39 @@
+{
+  "showProviderIcons": true,
+  "showRowMetadata": false,
+  "showEmptyProjects": true,
+  "threadLifecycles": [
+    "active"
+  ],
+  "organizationMode": "project",
+  "environmentGrouping": "auto",
+  "groupByReadStatus": false,
+  "chronologicalSort": "updated",
+  "sortDirection": "default",
+  "sectionOrder": [
+    "pinned",
+    "projects",
+    "threads"
+  ],
+  "manualSectionOrder": [
+    "pinned",
+    "sections",
+    "threads"
+  ],
+  "machineSectionOrder": [
+    "pinned",
+    "machines",
+    "threads"
+  ],
+  "hiddenGroups": [],
+  "rowActions": [
+    "bb--core/newThreadInEnvironment",
+    "bb--core/archive"
+  ],
+  "collapsedSections": [],
+  "collapsedProjects": [],
+  "collapsedThreads": [],
+  "collapsedEnvironments": [],
+  "collapsedThreadSections": [],
+  "collapsedMachines": []
+}

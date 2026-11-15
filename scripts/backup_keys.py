@@ -75,7 +75,8 @@ def recipient(identity):
 def setup():
     keychain = Keychain()
     identity = keychain.get()
-    config = ROOT / 'config/backup-encryption.json'
+    config = ROOT / '.local/config/backup-encryption.json'
+    config.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     if identity is None:
         if config.exists():
             raise RuntimeError('Restore the existing key with import-clipboard; refusing to replace the recovery identity')
@@ -211,7 +212,7 @@ def main():
     elif args.command == 'import-clipboard':
         identity = subprocess.run(['pbpaste'], capture_output=True, check=True).stdout.strip() + b'\n'
         public = recipient(identity)
-        config = ROOT / 'config/backup-encryption.json'
+        config = ROOT / '.local/config/backup-encryption.json'
         if config.is_file() and json.loads(config.read_text())['recipient'] != public:
             raise RuntimeError('Clipboard key does not match the backup encryption recipient')
         store = Keychain()

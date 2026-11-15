@@ -1,0 +1,8 @@
+{
+  "introduction": true,
+  "skills": true,
+  "bbCli": true,
+  "pluginAuthoring": true,
+  "skillCreator": true,
+  "submitPlugin": true
+}

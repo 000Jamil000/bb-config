@@ -1,0 +1,11 @@
+{
+  "memoryEnabled": true,
+  "subagentsDisabled": false,
+  "workflowsDisabled": false,
+  "disable1MContext": false,
+  "chromeEnabled": false,
+  "artifactsEnabled": false,
+  "sandboxEnabled": true,
+  "fullAccessApprovalsEnabled": false,
+  "commandDescriptionsEnabled": false
+}

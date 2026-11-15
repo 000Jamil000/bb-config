@@ -14,9 +14,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--host', default='host_example')
+    settings = ROOT / '.local/config/backup-delivery.json'
+    local = json.loads(settings.read_text()) if settings.exists() else {}
+    parser.add_argument('--host', default=local.get('compatHost'))
     parser.add_argument('--apply', action='store_true', help='Write, build and reload; default only checks')
     args = parser.parse_args()
+    if not args.host:
+        parser.error('Set --host or compatHost in .local/config/backup-delivery.json')
     cli = Cli()
     plugin = next(p for p in cli.call('plugin', 'list', '--json')['plugins'] if p['id'] == 'inbox')
     location = plugin['rootDir']

@@ -13,7 +13,16 @@ MANUAL_STATES = {'connect', 'bb--connect-next', 'account-pool'}
 
 
 def read(name, root=ROOT):
-    return json.loads((root / 'config' / f'{name}.json').read_text())
+    """Private dictionaries override public defaults; lists are replaced whole."""
+    public = root / 'config' / f'{name}.json'
+    private = root / '.local/config' / f'{name}.json'
+    shared = json.loads(public.read_text()) if public.exists() else {}
+    if not private.exists():
+        return shared
+    local = json.loads(private.read_text())
+    if isinstance(shared, dict) and isinstance(local, dict):
+        return shared | local
+    return local
 
 
 def value(data):
@@ -68,11 +77,13 @@ def plan(install_plugins=False, root=ROOT):
     appearance = read('appearance', root)
     if appearance['customCss'] is None:
         commands.append(['bb', 'theme', 'set', appearance['themeId'], '--favicon-color', appearance['faviconColor']])
-    for path in sorted((root / 'config/plugins').glob('*.json')):
-        if path.stem in MANUAL_SETTINGS:
+    names = {p.stem for directory in ('config/plugins', '.local/config/plugins')
+             for p in (root / directory).glob('*.json')}
+    for name in sorted(names):
+        if name in MANUAL_SETTINGS:
             continue
-        for key, data in json.loads(path.read_text()).items():
-            commands.append(['bb', 'plugin', 'config', path.stem, 'set', key, value(data)])
+        for key, data in read('plugins/' + name, root).items():
+            commands.append(['bb', 'plugin', 'config', name, 'set', key, value(data)])
     for key, data in read('ui', root).items():
         commands.append(['bb', 'settings', 'ui', 'set', key, value(data)])
     for key, data in read('thread-list', root).items():
@@ -107,9 +118,11 @@ def main():
             raise SystemExit('Run --plugins --apply on the BB server machine, in its bb-config checkout. '
                              'Local plugin paths are server-side; this CLI is connected remotely.')
     for command in commands:
-        # Global instructions can contain private text on an existing install.
-        is_instructions = command[:5] == ['bb', 'plugin', 'config', 'custom-instructions', 'set']
-        print(shlex.join(command[:-1] + ['<saved instructions>'] if is_instructions else command), flush=True)
+        # All saved settings may contain personal text; previews show keys only.
+        has_value = command[:3] in ([ 'bb', 'settings', 'general' ],
+            ['bb', 'settings', 'experiment']) or command[:4] in (
+            ['bb', 'settings', 'ui', 'set'], ['bb', 'thread-list', 'prefs', 'set']) or command[:3] == ['bb', 'plugin', 'config']
+        print(shlex.join(command[:-1] + ['<saved value>'] if has_value else command), flush=True)
         if args.apply:
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
     print('\nManual steps: docs/customizations.md (credentials, routes, machine IDs, keyboard/custom CSS).')

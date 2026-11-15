@@ -32,7 +32,7 @@ class SnapshotTests(unittest.TestCase):
     def test_drift_check_does_not_write_and_detects_removed_plugin_config(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            old = root / 'config/plugins/removed.json'
+            old = root / '.local/config/plugins/removed.json'
             old.parent.mkdir(parents=True)
             old.write_text('{}')
             expected = {'plugins': [], 'plugins/inbox': {'toastEnabled': True}}
@@ -42,6 +42,17 @@ class SnapshotTests(unittest.TestCase):
             snapshot.write_snapshot(expected, root)
             self.assertFalse(old.exists())
             self.assertEqual(snapshot.changed_files(expected, root), [])
+    def test_snapshot_keeps_public_defaults_untouched(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            public = root / 'config/general.json'
+            public.parent.mkdir()
+            public.write_text('{"shared": true}')
+            snapshot.write_snapshot({'general': {'private': 'installation value'}}, root)
+            self.assertEqual(public.read_text(), '{"shared": true}')
+            private = root / '.local/config/general.json'
+            self.assertEqual(json.loads(private.read_text()), {'private': 'installation value'})
+            self.assertEqual(private.stat().st_mode & 0o777, 0o600)
 
     def test_failed_read_never_starts_writes_or_source_copy(self):
         with patch.object(snapshot, 'collect', side_effect=RuntimeError('unavailable')), \
@@ -54,6 +65,19 @@ class SnapshotTests(unittest.TestCase):
 
 
 class RestoreTests(unittest.TestCase):
+    def test_private_dictionary_overrides_defaults_and_lists_replace(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ('config', '.local/config'):
+                (root / name).mkdir(parents=True)
+            (root / 'config/general.json').write_text('{"a":1,"b":2}')
+            (root / '.local/config/general.json').write_text('{"b":3,"c":4}')
+            self.assertEqual(restore.read('general', root), {'a': 1, 'b': 3, 'c': 4})
+            (root / 'config/plugins.json').write_text('[1,2]')
+            (root / '.local/config/plugins.json').write_text('[]')
+            self.assertEqual(restore.read('plugins', root), [])
+            (root / '.local/config/only-private.json').write_text('{"x":1}')
+            self.assertEqual(restore.read('only-private', root), {'x': 1})
     def test_plan_installs_named_catalog_entries_and_keeps_routes_manual(self):
         commands = restore.plan(True)
         self.assertIn(['bb', 'plugin', 'install', 'inbox@bb-community', '--yes'], commands)

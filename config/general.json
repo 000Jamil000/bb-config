@@ -1,0 +1,19 @@
+{
+  "showKeyboardHints": true,
+  "steerActiveThreadOnEnter": true,
+  "terminalCopyOnSelect": true,
+  "confirmThreadArchive": true,
+  "showDiagnosticEvents": false,
+  "keepHistoryAfterContextClear": false,
+  "summarizeShellCommands": true,
+  "providerOrder": [],
+  "defaultProviderId": null,
+  "providerCompletedTurnDisplay": {},
+  "streamerMode": false,
+  "allowFastServiceTier": true,
+  "telemetryEnabled": true,
+  "managedBranchPrefix": "bb/",
+  "idleProviderSessionTimeoutMinutes": 30,
+  "earlyAdopter": false,
+  "showUnhandledProviderEvents": false
+}

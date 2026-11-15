@@ -1,0 +1,11 @@
+{
+  "thread-title": {
+    "mode": "automatic"
+  },
+  "commit-message": {
+    "mode": "automatic"
+  },
+  "voice": {
+    "mode": "automatic"
+  }
+}

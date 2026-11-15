@@ -1,0 +1,13 @@
+{
+  "notifyBlocked": true,
+  "notifyFailed": true,
+  "notifyExtensions": true,
+  "notifyFinished": false,
+  "desktopEnabled": true,
+  "toastEnabled": true,
+  "telegramInstant": false,
+  "telegramChatId": "",
+  "cooldownSeconds": "30",
+  "quietStart": "",
+  "quietEnd": ""
+}

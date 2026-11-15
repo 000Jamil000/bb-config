@@ -278,7 +278,7 @@ function useProjectIcons(): Readonly<Record<string, string>> {
   return icons;
 }
 
-/** "example-project" → "MO", "ShotMark" → "SM", "root" → "RO". */
+/** "my-project" → "MP", "SampleApp" → "SA", "root" → "RO". */
 function projectLetters(name: string): string {
   const words = name
     .replace(/([a-zа-яё])([A-ZА-ЯЁ])/g, "$1 $2")
@@ -947,7 +947,10 @@ interface OuterGroup {
 // only say "No threads". A collapsed group has no rows either, but its
 // header carries the expand button, so it stays.
 const HIDE_EMPTY_GROUPS = `
-[data-machine-tabs-hide-empty] [data-sidebar-visibility-group]:not(:has([data-sidebar-thread-id])):not(:has(button[aria-expanded="false"]:not([aria-haspopup]))) {
+/* Only a group that says "No threads" is empty. One whose rows are simply
+   not drawn yet (bb draws rows as they scroll into view) must stay, or it
+   would never get the chance to draw them. */
+[data-machine-tabs-hide-empty] [data-sidebar-visibility-group]:has([data-sidebar="group-label"] + div p):not(:has([data-sidebar-thread-id])) {
   display: none;
 }
 /* Groups with no thread (projects never used here) go below the rest as
@@ -1014,7 +1017,8 @@ const HIDE_EMPTY_GROUPS = `
   content: "";
   background: ${PERSON_ICON} center / 14px no-repeat;
 }
-[data-machine-tabs-list] [data-sidebar-visibility-group="pinned"] [data-sidebar="group-label"] > span:first-child::before {
+/* Pinned is the one header bb draws outside every visibility group. */
+[data-machine-tabs-list] [data-sidebar="group-label"]:not([data-sidebar-visibility-group] *) > span:first-child::before {
   content: "";
   background: ${PIN_ICON} center / 14px no-repeat;
 }
@@ -1215,7 +1219,12 @@ function MachineThreadList(props: PluginThreadListProps) {
 
   const emptyCss = useMemo(() => {
     if (hideEmpty) return "";
-    const used = new Set(shown.map((thread) => thread.projectId));
+    // A pinned thread is listed under Pinned, not under its project.
+    const used = new Set(
+      shown
+        .filter((thread) => thread.pinnedAt == null)
+        .map((thread) => thread.projectId),
+    );
     return emptyProjectsCss(
       projects
         .filter((project) => !project.isPersonal && !used.has(project.id))
@@ -1312,7 +1321,7 @@ function MachineThreadList(props: PluginThreadListProps) {
       ) : null}
       {NativeList && state !== null ? (
         <ProjectBadges.Provider value={badges}>
-        <div data-machine-tabs-list="" data-machine-tabs-hide-empty={hideEmpty ? "" : undefined}>
+        <div data-machine-tabs-list="" data-machine-tabs-host-id={baseView.machineId ?? undefined} data-machine-tabs-hide-empty={hideEmpty ? "" : undefined}>
           {outer === "none" ? (
             <MachineFilter.Provider value={baseView}>
               <NativeList key={listKey} {...props} />
@@ -1327,6 +1336,7 @@ function MachineThreadList(props: PluginThreadListProps) {
               return (
                 <section
                   key={group.id}
+                  data-machine-tabs-host-id={group.filter.machineId ?? undefined}
                   className="mt-1 border-t border-border pb-1 pt-1 first:mt-0 first:border-t-0 first:pt-0"
                 >
                   <button

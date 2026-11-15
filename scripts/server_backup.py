@@ -79,10 +79,10 @@ def report_backup_alert(source, kind, cli, now=None):
                   'delivery-stale': 'Бэкап BB давно не доставлен на Mac',
                   'healthy': 'Бэкапы BB снова работают'}
         bodies = {'backup-error': 'Экспорт или шифрование завершились ошибкой. Открой историю автоматизации; после трёх сбоев BB ставит её на паузу.',
-                  'delivery-stale': 'Более 24 часов нет успешной доставки на Mac. Зашифрованная копия остаётся на Tru; доставка повторяется каждые 30 минут.',
+                  'delivery-stale': 'Более 24 часов нет успешной доставки на Mac. Зашифрованная копия остаётся на сервере; доставка повторяется каждые 30 минут.',
                   'healthy': 'Зашифрованный бэкап доставлен на Mac и проверен. Предыдущий сбой устранён.'}
-        project = os.environ.get('BB_PROJECT_ID', 'proj_example')
-        automation = os.environ.get('BB_AUTOMATION_ID', 'auto_example')
+        project = os.environ.get('BB_PROJECT_ID', '')
+        automation = os.environ.get('BB_AUTOMATION_ID', 'manual-backup')
         event = {'sourceId': 'automations', 'sourceName': 'Бэкапы BB',
                  'entityId': 'bb-server-backup:' + automation,
                  'eventId': uuid.uuid4().hex, 'occurredAt': timestamp,
@@ -315,18 +315,22 @@ def tick(args):
 
 
 def main():
+    root = Path(__file__).resolve().parents[1]
+    delivery = read_json(root / '.local/config/backup-delivery.json')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir', default=str(Path.home() / '.bb-backups/server'))
-    parser.add_argument('--destination-host', default='host_example')
-    parser.add_argument('--destination-dir', default='/Users/example/Documents/Develop/dev2025/bb-config/.local/backups/daily')
+    parser.add_argument('--destination-host', default=delivery.get('destinationHost'))
+    parser.add_argument('--destination-dir', default=delivery.get('destinationDir'))
     parser.add_argument('--keep', type=int, default=3)
     parser.add_argument('--force', action='store_true')
-    settings = Path(__file__).resolve().parents[1] / 'config/backup-encryption.json'
+    settings = root / '.local/config/backup-encryption.json'
     recipient = os.environ.get('BB_BACKUP_RECIPIENT')
     if not recipient and settings.is_file():
         recipient = json.loads(settings.read_text())['recipient']
     parser.add_argument('--recipient', default=recipient, help='Public age encryption recipient; never a secret identity')
     args = parser.parse_args()
+    if not args.destination_host or not args.destination_dir:
+        parser.error('Set --destination-host and --destination-dir, or .local/config/backup-delivery.json')
     if args.keep < 1:
         parser.error('--keep must be positive')
     try:

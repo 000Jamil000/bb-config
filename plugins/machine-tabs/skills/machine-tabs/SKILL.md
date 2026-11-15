@@ -39,6 +39,16 @@ the list is grouped by project.
 Switch back to bb's plain list with
 `bb settings ui set sidebar.threadListProvider '"thread-list/thread-list"'`.
 
+The `Classic | Custom` text buttons beside New thread switch the actual
+`sidebar.threadListProvider`: Classic selects the installed built-in
+`thread-list/thread-list`; Custom restores `machine-tabs/machine-tabs`.
+The control stays available in both views. It preserves Machine Tabs settings
+and follows BB's server-synced selection in every window. Classic uses the
+current BB version, including future updates, with existing native list
+preferences and other plugins still active. It does not freeze an old version
+or disable all customizations. If the header anchor changes after a BB update,
+use Settings → Appearance → Sidebar or the CLI command above.
+
 ## Project images
 
 A thread row and a project header show the project's mark: two letters, or

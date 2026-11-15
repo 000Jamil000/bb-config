@@ -97,6 +97,26 @@ const ICON_TTL_MS = 5 * 60 * 1000;
 const ICONS_KEY = "project-icons";
 
 export default async function plugin(bb: BbPluginApi) {
+  // Switch the actual host provider, so Classic always uses the installed BB.
+  const providerKey = "sidebar.threadListProvider" as const;
+  bb.http.route("GET", "/sidebar-view", async (context) => {
+    const { preferences } = await bb.sdk.system.uiPreferences.list();
+    return context.json({ provider: preferences[providerKey].value });
+  });
+  bb.http.route("POST", "/sidebar-view", async (context) => {
+    const input = z.object({ view: z.enum(["classic", "custom"]) }).safeParse(
+      await context.req.json().catch(() => null),
+    );
+    if (!input.success) return context.json({ error: "Invalid sidebar view" }, 400);
+    const { preferences } = await bb.sdk.system.uiPreferences.list();
+    const provider = input.data.view === "classic"
+      ? "thread-list/thread-list" : "machine-tabs/machine-tabs";
+    await bb.sdk.system.uiPreferences.set({
+      key: providerKey, value: provider,
+      expectedRevision: preferences[providerKey].revision,
+    });
+    return context.json({ provider });
+  });
   let iconCache: { at: number; icons: Record<string, string> } | null = null;
   let iconLoad: Promise<Record<string, string>> | null = null;
 

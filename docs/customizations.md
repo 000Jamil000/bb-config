@@ -1,5 +1,26 @@
 # Настройка и восстановление
 
+## Classic / Custom в боковом меню
+
+Machine Tabs (`plugins/machine-tabs/`) добавляет текстовые кнопки
+`Classic | Custom` рядом с New thread. Classic выбирает штатный провайдер
+`thread-list/thread-list` установленной версии BB; Custom возвращает
+`machine-tabs/machine-tabs`. Поэтому обновления штатного списка доступны
+без копирования старого интерфейса. Переключатель остаётся в обоих режимах,
+а выбор синхронизируется между окнами. Настройки Machine Tabs сохраняются.
+Штатные предпочтения группировки и другие плагины остаются активными:
+Classic переключает только провайдер списка тредов.
+
+Восстановление на сервере BB: `bb plugin build plugins/machine-tabs`, затем
+`bb plugin reload machine-tabs` для уже установленного плагина либо
+`python3 scripts/restore.py --plugins --apply` с приватным снимком.
+Выбранный провайдер сохраняется в `.local/config/ui.json`
+и применяется `restore.py`. Вручную: `bb settings ui set
+sidebar.threadListProvider '"thread-list/thread-list"'` или
+`bb settings ui set sidebar.threadListProvider '"machine-tabs/machine-tabs"'`.
+Кнопки привязаны к штатному заголовку Navigation; если его разметка изменится,
+выбор остаётся доступен в Settings → Appearance → Sidebar и через CLI.
+
 ## Установка
 
 План показывает `python3 scripts/restore.py --plugins`. Для применения запустите

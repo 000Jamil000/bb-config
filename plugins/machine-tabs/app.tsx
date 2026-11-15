@@ -29,6 +29,7 @@ import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
 import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
+import { installSidebarView } from "./lib/sidebar-view";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
 const TABS_CHANGED = "machine-tabs-changed";
@@ -1450,6 +1451,10 @@ function MachineThreadList(props: PluginThreadListProps) {
 }
 
 export default definePluginApp((app) => {
+  app.contentScripts.register({
+    id: "sidebar-view",
+    mount: ({ signal }) => installSidebarView(signal),
+  });
   app.slots.experimental_threadList({
     id: "machine-tabs",
     title: "Thread list + machine tabs",

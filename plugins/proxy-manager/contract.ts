@@ -16,7 +16,13 @@ export const checkSchema = z.object({
   openaiStatus: z.number().nullable(), message: z.string(), checkedAt: z.string(), latencyMs: z.number(),
 });
 export type Check = z.infer<typeof checkSchema>;
+export const claudeRouteSchema = z.object({
+  state: z.enum(['direct', 'proxy', 'unknown', 'inactive', 'unsupported']),
+  message: z.string(), checkedAt: z.string(),
+});
+export type ClaudeRoute = z.infer<typeof claudeRouteSchema>;
 export const hostContract = defineRpcContract({
+  claude_route: { input: z.object({ path: z.string().nullable(), threadId: z.string().nullable() }), output: claudeRouteSchema },
   check: { input: z.object({ proxy: storedProxy.nullable(), previous: checkSchema.optional() }), output: checkSchema },
   prepare_native: { input: z.object({ proxy: storedProxy.nullable() }), output: z.object({ home: z.string(), fingerprint: z.string() }) },
   apply_native: { input: z.object({ proxy: storedProxy.nullable(), fingerprint: z.string() }), output: z.object({ home: z.string(), fingerprint: z.string() }) },
@@ -27,7 +33,7 @@ export const routeStateSchema = z.object({ phase: z.enum(['switching', 'ready', 
 export type RouteState = z.infer<typeof routeStateSchema>;
 export const routeContextSchema = z.object({
   hostId: z.string(), hostName: z.string(), providerId: z.string(), proxyId: z.string().nullable(), proxyName: z.string().nullable(), connected: z.boolean(),
-  check: checkSchema.nullable(), applied: z.boolean(), warning: z.string().nullable(),
+  claudeRoute: claudeRouteSchema.nullable().optional(), check: checkSchema.nullable(), applied: z.boolean(), warning: z.string().nullable(),
 });
 export type RouteContext = z.infer<typeof routeContextSchema>;
 export const rpcContract = defineRpcContract({

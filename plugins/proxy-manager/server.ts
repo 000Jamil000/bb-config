@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
-import { hostContract, rpcContract, storedProxy, bindingSchema, redact, parseProxyFile, type Check, type StoredProxy, type RouteContext, type RouteState } from './contract';
+import { hostContract, rpcContract, storedProxy, bindingSchema, redact, parseProxyFile, type ClaudeRoute, type Check, type StoredProxy, type RouteContext, type RouteState } from './contract';
 export type { rpcContract } from './contract';
 export default async function plugin(bb: BbPluginApi) {
   const secrets = bb.settings.define({ vault: { type: 'string', label: 'Хранилище учётных данных прокси', secret: true } });
@@ -113,14 +113,32 @@ export default async function plugin(bb: BbPluginApi) {
       }
     },
   });
+  const claudeChecks = new Map<string, { at: number; result: Promise<ClaudeRoute> }>();
+  function inspectClaude(hostId: string, path: string | null, threadId: string | null): Promise<ClaudeRoute> {
+    const key = JSON.stringify([hostId, path, threadId]);
+    const cached = claudeChecks.get(key);
+    if (cached && Date.now() - cached.at < 4000) return cached.result;
+    const result = host.call('claude_route', { path, threadId }, { hostId, timeoutMs: 7000 })
+      .catch((): ClaudeRoute => ({ state: 'unknown', message: 'Проверка процесса Claude недоступна.', checkedAt: new Date().toISOString() }));
+    if (claudeChecks.size > 100) claudeChecks.clear();
+    claudeChecks.set(key, { at: Date.now(), result });
+    return result;
+  }
   bb.rpc.register(rpcContract, {
     route_context: async (input): Promise<RouteContext | null> => {
       let hostId = input.hostId, providerId = input.providerId;
+      let path: string | null = null;
       if (input.threadId) {
         const thread = await bb.sdk.threads.get({ threadId: input.threadId });
-        providerId ??= thread.providerId;
-        if (thread.environmentId) hostId = (await bb.sdk.environments.get({ environmentId: thread.environmentId })).hostId;
-      } else if (input.environmentId) hostId = (await bb.sdk.environments.get({ environmentId: input.environmentId })).hostId;
+        providerId = thread.providerId;
+        if (thread.environmentId) {
+          const environment = await bb.sdk.environments.get({ environmentId: thread.environmentId });
+          hostId = environment.hostId; path = environment.path;
+        }
+      } else if (input.environmentId) {
+        const environment = await bb.sdk.environments.get({ environmentId: input.environmentId });
+        hostId = environment.hostId; path = environment.path;
+      }
       if (!hostId || !providerId) return null;
       const machine = await bb.sdk.hosts.get({ hostId });
       const binding = (await bindings()).find(b => b.hostId === hostId && b.providerId === providerId);
@@ -129,7 +147,9 @@ export default async function plugin(bb: BbPluginApi) {
       const route = providerId === 'codex' ? await routing.state(hostId) : null;
       const applied = !!route && await routing.verify(hostId, route);
       const warning = route ? applied ? null : route.phase === 'ready' ? 'Файлы настроек изменены или машина недоступна' : route.message : binding?.proxyId ? 'Настройка ещё не применена' : null;
-      return { hostId, hostName: machine.name, providerId, proxyId, proxyName: proxyId ? proxy?.name ?? 'Прокси не найден' : null, connected: machine.status === 'connected', check: (await bb.storage.kv.get<Check>(`check:${hostId}:${proxyId ?? 'direct'}`)) ?? null, applied, warning };
+      const claudeRoute = providerId === 'claude-code' && machine.status === 'connected'
+        ? await inspectClaude(hostId, path, input.threadId) : null;
+      return { claudeRoute, hostId, hostName: machine.name, providerId, proxyId, proxyName: proxyId ? proxy?.name ?? 'Прокси не найден' : null, connected: machine.status === 'connected', check: providerId === 'codex' ? (await bb.storage.kv.get<Check>(`check:${hostId}:${proxyId ?? 'direct'}`)) ?? null : null, applied, warning };
     },
     list, add, bind, remove: ({ id }) => remove(id), check: ({ hostId, proxyId }) => check(hostId, proxyId),
     machines: async () => (await bb.sdk.hosts.list()).map(h => ({ id: h.id, name: h.name, connected: h.status === 'connected' })),

@@ -64,3 +64,21 @@ replace a real iOS keyboard test. Refresh the app to load rebuilt styles.
 Full names and machine controls override the host compact rules in the same CSS
 base layer. The native machine label is preserved, including its read-only form;
 no second machine label is added beside the route. Touch events preserve horizontal scrolling.
+
+## Claude route observation
+
+The composer checks Claude every 5 seconds while its badge is mounted. A host
+entry reads Linux `/proc` or macOS `ps`/`lsof` for the Claude CLI or BB Claude
+worker in the thread's actual directory. Multiple candidates, unreadable
+settings, custom/cloud gateways and missing live sockets stay unconfirmed.
+A green direct route requires an established process socket to a currently
+resolved api.anthropic.com IP on 443. A green proxy route requires a socket
+to the configured proxy. Neither proves application health or excludes an OS
+VPN/TUN. The tooltip states the evidence and scope. No authenticated probes,
+prompts, restarts, credential changes or routing writes are performed.
+
+No process shows “Claude не запущен”; ambiguous or unavailable evidence shows
+“Маршрут не проверен”. Offline hosts stay red. Results are not persisted;
+credentials, proxy URLs, process environment and peer addresses are never
+returned to the app. Codex check results are not reused for Claude.
+macOS parsing has fixtures; the live host check was performed on Linux.

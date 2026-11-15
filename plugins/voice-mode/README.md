@@ -87,3 +87,8 @@ staging checks fail. After successful checks the private snapshot is refreshed.
 
 Upstream code excerpts in the patch remain under the MIT license; see
 [UPSTREAM_LICENSE](UPSTREAM_LICENSE).
+
+The thread Voice Mode start action is available while the coding agent runs,
+and while a text draft is present. The voice session starts separately; the
+native send/stop replacement still requires the original empty-and-idle
+condition, so starting voice never hides an active task's Stop control.

@@ -280,6 +280,11 @@
       "file": "app.tsx",
       "before": "        {starting ? \"Создаю разговор…\" : \"Voice Mode — новый разговор\"}\n      </button>\n      {error && <p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>}\n    </div>\n  );",
       "after": "        <span className=\"sr-only\">{starting ? \"Создаю разговор…\" : \"Voice Mode\"}</span>\n      </button>\n  );\n  return <><span ref={anchor} hidden />{host ? createPortal(button, host) : button}\n    {error && <p role=\"alert\" className=\"text-sm text-destructive\">{error}</p>}</>;"
+    },
+    {
+      "file": "app.tsx",
+      "before": "const showStart = canStart && phase === \"off\" && !closing;",
+      "after": "// Starting voice is independent of agent execution; canStart only controls send replacement.\n  const showStart = phase === \"off\" && !closing;"
     }
   ],
   "fileStates": {
@@ -310,7 +315,8 @@
     "app.tsx": {
       "667ac8899120a2d137b06d0822a62da9b1e7005dcfb4b8336e6cfe6143883900": 44,
       "5f0526092842249651fe9c072849c0609129e17d917d94fb20febf3953bfeaeb": 50,
-      "3a59355922d39ec99599869f4a15064dfc8bd8fe483cd408412cb5e05690499f": 56
+      "3a59355922d39ec99599869f4a15064dfc8bd8fe483cd408412cb5e05690499f": 56,
+      "b5a64e94476e453835cf279f55ca6efb12259979a51b23a83c0df3ae08cf38fc": 57
     },
     "compact-hosts.ts": {
       "2c4925203638dcb6c41558fcdded317d0439ad2a4b264de1faae39f495a23cd1": 44,

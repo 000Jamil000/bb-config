@@ -26,3 +26,11 @@ these waits or claim OS-level enforcement based on a connectivity check.
 Credentials live in BB secret settings and the private native .env; never print
 secrets or dump those files. No app artifacts are patched and no custom API gateway
 is used. Version updates require native routing behavior to be revalidated.
+
+Claude route observation is read-only and runs from the composer badge every
+5 seconds. It uses the actual thread's host/directory, Linux /proc or macOS
+ps/lsof. A confirmed direct/proxy label requires a matching established
+process socket. Missing/ambiguous processes or unsupported/custom routes
+remain unconfirmed. Green means observed route, not API health or absence
+of system VPN/TUN. It never changes Claude routing, restarts Claude or sends
+authenticated requests. Codex route checks are never displayed as Claude checks.

@@ -190,10 +190,14 @@ function RouteBadge() {
   useEffect(() => { void refresh(); const timer = setInterval(() => void refresh(), 5000); return () => clearInterval(timer); }, [refresh]);
   useRealtime('changed', refresh);
   const codex = (route?.providerId ?? providerId) === 'codex';
+  const claude = (route?.providerId ?? providerId) === 'claude-code';
+  const claudeCheck = route?.claudeRoute;
+  const claudeFresh = !!claudeCheck && Date.now() - Date.parse(claudeCheck.checkedAt) < 15_000;
+  const claudeConfirmed = claudeFresh && ['direct', 'proxy'].includes(claudeCheck!.state);
   const providerName = (route?.providerId ?? providerId) === 'claude-code' ? 'Claude Code' : codex ? 'Codex' : route?.providerId ?? providerId ?? 'Агент';
   const warning = error ? 'Не удалось проверить подключение' : route && !route.connected ? 'Машина офлайн' : codex && route ? route.warning || (route.check && !route.check.ok ? route.check.message : null) : null;
-  const detail = route ? `${route.hostName} · ${providerName} · ${codex ? route.applied ? 'Проверка каждые 30 секунд' : 'Маршрут не применён плагином' : 'Настройки самого CLI не проверялись; плагин не меняет его маршрут'}` : 'Выбор машины и агента — в настройках подключения';
-  const label = !codex ? 'Прокси CLI' : route?.proxyName ?? 'Без прокси';
+  const detail = route ? `${route.hostName} · ${providerName} · ${codex ? route.applied ? 'Проверка каждые 30 секунд' : 'Маршрут не применён плагином' : claude ? claudeCheck?.message ?? 'Проверяю процесс Claude без изменения маршрута' : 'Маршрут этого CLI не проверяется'}` : 'Выбор машины и агента — в настройках подключения';
+  const label = claude ? !claudeFresh ? 'Проверяю маршрут' : claudeCheck?.state === 'direct' ? 'Без прокси' : claudeCheck?.state === 'proxy' ? 'Прокси Claude' : claudeCheck?.state === 'inactive' ? 'Claude не запущен' : 'Маршрут не проверен' : !codex ? 'Маршрут CLI' : route?.proxyName ?? 'Без прокси';
   const settingsHost = route?.hostId ?? hostId;
   const settingsParams = new URLSearchParams({ returnTo: window.location.pathname + window.location.search + window.location.hash });
   if (settingsHost) settingsParams.set('host', settingsHost);
@@ -208,7 +212,7 @@ function RouteBadge() {
     navigate.toPluginPanel('proxies');
   }} className="proxy-route inline-flex h-6 min-w-0 max-w-full items-center gap-1.5 rounded-md px-1 text-xs leading-tight text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Настройки прокси · ${label}`} title={warning ? `${detail} · ${warning}` : detail}>
     <Icon name="Network" className="size-3.5 shrink-0"/>
-    <Dot live={codex} check={codex && route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : undefined}/>
+    {claude ? <span role="img" aria-label={route && !route.connected ? 'Машина офлайн' : claudeConfirmed ? 'Маршрут определён по TCP-соединению процесса' : 'Маршрут не подтверждён'} title={claudeCheck?.message} className={`inline-block size-2.5 shrink-0 rounded-full ${route && !route.connected ? 'bg-red-500' : claudeConfirmed ? 'bg-emerald-500' : 'bg-slate-400'}`} /> : <Dot live={codex} check={codex && route?.applied ? route.check ?? undefined : undefined} offline={route ? !route.connected : undefined}/> }
     <span className="proxy-route-label min-w-0 truncate">{label}</span>
     {warning && <span role="img" aria-label={warning} className="shrink-0 text-amber-600">⚠</span>}
   </a>;

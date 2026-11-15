@@ -28,6 +28,8 @@ import type { PluginThreadListProps } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
 import { projectsByLatestThread } from "./lib/project-order";
+import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
+import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
 const TABS_CHANGED = "machine-tabs-changed";
 const ICONS_CHANGED = "machine-tabs-icons-changed";
@@ -365,6 +367,7 @@ const RECENT_PREFERENCES: AnyRecord = {
   chronologicalSort: "updated",
   sortDirection: "default",
   groupByReadStatus: false,
+  environmentGrouping: false,
   hiddenGroups: [],
   collapsedThreadSections: [],
   manualSectionOrder: ["pinned", "sections", "threads"],
@@ -487,28 +490,18 @@ async function loadNativeList(
   // evaluates. Swap the SDK in for that moment; if the runtime object is
   // read-only, swap the whole runtime for a copy that inherits from it.
   const globals = globalThis as AnyRecord;
-  let restore: () => void;
+  const realJsx = runtime.jsxRuntime as AnyRecord;
+  const pagedJsx = withGroupPaging(realJsx);
+  // The native list captures its JSX helpers during evaluation, just like SDK.
+  // Use an inheriting copy so other plugins keep their original runtime.
+  const pagingRuntime = Object.create(runtime) as AnyRecord;
+  Object.defineProperty(pagingRuntime, "pluginSdkApp", { value: wrapped });
+  Object.defineProperty(pagingRuntime, "jsxRuntime", { value: pagedJsx });
   try {
-    runtime.pluginSdkApp = wrapped;
-  } catch {
-    // Frozen runtime: handled below.
-  }
-  if (runtime.pluginSdkApp === wrapped) {
-    restore = () => {
-      runtime.pluginSdkApp = real;
-    };
-  } else {
-    const copy = Object.create(runtime) as AnyRecord;
-    Object.defineProperty(copy, "pluginSdkApp", { value: wrapped });
-    globals.__bbPluginRuntime = copy;
-    restore = () => {
-      globals.__bbPluginRuntime = runtime;
-    };
-  }
-  try {
+    globals.__bbPluginRuntime = pagingRuntime;
     module = (await import(/* @vite-ignore */ url)) as { default?: unknown };
   } finally {
-    restore();
+    globals.__bbPluginRuntime = runtime;
   }
 
   const setup = setups.get(module.default);
@@ -900,7 +893,6 @@ function swapLayout(text: string, keys: ReadonlyMap<string, string>): string {
   return [...text].map((char) => keys.get(char) ?? char).join("");
 }
 
-const RECENT_COUNT = 5;
 const COLLAPSED_KEY = "bb-machine-tabs:collapsed-groups";
 
 /** Collapsed first-level groups, kept per browser. */
@@ -1053,6 +1045,7 @@ function MachineThreadList(props: PluginThreadListProps) {
   const { component: NativeList, error } = useNativeList("main");
   const { component: RecentList } = useNativeList("recent");
   const [query, setQuery] = useState("");
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ archive: false, messages: false });
   const { threads, projects } = experimental_useSidebarThreads();
   const { collapsed, toggle } = useCollapsedGroups();
   const [sort, setSort] = useState<string | null>(null);
@@ -1084,6 +1077,10 @@ function MachineThreadList(props: PluginThreadListProps) {
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
   );
+  const needles = useMemo(() => {
+    const typed = query.trim().toLowerCase();
+    return [...new Set([typed, swapLayout(typed, EN_TO_RU), swapLayout(typed, RU_TO_EN)])];
+  }, [query]);
 
   // The search filter: thread ids whose title matches, or whose group header
   // would: project, machine, or day ("today", "yesterday", "12 nov").
@@ -1091,7 +1088,6 @@ function MachineThreadList(props: PluginThreadListProps) {
     const typed = query.trim().toLowerCase();
     if (typed === "") return null;
     // Also what the same keys spell in the other keyboard layout.
-    const needles = [...new Set([typed, swapLayout(typed, EN_TO_RU), swapLayout(typed, RU_TO_EN)])];
     const todayStart = startOfToday();
     return new Set(
       threads
@@ -1108,7 +1104,7 @@ function MachineThreadList(props: PluginThreadListProps) {
         )
         .map((thread) => thread.id),
     );
-  }, [threads, projectNames, query, dayField]);
+  }, [threads, projectNames, query, dayField, needles]);
 
   /** Live threads of the selected tab that pass the search filter. */
   const shown = useMemo(
@@ -1137,7 +1133,6 @@ function MachineThreadList(props: PluginThreadListProps) {
     const ids = [...shown]
       .filter((thread) => thread.parentThreadId == null)
       .sort((a, b) => b.updatedAt - a.updatedAt)
-      .slice(0, RECENT_COUNT)
       .map((thread) => thread.id);
     if (ids.length === 0) return null;
     return { ...DEFAULT_VIEW, recent: true, ids: new Set(ids) };
@@ -1268,7 +1263,7 @@ function MachineThreadList(props: PluginThreadListProps) {
           />
         </div>
       )}
-      <div className="relative z-[90] px-2 pb-1.5">
+      <div className="machine-tabs-search relative z-[100] px-2 pb-1.5">
         <BbIcon
           name="Search"
           className="pointer-events-none absolute left-4 top-1.5 size-3.5 text-muted-foreground"
@@ -1280,24 +1275,35 @@ function MachineThreadList(props: PluginThreadListProps) {
           onKeyDown={(event) => {
             if (event.key === "Escape") setQuery("");
           }}
-          placeholder="Filter threads"
-          aria-label="Filter threads"
-          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-7 text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
+          placeholder="Поиск тредов"
+          aria-label="Поиск тредов"
+          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-12 text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
         />
         {query === "" ? null : (
           <button
             type="button"
             aria-label="Clear filter"
             onClick={() => setQuery("")}
-            className="absolute right-3 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
+            className="absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
           >
             <BbIcon name="X" className="size-3.5" />
           </button>
         )}
+        <SearchSettings options={searchOptions} onChange={setSearchOptions} />
       </div>
       <style>{HIDE_EMPTY_GROUPS}</style>
+      <style>{GROUP_PAGING_CSS}</style>
+      <style>{`
+        .machine-tabs-search-settings { opacity: 0; transition: opacity 120ms ease; }
+        .machine-tabs-search:hover .machine-tabs-search-settings,
+        .machine-tabs-search:focus-within .machine-tabs-search-settings,
+        .machine-tabs-search-settings[data-open] { opacity: .7; }
+        @media (hover: none) { .machine-tabs-search-settings { opacity: .7; } }
+      `}</style>
       <style>{headerCss}</style>
       <style>{emptyCss}</style>
+      {matchIds !== null ? <SearchExtras query={query} needles={needles}
+        options={searchOptions} machineId={selectedId} localIds={new Set(shown.map((thread) => thread.id))} /> : null}
       <ProjectBadges.Provider value={badges}>
         {RecentList && recentView && state !== null ? (
           <>
@@ -1316,7 +1322,9 @@ function MachineThreadList(props: PluginThreadListProps) {
       </ProjectBadges.Provider>
       {matchIds !== null && shown.length === 0 ? (
         <p className="px-4 py-2 text-xs text-muted-foreground">
-          No threads match “{query.trim()}”.
+          {searchOptions.archive || searchOptions.messages
+            ? "В названиях активных тредов совпадений нет."
+            : `Ничего не найдено по запросу «${query.trim()}».`}
         </p>
       ) : null}
       {NativeList && state !== null ? (

@@ -1,0 +1,21 @@
+{
+  "name": "bb-plugin-web-bb-button",
+  "version": "0.1.1",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Web BB Button",
+    "description": "Open the permanent BB web address from the left navigation rail.",
+    "branding": {
+      "icon": "Globe"
+    },
+    "app": "./app.tsx",
+    "server": "./server.ts"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.132"
+  }
+}

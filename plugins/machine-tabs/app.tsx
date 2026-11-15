@@ -27,7 +27,7 @@ import {
 import type { PluginThreadListProps } from "@get-bb/plugin-sdk/app";
 import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
-import { projectsByLatestThread } from "./lib/project-order";
+import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
@@ -484,6 +484,40 @@ async function loadNativeList(
     const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
     wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
       if (channel === "preferences" && (payload as AnyRecord)?.key === "collapsedThreads") handler(payload);
+    });
+  }
+
+  if (kind === "main") {
+    // The native list's persisted project IDs otherwise override the sorted
+    // sidebar data. Resolve those slots dynamically within each filtered list.
+    const normalize = (value: unknown) => Array.isArray(value)
+      ? automaticProjectSectionOrder(value as string[]) : value;
+    const useRealRpc = base.useRpc as () => {
+      call(method: string, input: unknown): Promise<AnyRecord>;
+    };
+    wrapped.useRpc = function useProjectOrderRpc() {
+      const rpc = useRealRpc();
+      return useMemo(() => ({
+        ...rpc,
+        async call(method: string, input: unknown) {
+          const result = await rpc.call(method, input);
+          if (method === "listPreferences") {
+            const preferences = result.preferences as AnyRecord;
+            return { ...result, preferences: { ...preferences,
+              sectionOrder: normalize(preferences.sectionOrder) } };
+          }
+          if (method === "setPreference" && result.key === "sectionOrder") {
+            return { ...result, value: normalize(result.value) };
+          }
+          return result;
+        },
+      }), [rpc]);
+    };
+    const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
+    wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
+      const event = payload as AnyRecord;
+      handler(channel === "preferences" && event?.key === "sectionOrder"
+        ? { ...event, value: normalize(event.value) } : payload);
     });
   }
 

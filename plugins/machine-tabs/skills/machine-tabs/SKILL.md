@@ -23,7 +23,10 @@ adds, above it:
 
 Project groups automatically sort by their latest visible thread's `updatedAt`
 (newest first), including nested projects and projects used as the outer group.
-New activity recomputes the order. Empty projects remain at the bottom; ties
+New activity recomputes the order. Saved manual project positions do not override
+this automatic order in Machine Tabs; their stored preferences remain intact.
+Pinned/Threads placement and other preference events remain native.
+Empty projects remain at the bottom; ties
 keep BB's existing project order. This does not change thread row sorting or
 the order of machine/day groups. Last 5 stays above the main list.
 

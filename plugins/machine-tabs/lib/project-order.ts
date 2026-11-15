@@ -23,3 +23,19 @@ export function projectsByLatestThread<P extends { id: string }>(
       (latest.get(b.id) ?? 0) - (latest.get(a.id) ?? 0);
   });
 }
+
+/** Replace saved per-project positions with the dynamic Projects anchor.
+ * Keep Pinned/Threads and other section placements exactly where they were.
+ * This is a view transform, not a write to the user's stored preferences.
+ */
+export function automaticProjectSectionOrder(order: readonly string[]): string[] {
+  const result: string[] = [];
+  let projects = false;
+  for (const key of order) {
+    if (key === "projects" || key.startsWith("project:")) {
+      if (!projects) result.push("projects");
+      projects = true;
+    } else result.push(key);
+  }
+  return result;
+}

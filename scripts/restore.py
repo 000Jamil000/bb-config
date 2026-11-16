@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 import shlex
 import subprocess
+import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 # These may change connectivity or provider routing. Preserve for explicit setup.
@@ -62,6 +63,9 @@ def plan(install_plugins=False, root=ROOT, installed=None):
     (BB unreachable) plans a full install and skips bundled plugins.
     """
     commands = []
+    if (root / 'config/codex.json').is_file():
+        commands.append([sys.executable, str(root / 'scripts/codex_defaults.py'),
+                         '--defaults', str(root / 'config/codex.json'), '--apply'])
     manifest = read('plugins', root)
     if install_plugins:
         for plugin in manifest:

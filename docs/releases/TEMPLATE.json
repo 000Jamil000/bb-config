@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "version": "vX.Y.Z",
+  "title": "Краткое название релиза",
+  "steps": [
+    {
+      "id": "example-plugin",
+      "title": "Собрать и перезагрузить плагин example",
+      "component": "example",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "example",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "git checkout предыдущего релиза для plugins/example, сборка и bb plugin reload example."
+    },
+    {
+      "id": "example-setting",
+      "title": "Перенести значение настройки в новый ключ",
+      "component": "example",
+      "where": "server",
+      "kind": "command",
+      "after": ["example-plugin"],
+      "applies": ["{python}", "scripts/updates.py", "require-plugin", "example"],
+      "apply": ["{python}", "scripts/migrations/vX.Y.Z_example.py", "--apply"],
+      "verify": ["{python}", "scripts/migrations/vX.Y.Z_example.py", "--check"],
+      "rerun": "Безопасно: скрипт идемпотентен.",
+      "rollback": "Скрипт сохраняет прежнее значение в .local/updates/; вернуть его командой --restore."
+    },
+    {
+      "id": "example-executor",
+      "title": "Действие на каждой машине-исполнителе",
+      "component": "cli-defaults",
+      "where": "executors",
+      "kind": "manual",
+      "verify": ["{python}", "scripts/codex_defaults.py", "--check", "--verify"],
+      "rerun": "Безопасно.",
+      "rollback": "Описать в .md."
+    }
+  ]
+}

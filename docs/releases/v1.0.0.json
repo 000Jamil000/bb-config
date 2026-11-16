@@ -1,0 +1,137 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.0",
+  "title": "Первый стабильный выпуск и канал обновлений",
+  "steps": [
+    {
+      "id": "plugin-code-open",
+      "title": "Собрать и перезагрузить Code Open версии этого релиза",
+      "component": "code-open",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "code-open",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/code-open к прежнему коммиту (git checkout <прежний коммит> -- plugins/code-open), затем npm ci --include=dev, bb plugin build и bb plugin reload code-open."
+    },
+    {
+      "id": "plugin-config-updates",
+      "title": "Собрать и перезагрузить Config Updates версии этого релиза",
+      "component": "config-updates",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "config-updates",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/config-updates к прежнему коммиту (git checkout <прежний коммит> -- plugins/config-updates), затем npm ci --include=dev, bb plugin build и bb plugin reload config-updates."
+    },
+    {
+      "id": "plugin-file-local-open",
+      "title": "Собрать и перезагрузить Open on Mac версии этого релиза",
+      "component": "file-local-open",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "file-local-open",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/file-local-open к прежнему коммиту (git checkout <прежний коммит> -- plugins/file-local-open), затем npm ci --include=dev, bb plugin build и bb plugin reload file-local-open."
+    },
+    {
+      "id": "plugin-handoff-button",
+      "title": "Собрать и перезагрузить Handoff Button версии этого релиза",
+      "component": "handoff-button",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "handoff-button",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/handoff-button к прежнему коммиту (git checkout <прежний коммит> -- plugins/handoff-button), затем npm ci --include=dev, bb plugin build и bb plugin reload handoff-button."
+    },
+    {
+      "id": "plugin-machine-tabs",
+      "title": "Собрать и перезагрузить Machine Tabs версии этого релиза",
+      "component": "machine-tabs",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "machine-tabs",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/machine-tabs к прежнему коммиту (git checkout <прежний коммит> -- plugins/machine-tabs), затем npm ci --include=dev, bb plugin build и bb plugin reload machine-tabs."
+    },
+    {
+      "id": "plugin-menubar-status",
+      "title": "Собрать и перезагрузить Menubar Status версии этого релиза",
+      "component": "menubar-status",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "menubar-status",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/menubar-status к прежнему коммиту (git checkout <прежний коммит> -- plugins/menubar-status), затем npm ci --include=dev, bb plugin build и bb plugin reload menubar-status."
+    },
+    {
+      "id": "plugin-project-logo",
+      "title": "Собрать и перезагрузить Project Logo версии этого релиза",
+      "component": "project-logo",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-logo",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/project-logo к прежнему коммиту (git checkout <прежний коммит> -- plugins/project-logo), затем npm ci --include=dev, bb plugin build и bb plugin reload project-logo."
+    },
+    {
+      "id": "plugin-project-open",
+      "title": "Собрать и перезагрузить Project Open версии этого релиза",
+      "component": "project-open",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-open",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/project-open к прежнему коммиту (git checkout <прежний коммит> -- plugins/project-open), затем npm ci --include=dev, bb plugin build и bb plugin reload project-open."
+    },
+    {
+      "id": "plugin-proxy-manager",
+      "title": "Собрать и перезагрузить Proxy Manager версии этого релиза",
+      "component": "proxy-manager",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "proxy-manager",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/proxy-manager к прежнему коммиту (git checkout <прежний коммит> -- plugins/proxy-manager), затем npm ci --include=dev, bb plugin build и bb plugin reload proxy-manager."
+    },
+    {
+      "id": "plugin-push-button",
+      "title": "Собрать и перезагрузить Push Button версии этого релиза",
+      "component": "push-button",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "push-button",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/push-button к прежнему коммиту (git checkout <прежний коммит> -- plugins/push-button), затем npm ci --include=dev, bb plugin build и bb plugin reload push-button."
+    },
+    {
+      "id": "plugin-thread-account-usage",
+      "title": "Собрать и перезагрузить Thread Account Usage версии этого релиза",
+      "component": "thread-account-usage",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "thread-account-usage",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/thread-account-usage к прежнему коммиту (git checkout <прежний коммит> -- plugins/thread-account-usage), затем npm ci --include=dev, bb plugin build и bb plugin reload thread-account-usage."
+    },
+    {
+      "id": "plugin-voice-mode-keeper",
+      "title": "Собрать и перезагрузить Plugin Keeper версии этого релиза",
+      "component": "voice-mode-keeper",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "voice-mode-keeper",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/voice-mode-keeper к прежнему коммиту (git checkout <прежний коммит> -- plugins/voice-mode-keeper), затем npm ci --include=dev, bb plugin build и bb plugin reload voice-mode-keeper."
+    },
+    {
+      "id": "plugin-web-bb-button",
+      "title": "Собрать и перезагрузить Web BB Button версии этого релиза",
+      "component": "web-bb-button",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "web-bb-button",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/web-bb-button к прежнему коммиту (git checkout <прежний коммит> -- plugins/web-bb-button), затем npm ci --include=dev, bb plugin build и bb plugin reload web-bb-button."
+    }
+  ]
+}

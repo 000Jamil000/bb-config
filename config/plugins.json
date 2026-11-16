@@ -142,6 +142,13 @@
     "source": "builtin:concurrency-limit"
   },
   {
+    "id": "config-updates",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Config Updates",
+    "source": "path:plugins/config-updates"
+  },
+  {
     "id": "connect",
     "version": "0.1.1",
     "enabled": true,

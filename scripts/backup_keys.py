@@ -141,11 +141,18 @@ def decrypt(archive, output):
         _, error = process.communicate(timeout=300)
         if process.returncode:
             raise RuntimeError('age decryption failed; ciphertext or recovery key does not match')
-        from server_backup import validate_archive
-        manifest = validate_archive(temporary)
+        import tarfile
+        with tarfile.open(temporary, 'r|gz') as archive_stream:
+            first = next(iter(archive_stream), None)
+        if first is not None and first.name == 'manifest.json':
+            from server_backup import validate_archive
+            count = len(validate_archive(temporary)['entries'])
+        else:
+            from private_backup import validate_backup
+            count = validate_backup(temporary)
         temporary.chmod(0o600)
         os.replace(temporary, destination)
-        print('Decrypted archive verified (%s manifest entries): %s' % (len(manifest['entries']), destination))
+        print('Decrypted archive verified (%s files): %s' % (count, destination))
     finally:
         private_output.close()
         if process is not None and process.poll() is None:

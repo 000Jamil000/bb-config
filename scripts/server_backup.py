@@ -12,9 +12,33 @@ import shutil
 from pathlib import Path
 import subprocess
 import tarfile
+import tempfile
 import time
 import uuid
 from zoneinfo import ZoneInfo
+
+# Node's built-in fetch supplies its own five-minute headers timeout. Override
+# that per request in this CLI child only; BB itself and its routing are untouched.
+EXPORT_HTTP_PRELOAD = """
+const { Agent, setGlobalDispatcher } = require(process.env.BB_EXPORT_UNDICI);
+const agent = new Agent();
+const dispatch = agent.dispatch.bind(agent);
+agent.dispatch = (options, handler) => dispatch({
+  ...options, headersTimeout: Number(process.env.BB_EXPORT_HEADERS_TIMEOUT_MS)
+}, handler);
+setGlobalDispatcher(agent);
+"""
+
+def backup_day(now=None):
+    now = now or dt.datetime.now(dt.timezone.utc)
+    return (now.astimezone(ZoneInfo('Europe/Moscow')) - dt.timedelta(hours=5)).date().isoformat()
+
+def export_due(state, day, interval_days):
+    try:
+        elapsed = (dt.date.fromisoformat(day) - dt.date.fromisoformat(state['day'])).days
+        return elapsed < 0 or elapsed >= interval_days
+    except (KeyError, ValueError):
+        return True
 
 
 def digest(path):
@@ -27,15 +51,31 @@ def digest(path):
 
 def validate_archive(path):
     """Check every manifest member without extracting or opening any database."""
-    with tarfile.open(path, 'r:gz') as archive:
-        manifest = json.load(archive.extractfile('manifest.json'))
+    # Streaming avoids repeated gzip seeks and quadratic name lookup in large
+    # archives. The official BB writer places the manifest first.
+    with tarfile.open(path, 'r|gz') as archive:
+        members = iter(archive)
+        first = next(members, None)
+        if first is None or first.name != 'manifest.json' or not first.isfile():
+            raise ValueError('BB archive must start with its manifest')
+        manifest = json.load(archive.extractfile(first))
         if manifest.get('format') != 'bb-server-archive' or manifest.get('version') != 2:
             raise ValueError('Unsupported BB archive format')
+        expected = {}
         for entry in manifest['entries']:
             name = entry['path']
-            if name.startswith('/') or '..' in Path(name).parts:
+            if name.startswith('/') or '..' in Path(name).parts or name in expected:
                 raise ValueError('Unsafe archive member')
-            stream = archive.extractfile('files/' + name)
+            expected[name] = entry
+        seen = set()
+        for member in members:
+            if not member.isfile() or not member.name.startswith('files/'):
+                raise ValueError('Unexpected BB archive member')
+            name = member.name[len('files/'):]
+            if name not in expected or name in seen:
+                raise ValueError('Unexpected or duplicate BB archive member')
+            entry = expected[name]
+            stream = archive.extractfile(member)
             result = hashlib.sha256()
             size = 0
             for chunk in iter(lambda: stream.read(1024 * 1024), b''):
@@ -43,6 +83,9 @@ def validate_archive(path):
                 size += len(chunk)
             if size != entry['size'] or result.hexdigest() != entry['sha256']:
                 raise ValueError('Archive member checksum mismatch')
+            seen.add(name)
+        if seen != expected.keys():
+            raise ValueError('BB archive is missing manifest members')
         return manifest
 
 
@@ -78,7 +121,7 @@ def report_backup_alert(source, kind, cli, now=None):
         titles = {'backup-error': 'Не удалось создать бэкап BB',
                   'delivery-stale': 'Бэкап BB давно не доставлен на Mac',
                   'healthy': 'Бэкапы BB снова работают'}
-        bodies = {'backup-error': 'Экспорт или шифрование завершились ошибкой. Открой историю автоматизации; после трёх сбоев BB ставит её на паузу.',
+        bodies = {'backup-error': 'Экспорт или шифрование завершились ошибкой. Открой историю автоматизации; повторная попытка будет выполнена по расписанию.',
                   'delivery-stale': 'Более 24 часов нет успешной доставки на Mac. Зашифрованная копия остаётся на сервере; доставка повторяется каждые 30 минут.',
                   'healthy': 'Зашифрованный бэкап доставлен на Mac и проверен. Предыдущий сбой устранён.'}
         project = os.environ.get('BB_PROJECT_ID', '')
@@ -152,7 +195,8 @@ def encrypt_archive(plaintext, ciphertext, recipient):
 
 class Cli:
     def __init__(self):
-        configured = Path(os.environ.get('BB_CLI', 'bb'))
+        requested = os.environ.get('BB_CLI') or 'bb'
+        configured = Path(shutil.which(requested) or requested).resolve()
         if configured.is_file():
             with configured.open('rb') as stream:
                 header = stream.read(2048).decode('utf8', errors='replace')
@@ -165,9 +209,20 @@ class Cli:
         self.path = str(native if native.is_file() else configured)
 
     def call(self, *args, stdin=None, timeout=120):
-        completed = subprocess.run([self.path, *args], input=stdin, text=True,
-                                   capture_output=True, timeout=timeout,
-                                   env={**os.environ, 'BB_CLI': self.path})
+        env = {**os.environ, 'BB_CLI': self.path}
+        with tempfile.TemporaryDirectory(prefix='bb-export-http-') as directory:
+            if args[:2] == ('server', 'export'):
+                candidates = [parent / 'npm/node_modules/undici' for parent in Path(self.path).parents]
+                undici = next((p for p in candidates if (p / 'package.json').is_file()), None)
+                if undici is None:
+                    raise RuntimeError('BB bundled HTTP client not found; export was not started')
+                preload = Path(directory) / 'export.cjs'
+                preload.write_text(EXPORT_HTTP_PRELOAD)
+                env.update(BB_EXPORT_UNDICI=str(undici),
+                           BB_EXPORT_HEADERS_TIMEOUT_MS=str(timeout * 1000),
+                           NODE_OPTIONS=env.get('NODE_OPTIONS', '') + ' --require=' + json.dumps(str(preload)))
+            completed = subprocess.run([self.path, *args], input=stdin, text=True,
+                                       capture_output=True, timeout=timeout, env=env)
         if completed.returncode:
             # Never echo terminal contents, file bodies, or inherited credentials.
             detail = ''
@@ -229,7 +284,8 @@ receipt=destination.with_suffix(destination.suffix+'.json')
 receipt.write_text(json.dumps({'sha256':expected,'sizeBytes':destination.stat().st_size,'encrypted':encrypted}))
 receipt.chmod(0o600)
 # Delete old complete copies only after the newly delivered copy is verified.
-pattern='bb-server-*.tar.gz.age' if encrypted else 'bb-server-*.tar.gz'
+prefix='private-config-' if destination.name.startswith('private-config-') else 'bb-server-'
+pattern=prefix+('*.tar.gz.age' if encrypted else '*.tar.gz')
 for old in sorted(destination.parent.glob(pattern),reverse=True)[keep:]:
  old.unlink();old.with_suffix(old.suffix+'.json').unlink(missing_ok=True)
 shutil.rmtree(incoming)
@@ -246,7 +302,7 @@ def deliver(cli, archive, host, destination, keep):
     cli.remote_python(host, prepare, str(destination), str(incoming))
     with archive.open('rb') as stream:
         index = 0
-        for chunk in iter(lambda: stream.read(192 * 1024), b''):
+        for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b''):
             cli.call('file', 'write', str(incoming / ('part-%08d' % index)),
                      '--host', host, '--stdin', '--json',
                      stdin=base64.b64encode(chunk).decode('ascii'))
@@ -270,16 +326,16 @@ def tick(args):
         except BlockingIOError:
             return
         now = dt.datetime.now(dt.timezone.utc)
-        day = (now.astimezone(ZoneInfo('Europe/Moscow')) - dt.timedelta(hours=5)).date().isoformat()
+        day = backup_day(now)
         state_file = source / 'state.json'
         state = json.loads(state_file.read_text()) if state_file.exists() else {}
         archive = source / state.get('archive', 'missing')
-        if (state.get('day') != day or not archive.is_file() or args.force
+        if (export_due(state, day, getattr(args, 'interval_days', 7)) or not archive.is_file() or args.force
                 or state.get('recipient') != args.recipient or not archive.name.endswith('.age')):
             archive = source / ('bb-server-' + now.strftime('%Y%m%dT%H%M%S%fZ') + '.tar.gz.age')
             plaintext = source / ('.export-' + uuid.uuid4().hex + '.tar.gz')
             try:
-                cli.call('server', 'export', '--out', str(plaintext), '--json', timeout=300)
+                cli.call('server', 'export', '--out', str(plaintext), '--json', timeout=780)
                 validate_archive(plaintext)
                 encrypt_archive(plaintext, archive, args.recipient)
             finally:
@@ -291,9 +347,14 @@ def tick(args):
             os.replace(temp, state_file)
             rotate(source, args.keep)
             print('Created and encrypted verified BB server backup (' + str(archive.stat().st_size) + ' bytes).')
+            if getattr(args, 'defer_delivery', False):
+                print('Encrypted full backup saved; delivery will run on the next tick.')
+                return
         if state.get('delivered'):
             delivery_succeeded(source, archive, cli)
             return
+        if digest(archive) != state['sha256']:
+            raise ValueError('Encrypted BB backup checksum changed before delivery')
         try:
             machine = cli.call('machine', 'show', args.destination_host, '--json')
             if machine.get('status') != 'connected':
@@ -319,10 +380,11 @@ def main():
     delivery = read_json(root / '.local/config/backup-delivery.json')
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--source-dir', default=str(Path.home() / '.bb-backups/server'))
-    parser.add_argument('--destination-host', default=delivery.get('destinationHost'))
-    parser.add_argument('--destination-dir', default=delivery.get('destinationDir'))
+    parser.add_argument('--destination-host', default=os.environ.get('BB_BACKUP_DESTINATION_HOST') or delivery.get('destinationHost'))
+    parser.add_argument('--destination-dir', default=os.environ.get('BB_BACKUP_DESTINATION_DIR') or delivery.get('destinationDir'))
     parser.add_argument('--keep', type=int, default=3)
     parser.add_argument('--force', action='store_true')
+    parser.add_argument('--interval-days', type=int, default=7)
     settings = root / '.local/config/backup-encryption.json'
     recipient = os.environ.get('BB_BACKUP_RECIPIENT')
     if not recipient and settings.is_file():
@@ -333,6 +395,8 @@ def main():
         parser.error('Set --destination-host and --destination-dir, or .local/config/backup-delivery.json')
     if args.keep < 1:
         parser.error('--keep must be positive')
+    if args.interval_days < 1:
+        parser.error('--interval-days must be positive')
     try:
         tick(args)
     except Exception:

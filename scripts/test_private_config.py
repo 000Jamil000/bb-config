@@ -9,6 +9,8 @@ import unittest
 
 import privacy_check
 import private_backup
+import backup_keys
+from unittest.mock import patch
 
 
 class PrivacyTests(unittest.TestCase):
@@ -40,6 +42,14 @@ class PrivateBackupTests(unittest.TestCase):
                     '.local/docs', '.local/docs/recovery.md'})
                 self.assertEqual(json.load(archive.extractfile('.local/config/private.json')), {'address': 'private fixture'})
             self.assertEqual(target.stat().st_mode & 0o777, 0o600)
+            # The same Keychain recovery command must accept daily config and
+            # full-server formats; the fixture key stays in memory.
+            with patch.object(backup_keys, 'Keychain') as keychain, \
+                 patch.object(backup_keys, 'age_tool', side_effect=shutil.which):
+                keychain.return_value.get.return_value = identity
+                restored = root / 'restored.tar.gz'
+                backup_keys.decrypt(target, restored)
+                self.assertEqual(restored.read_bytes(), plain)
 
     def test_no_recipient_or_symlink_cannot_export_private_data(self):
         with tempfile.TemporaryDirectory() as directory:

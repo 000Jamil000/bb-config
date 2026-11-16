@@ -9,8 +9,9 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST = ROOT / '.local/config/automations.json'
-SOURCES = {'server_backup.py', 'thread_watchdog.py', 'thread_queue_monitor.py'}
-SAFE_ENV = {'BB_BACKUP_RECIPIENT', 'WATCHDOG_THREAD', 'WATCHDOG_STATE', 'MONITOR_STORAGE'}
+SOURCES = {'server_backup.py', 'daily_backup.py', 'thread_watchdog.py', 'thread_queue_monitor.py'}
+SAFE_ENV = {'BB_BACKUP_RECIPIENT', 'BB_BACKUP_DESTINATION_HOST', 'BB_BACKUP_DESTINATION_DIR',
+            'BB_CONFIG_ROOT', 'WATCHDOG_THREAD', 'WATCHDOG_STATE', 'MONITOR_STORAGE'}
 
 
 def bb(args):
@@ -69,13 +70,17 @@ def main():
             raise RuntimeError('Only recurring cron schedules are supported')
         policy = row['workingDirectory']
         directory = policy['path'] if policy['type'] == 'path' else policy['type']
+        env = dict(row['env'])
+        if row['source'] == 'scripts/daily_backup.py':
+            env['BB_CONFIG_ROOT'] = str(ROOT)
+            directory = str(ROOT)
         args = ['automation', action]
         if matches:
             args += [matches[0]['id']]
         args += ['--project', row['project'], '--name', row['name'],
                  '--cron', trigger['cron'], '--timezone', trigger['timezone'],
                  '--script-file', str(ROOT / row['source']), '--interpreter', row['interpreter'],
-                 '--timeout', str(row['timeoutMs']), '--env-json', json.dumps(row['env']),
+                 '--timeout', str(row['timeoutMs']), '--env-json', json.dumps(env),
                  '--working-directory', directory]
         if not matches:
             args += ['--disabled']

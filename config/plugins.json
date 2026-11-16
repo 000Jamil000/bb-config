@@ -177,6 +177,13 @@
     "source": "builtin:environment-project-checkout"
   },
   {
+    "id": "file-local-open",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Open on Mac",
+    "source": "path:plugins/file-local-open"
+  },
+  {
     "id": "handoff",
     "version": "0.8.1",
     "enabled": true,

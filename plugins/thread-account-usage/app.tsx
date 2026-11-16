@@ -189,7 +189,8 @@ function QuotaControl({ threadId, target }: { threadId: string | null; target?:H
   const account = snapshot?.account;
   const windows = account?.windows.filter(w => appliesToModel(w, snapshot?.model ?? null)) ?? [];
   const worst = [...windows].sort((a,b)=>b.usedPercent-a.usedPercent)[0];
-  const importantWindows=[...windows].sort((a,b)=>b.usedPercent-a.usedPercent).slice(0,2);
+  const windowOrder = { 'five-hour': 0, weekly: 1, model: 2, other: 3 };
+  const importantWindows=[...windows].sort((a,b)=>windowOrder[a.kind]-windowOrder[b.kind]).slice(0,2);
   const list = accounts ?? [];
   const blockedAccounts=list.filter(accountExhausted);
   const accountName = account?.email?.split('@')[0] ?? 'не подтверждён';
@@ -208,8 +209,8 @@ function QuotaControl({ threadId, target }: { threadId: string | null; target?:H
       onPointerEnter={event=>{if(event.pointerType==='mouse')enter()}} onPointerLeave={event=>{if(event.pointerType==='mouse')leave()}} onFocus={()=>{if(!mobile)enter()}}
       onClick={() => { if(closeTimer.current)clearTimeout(closeTimer.current);positionPanel(); const next=!(open&&pinned);pinnedRef.current=next;setOpen(next);setPinned(next); }}>
       {threadId && mobile ? <span className="tau-mobile-quota"><QuotaGlyph windows={importantWindows} logo={logo} agent={account?.providerName??snapshot?.providerId} resets={account?.resetCount??0}/><span data-level={worst?level(worst.usedPercent):undefined}>{worst?`${short(worst)} ${pct(worst.usedPercent)}`:loading?"…":"Лимиты"}</span></span> : threadId ? <><span className="tau-thread-composite"><QuotaGlyph windows={importantWindows} logo={logo} agent={account?.providerName??snapshot?.providerId} resets={account?.resetCount??0}/><span className="tau-thread-text">
-        <span className="tau-thread-owner" title={`${account?.email??'Аккаунт не подтверждён'} · ${snapshot?.hostName??''}`}><span>{accountName}</span><small>· {snapshot?.hostName?.replace(/\s*[—–].*$/,'').trim()??'машина треда'}</small></span>
-        {worst?<span className="tau-inline-legend">{importantWindows.map(w=><span key={w.label} data-kind={w.kind} data-level={level(w.usedPercent)} title={`${w.label}. ${resetText(w.resetsAt,now).relative}`}><strong><span>{short(w)}</span> {pct(w.usedPercent)}</strong><small>{compactReset(w.resetsAt,now)}</small></span>)}</span>:<span className="tau-missing">{loading?'…':'Лимиты не подтверждены'}</span>}
+        <span className="tau-thread-owner" title={`${account?.email??'Аккаунт не подтверждён'} · ${snapshot?.hostName??''}`}><span>{accountName}</span><small>{snapshot?.hostName?.replace(/\s*[—–].*$/,'').trim()??'машина треда'}</small></span>
+        {worst?<span className="tau-inline-legend">{importantWindows.map(w=><span key={w.label} data-kind={w.kind} data-level={level(w.usedPercent)} title={`${w.label}: ${pct(w.usedPercent)} использовано. ${resetText(w.resetsAt,now).relative}. ${resetText(w.resetsAt,now).exact}`}><strong><span>{short(w)}</span> {pct(w.usedPercent)}</strong><small><span aria-hidden="true">↻ </span>{compactReset(w.resetsAt,now)}</small></span>)}</span>:<span className="tau-missing">{loading?'…':'Лимиты не подтверждены'}</span>}
       </span></span>
         {(error || account?.status === 'stale') && <span className="tau-caution">!</span>}</>
         : <><QuotaGlyph windows={footerWindows} resets={resetTotal} blocked={blockedAccounts.length}/><span className="tau-footer-values">{footerWindows.map(w=><span key={w.kind} data-kind={w.kind}><small>{short(w)}</small><strong>{pct(w.usedPercent)}</strong></span>)}{!footerWindows.length&&<span>—</span>}</span></>}

@@ -14,7 +14,9 @@
     },
     "server": "./server.ts",
     "app": "./app.tsx",
-    "skills": [],
+    "skills": [
+      "skills"
+    ],
     "host": "./host.ts"
   },
   "dependencies": {

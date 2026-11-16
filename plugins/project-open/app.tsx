@@ -19,7 +19,9 @@ function useThreadAnchors() {
       const rows = new Set(desktop ? document.querySelectorAll<HTMLElement>('a[data-sidebar-thread-id]') : []);
       for (const [row, anchor] of mounts) {
         if (!rows.has(row) || !anchor.element.isConnected || row.dataset.sidebarThreadId !== anchor.threadId) {
-          row.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-project-offset');
+          row.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-toolbar-inset');
+          resizeObserver.unobserve(anchor.element.closest('[data-sidebar-row-controls]') ?? anchor.element);
+          resizeObserver.unobserve(anchor.element.closest('[data-sidebar-thread-trailing]') ?? anchor.element);
           anchor.element.remove(); mounts.delete(row);
         }
       }
@@ -32,24 +34,19 @@ function useThreadAnchors() {
         const controls = trailing.querySelector<HTMLElement>('[data-sidebar-row-controls]');
         if (!controls) continue;
         controls.prepend(element);
+        resizeObserver.observe(controls);
+        resizeObserver.observe(trailing);
         mounts.set(row, { threadId: row.dataset.sidebarThreadId!, element });
       }
-      // Native project links and child expanders live outside the hover toolbar.
-      // Keep both before the full toolbar, including our two icons.
+      // Reserve the toolbar's overflow in layout, so native project links and
+      // child expanders stay after the title instead of translating over it.
       for (const [link, anchor] of mounts) {
         const row = link.closest<HTMLElement>('[data-sidebar-rename-row]');
-        if (!window.matchMedia('(hover:hover) and (pointer:fine)').matches) {
-          row?.style.removeProperty('--project-open-project-offset');
-          continue;
-        }
-        const shortcuts = [...row?.querySelectorAll<HTMLElement>('[data-sidebar-thread-cross-project], button[aria-label^="Expand "][aria-label$=" threads"], button[aria-label^="Collapse "][aria-label$=" threads"]') ?? []];
         const toolbar = anchor.element.closest<HTMLElement>('[data-sidebar-row-controls]');
-        if (!row || !shortcuts.length || !toolbar || !anchor.element.childElementCount) continue;
-        for (const shortcut of shortcuts) shortcut.dataset.projectOpenNativeControl = '';
-        const oldOffset = parseFloat(row.style.getPropertyValue('--project-open-project-offset')) || 0;
-        const originalRight = Math.max(...shortcuts.map(shortcut => shortcut.getBoundingClientRect().right)) - (row.matches(':hover, :focus-within') ? oldOffset : 0);
-        const offset = Math.min(0, toolbar.getBoundingClientRect().left - originalRight - 2);
-        row.style.setProperty('--project-open-project-offset', `${offset}px`);
+        const trailing = toolbar?.closest<HTMLElement>('[data-sidebar-thread-trailing]');
+        if (!row || !toolbar || !trailing) continue;
+        const inset = Math.max(0, toolbar.getBoundingClientRect().width - trailing.getBoundingClientRect().width + 2);
+        row.style.setProperty('--project-open-toolbar-inset', `${inset}px`);
       }
       setAnchors(previous => {
         const next = [...mounts.values()];
@@ -57,6 +54,7 @@ function useThreadAnchors() {
       });
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(scan); };
+    const resizeObserver = new ResizeObserver(schedule);
     const pointer = window.matchMedia('(hover:hover) and (pointer:fine)');
     pointer.addEventListener('change', schedule);
     window.addEventListener('resize', schedule);
@@ -65,12 +63,11 @@ function useThreadAnchors() {
       attributeFilter: ['data-sidebar-thread-id'] });
     scan();
     return () => {
-      observer.disconnect(); cancelAnimationFrame(frame);
+      observer.disconnect(); resizeObserver.disconnect(); cancelAnimationFrame(frame);
       pointer.removeEventListener('change', schedule);
       window.removeEventListener('resize', schedule);
       for (const [link, a] of mounts) {
-        link.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-project-offset');
-        link.closest('[data-sidebar-rename-row]')?.querySelectorAll('[data-project-open-native-control]').forEach(element => element.removeAttribute('data-project-open-native-control'));
+        link.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-toolbar-inset');
         a.element.remove();
       }
     };
@@ -89,12 +86,12 @@ const CSS = `
 [data-project-open-controls] { position:relative; width:40px; flex-basis:40px; }
 [data-project-open-controls] .project-open-button { width:20px; height:24px; flex-basis:20px; }
 @media (hover:hover) and (pointer:fine) {
-[data-sidebar-rename-row]:hover > span [data-project-open-native-control],
-[data-sidebar-rename-row]:focus-within > span [data-project-open-native-control] { transform:translateX(var(--project-open-project-offset, 0px)); background:var(--sidebar-accent); box-shadow:-4px 0 4px var(--sidebar-accent); }
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]):is(:hover, :has(:focus-visible), :has([data-sidebar-hover-actions-open="true"])) > span:has(> a[data-sidebar-thread-id]) { padding-right:var(--project-open-toolbar-inset, 0px); }
 }
 [data-project-open-header] { opacity:1; pointer-events:auto; }
 [data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
-[data-sidebar-rename-row]:focus-within > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-sidebar-rename-row]:has(:focus-visible) > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-sidebar-rename-row]:has([data-sidebar-hover-actions-open="true"]) > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
 [data-testid="app-page-header-content-row"]:hover [data-project-open-header],
 [data-testid="app-page-header-content-row"]:focus-within [data-project-open-header] { opacity:1; pointer-events:auto; }
 .project-open-button { display:inline-flex; flex:0 0 28px; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; color:var(--muted-foreground); background:transparent; border:0; cursor:pointer; }

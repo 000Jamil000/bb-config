@@ -4,8 +4,12 @@ Two folder/terminal icons on thread rows and thread headers. Sidebar controls
 appear on hover or keyboard focus; header controls stay visible. Both buttons
 show a custom tooltip after 100 ms with the action, machine name and full
 thread environment path. Destination data comes from BB’s live sidebar and
-is refreshed through the thread/environment/host SDK when the tooltip opens. Sidebar shortcuts overlay the title’s right
-edge without reserving space; header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
+is refreshed through the thread/environment/host SDK when the tooltip opens. Sidebar shortcuts reserve their measured width only while the native toolbar
+is visible (hover, keyboard focus, or an open actions menu). The title truncates
+before the native project link and child expander, which stay in normal layout.
+A mouse click leaving focus on the expander does not keep empty space after
+the pointer leaves. ResizeObserver keeps the reserve current when toolbar sizes
+change; idle rows have no extra reserve. Header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
 remain adjacent. BB’s sidebar renderer and menus are preserved.
 
 The terminal uses BB’s original New tab → Start terminal, scoped to the thread

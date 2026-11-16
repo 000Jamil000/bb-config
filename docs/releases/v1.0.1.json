@@ -1,17 +1,27 @@
 {
   "schemaVersion": 1,
   "version": "v1.0.1",
-  "title": "Понятная карточка обновлений",
+  "title": "Понятная карточка обновлений и автоархив треда",
   "steps": [
     {
       "id": "plugin-config-updates",
-      "title": "Собрать и перезагрузить Config Updates 0.1.1",
+      "title": "Собрать и перезагрузить Config Updates 0.1.2",
       "component": "config-updates",
       "where": "server",
       "kind": "local-plugin",
       "plugin": "config-updates",
       "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
       "rollback": "Вернуть plugins/config-updates к коммиту v1.0.0 (git checkout v1.0.0 -- plugins/config-updates), затем npm ci --include=dev, bb plugin build и bb plugin reload config-updates."
+    },
+    {
+      "id": "plugin-project-logo",
+      "title": "Подбор или создание контекстной иконки — Project Logo 0.2.0",
+      "component": "project-logo",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-logo",
+      "rerun": "Безопасно: совпавшая версия проверяется, имеющиеся иконки сохраняются.",
+      "rollback": "Вернуть plugins/project-logo к v1.0.0, npm ci --include=dev, bb plugin build и bb plugin reload project-logo. Созданные иконки остаются в проектах."
     }
   ]
 }

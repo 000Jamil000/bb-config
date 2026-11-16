@@ -10,10 +10,11 @@ const release = (tag: string, extra: object = {}) => ({ tag_name: tag, name: `Re
 
 function setup(options: { releases?: unknown; installed?: string | null; offline?: boolean; local?: Partial<LocalStatus>; sources?: object[] } = {}) {
   const state = { offline: options.offline ?? false, releases: options.releases ?? [release("v1.0.0"), release("v1.1.0")],
-    spawned: [] as Record<string, any>[], archived: false, network: 0 };
+    spawned: [] as Record<string, any>[], archived: false, network: 0,
+    archivedIds: [] as string[], local: options.local ?? {} as Partial<LocalStatus>, installed: options.installed ?? null };
   io.root = () => "/srv/config";
   io.origin = async () => "https://github.com/acme/config.git\n";
-  io.local = async () => ({ installed: options.installed ? { release: options.installed, commit: SHA } : null, partial: null, run: null, ...options.local });
+  io.local = async () => ({ installed: state.installed ? { release: state.installed, commit: SHA } : null, partial: null, run: null, ...state.local });
   io.releases = async () => { state.network += 1; if (state.offline) throw new Error("GitHub недоступен: timeout"); return state.releases; };
   io.commit = async () => SHA;
   const { bb, harness } = createFakePluginHost({ pluginId: "config-updates", sdk: {
@@ -24,6 +25,7 @@ function setup(options: { releases?: unknown; installed?: string | null; offline
     threads: {
       spawn: async (args: Record<string, any>) => { state.spawned.push(args); return { id: `thr_${state.spawned.length}` }; },
       get: async ({ threadId }: { threadId: string }) => ({ id: threadId, archivedAt: state.archived ? 1 : null }),
+      archive: async ({ threadId }: { threadId: string }) => { state.archivedIds.push(threadId); return {}; },
     },
   } as never });
   const rpc = (method: string) => harness.behavior.callRpc(method, null) as Promise<any>;
@@ -105,5 +107,26 @@ test("the schedule checks, and the prompt carries missed releases and a partial 
     local: { installed: null, run: null, partial: { release: "v1.1.0", remaining: [{ step: "v1.1.0/x", machine: "host_b" }] } } });
   assert.match(prompt, /v1\.0\.0, v1\.1\.0/); assert.match(prompt, /частичным/); assert.match(prompt, /не определена/);
   assert.match(prompt, /restore\.py/);
+  await s.harness.lifecycle.dispose();
+});
+
+test("the update thread is archived only after its release is fully installed", async () => {
+  const s = setup({ installed: "v1.0.0" }); await plugin(s.bb);
+  const { threadId } = await s.rpc("start");
+  const idle = (id: string) => s.harness.behavior.emitThreadEvent("thread.idle", { thread: { id } } as never);
+  await idle(threadId); // asked the user something: nothing installed yet
+  s.state.installed = "v1.1.0"; s.state.local = { partial: { release: "v1.1.0", remaining: [{ step: "v1.1.0/x", machine: "host_b" }] } };
+  await idle(threadId); // partial result keeps the thread
+  s.state.local = { run: { release: "v1.1.0", owner: threadId, startedAt: "x" } };
+  await idle(threadId); // run still open
+  await idle("thr_unrelated");
+  assert.deepEqual(s.state.archivedIds, []);
+  s.state.local = {};
+  await idle(threadId);
+  assert.deepEqual(s.state.archivedIds, [threadId]);
+  const status: UpdateStatus = await s.rpc("status");
+  assert.equal(status.threadId, null); assert.equal(status.installed, "v1.1.0"); assert.deepEqual(status.pending, []);
+  await idle(threadId);
+  assert.equal(s.state.archivedIds.length, 1);
   await s.harness.lifecycle.dispose();
 });

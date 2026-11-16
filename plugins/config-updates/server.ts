@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { buildPrompt, newerThan, parseRepository, stableReleases, type LocalStatus, type Release } from "./releases.ts";
+import { buildPrompt, compareTags, newerThan, parseRepository, stableReleases, type LocalStatus, type Release } from "./releases.ts";
 
 const run = promisify(execFile);
 const ReleaseSchema = z.object({ tag: z.string(), title: z.string(), notes: z.string(), url: z.string(), publishedAt: z.string() });
@@ -31,6 +31,8 @@ const StatusSchema = z.object({
   /** Commit the target tag pointed at when checked. */
   commit: z.string().nullable(),
   threadId: z.string().nullable(),
+  /** Release the update thread was started for. */
+  threadTag: z.string().nullable().default(null),
 });
 export type UpdateStatus = z.infer<typeof StatusSchema>;
 const StartSchema = z.object({ threadId: z.string(), existing: z.boolean(), tag: z.string() });
@@ -41,7 +43,7 @@ export const rpcContract = defineRpcContract({
 });
 
 const EMPTY: UpdateStatus = { checkedAt: 0, okAt: 0, error: null, repository: "", installed: null, installedAt: null, remaining: 0,
-  runOwner: null, runRelease: null, pending: [], commit: null, threadId: null };
+  runOwner: null, runRelease: null, pending: [], commit: null, threadId: null, threadTag: null };
 const STALE_MS = 6 * 3_600_000;
 const SHA = /^[0-9a-f]{40}$/;
 const NOTES_FOR = 5;
@@ -94,6 +96,8 @@ export default async function configUpdates(bb: BbPluginApi) {
   const settings = bb.settings.define({
     repository: { type: "string", label: "Репозиторий GitHub (owner/repo)", default: "",
       description: "Откуда брать стабильные релизы. Пусто — remote origin этого checkout." },
+    archiveWhenDone: { type: "boolean", label: "Архивировать тред после успешного обновления", default: true,
+      description: "Тред обновления уходит в архив, когда релиз применён полностью и агент закончил ответ. При остатке или ошибке тред остаётся." },
   });
   let status: UpdateStatus = { ...EMPTY, ...((await bb.storage.kv.get<UpdateStatus>("status")) ?? {}) };
   let local: LocalStatus = { installed: null, partial: null, run: null };
@@ -127,7 +131,8 @@ export default async function configUpdates(bb: BbPluginApi) {
       if (commit !== null && !SHA.test(commit)) throw new Error(`GitHub не вернул коммит релиза ${target!.tag}.`);
       return await publish({ checkedAt, okAt: checkedAt, error: null, repository, installed, pending, commit,
         installedAt: local.installed?.at ?? null,
-        remaining: local.partial?.remaining.length ?? 0, runOwner: local.run?.owner ?? null, runRelease: local.run?.release ?? null, threadId: status.threadId });
+        remaining: local.partial?.remaining.length ?? 0, runOwner: local.run?.owner ?? null, runRelease: local.run?.release ?? null,
+        threadId: status.threadId, threadTag: status.threadTag });
     } catch (error) {
       // Keep the last known answer; never turn a failed check into "up to date".
       return await publish({ ...status, checkedAt, error: (error as Error).message.slice(0, 300) });
@@ -167,10 +172,31 @@ export default async function configUpdates(bb: BbPluginApi) {
       title: `Обновление доработок BB до ${target.tag}`,
       prompt: buildPrompt({ repository: fresh.repository, root, target, commit: fresh.commit, pending: fresh.pending, local }),
     });
-    await publish({ ...status, threadId: thread.id });
+    await publish({ ...status, threadId: thread.id, threadTag: target.tag });
     return { threadId: thread.id, existing: false, tag: target.tag };
   }
   const start = () => (starting ??= startOnce().finally(() => { starting = null; }));
+
+  /**
+   * The update thread finished a turn. Archive it only when the journal says the
+   * release it was started for is fully installed; a partial or failed update
+   * keeps its thread so the user sees what is left.
+   */
+  bb.events.on("thread.idle", async ({ thread }) => {
+    if (!status.threadId || thread.id !== status.threadId || !status.threadTag) return;
+    try {
+      const journal = await io.local(root || io.root());
+      const installed = journal.installed?.release;
+      if (journal.run || journal.partial || !installed || compareTags(installed, status.threadTag) < 0) return;
+      const archive = (await settings.get()).archiveWhenDone;
+      const { threadId } = status;
+      await publish({ ...status, threadId: null, threadTag: null });
+      if (archive) await bb.sdk.threads.archive({ threadId });
+      await check();
+    } catch (error) {
+      bb.log.warn(`Update thread was not archived: ${String(error)}`);
+    }
+  });
 
   bb.rpc.register(rpcContract, { status: () => status, check, start });
   bb.background.schedule("check-releases", "17 */6 * * *", async () => { await check(); });

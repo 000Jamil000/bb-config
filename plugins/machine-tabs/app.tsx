@@ -1076,6 +1076,24 @@ const HIDE_EMPTY_GROUPS = `
     display: none;
   }
 }
+/* With a mouse BB keeps an empty 28px cell at the end of every row for the
+   hover toolbar, so titles were cut early and the expander stood short of the
+   edge. The cell now takes space only while the row is hovered, focused or
+   has something to show. */
+@media (hover: hover) {
+  [data-machine-tabs-list] [data-sidebar-rename-row]:has(> span > a[data-sidebar-thread-id]):not(:hover, :has(:focus-visible), :has(
+    [data-sidebar-thread-trailing-indicator],
+    [data-sidebar-hover-actions-open="true"],
+    [data-thread-actions-trigger][data-state="open"]
+  )) > [data-sidebar-thread-trailing] {
+    display: none;
+  }
+}
+/* The subagent expander sits at the right edge of the row, in one column for
+   all rows, instead of right after the title in the middle of a wide sidebar. */
+[data-machine-tabs-list] [data-sidebar-rename-row] > span:has(> a[data-sidebar-thread-id]) button[aria-expanded][data-sidebar-rename-anchor] {
+  margin-left: auto;
+}
 /* One mark per row: the agent's icon sits small in the top right corner of
    the project mark instead of beside it. */
 span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] {

@@ -31,7 +31,8 @@ final class HoverView: NSView {
     override func mouseExited(with event: NSEvent) { onHover?(false) }
 }
 
-/// One account's remaining limits (percent left), from the helper's usage.json.
+/// One account's limits as percent used (0 → 100, as in the panel and in bb),
+/// from the helper's usage.json.
 struct Account {
     let provider: String
     let machines: String
@@ -300,9 +301,9 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             var five: Double? = nil, week: Double? = nil
             var fiveReset: Date? = nil, weekReset: Date? = nil
             for window in account["windows"] as? [[String: Any]] ?? [] {
-                let left = max(0, 100 - (window["usedPercent"] as? Double ?? 0))
-                if window["kind"] as? String == "five-hour" { five = left; fiveReset = parseDate(window["resetsAt"]) }
-                if window["kind"] as? String == "weekly" { week = left; weekReset = parseDate(window["resetsAt"]) }
+                let used = min(100, max(0, window["usedPercent"] as? Double ?? 0))
+                if window["kind"] as? String == "five-hour" { five = used; fiveReset = parseDate(window["resetsAt"]) }
+                if window["kind"] as? String == "weekly" { week = used; weekReset = parseDate(window["resetsAt"]) }
             }
             if five == nil && week == nil { continue }
             // A machine's initial: "server" → S, "MacBook Pro — …" → M; one per machine.
@@ -321,9 +322,9 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         return result.sorted { (order[$0.provider] ?? 9, $0.machines) < (order[$1.provider] ?? 9, $1.machines) }
     }
 
-    /// Remaining-limit colour: orange at 10 % or less, red when used up.
-    func tone(_ left: Double, _ ink: NSColor) -> NSColor {
-        left <= 0 ? .systemRed : left <= 10 ? .systemOrange : ink
+    /// Usage colour, as in the panel: orange from 90 % used, light red when used up.
+    func tone(_ used: Double, _ ink: NSColor) -> NSColor {
+        used >= 100 ? NSColor(red: 1, green: 0.55, blue: 0.5, alpha: 1) : used >= 90 ? .systemOrange : ink
     }
 
     func agentGlyph(_ provider: String, at origin: NSPoint, _ ink: NSColor) {
@@ -359,8 +360,8 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     /// Usage block, as chosen from the mock-ups (3c, P2): per agent a glyph in
     /// the label row, per account a thick bar (5 hours) and a thin one (week),
-    /// both showing what is left, with the machine's initial underneath; then
-    /// the time until the reset of the emptiest bar.
+    /// both filling up from 0 to 100 % used, with the machine's initial
+    /// underneath; then the time until the reset of the fullest bar.
     func usageBlock(_ ink: NSColor) -> (image: NSImage, signature: String)? {
         guard !accounts.isEmpty else { return nil }
         let height: CGFloat = 22, barY: CGFloat = 8, barHeight: CGFloat = 13
@@ -392,23 +393,23 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
             columns.append(Column(account: account, x: x, width: width, label: label))
             x += width
         }
-        // Which reset matters: the 5-hour window with the least left; if that
-        // account's week is used up too, its 5-hour reset does not help, so
-        // the week's. Without 5-hour windows, the emptiest week.
-        var shown: (left: Double, reset: Date?)? = nil
-        if let account = accounts.filter({ $0.five != nil }).min(by: { $0.five! < $1.five! }) {
-            if let week = account.week, week <= 0 { shown = (0, account.weekReset) }
+        // Which reset matters: the most used 5-hour window; if that account's
+        // week is used up too, its 5-hour reset does not help, so the week's.
+        // Without 5-hour windows, the most used week.
+        var shown: (used: Double, reset: Date?)? = nil
+        if let account = accounts.filter({ $0.five != nil }).max(by: { $0.five! < $1.five! }) {
+            if let week = account.week, week >= 100 { shown = (100, account.weekReset) }
             else { shown = (account.five!, account.fiveReset) }
-        } else if let account = accounts.filter({ $0.week != nil }).min(by: { $0.week! < $1.week! }) {
+        } else if let account = accounts.filter({ $0.week != nil }).max(by: { $0.week! < $1.week! }) {
             shown = (account.week!, account.weekReset)
         }
         var timer: NSAttributedString? = nil
         var badge: NSColor? = nil
         if let shown = shown, shown.reset != nil {
-            let calm = shown.left > 10
+            let calm = shown.used < 90
             // Red or orange text is hard to read on the menu bar: an alert is
             // white text on a coloured badge instead.
-            badge = calm ? nil : (shown.left <= 0 ? NSColor(red: 0.93, green: 0.23, blue: 0.2, alpha: 1)
+            badge = calm ? nil : (shown.used >= 100 ? NSColor(red: 0.93, green: 0.23, blue: 0.2, alpha: 1)
                                                   : NSColor(red: 0.96, green: 0.55, blue: 0.05, alpha: 1))
             timer = NSAttributedString(string: untilText(shown.reset), attributes: [
                 .font: NSFont.monospacedDigitSystemFont(ofSize: 9.5, weight: calm ? .regular : .bold),
@@ -418,20 +419,18 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         let signature = columns.map { "\($0.account.machines)+\($0.account.resets):\(Int($0.account.five ?? -1)):\(Int($0.account.week ?? -1))" }
             .joined(separator: ",") + "|" + (timer?.string ?? "")
         let image = NSImage(size: NSSize(width: ceil(x), height: height), flipped: false) { _ in
-            func bar(_ x: CGFloat, _ width: CGFloat, _ left: Double) {
+            // Fills from the bottom as the limit is used: empty at 0 %, full at 100 %.
+            func bar(_ x: CGFloat, _ width: CGFloat, _ used: Double) {
                 let track = NSRect(x: x, y: barY, width: width, height: barHeight)
+                let shape = NSBezierPath(roundedRect: track, xRadius: width / 2, yRadius: width / 2)
                 ink.withAlphaComponent(0.28).setFill()
-                NSBezierPath(roundedRect: track, xRadius: width / 2, yRadius: width / 2).fill()
-                if left <= 0 {
-                    let outline = NSBezierPath(roundedRect: track.insetBy(dx: 0.35, dy: 0.35), xRadius: width / 2, yRadius: width / 2)
-                    outline.lineWidth = 0.9
-                    NSColor(red: 1, green: 0.55, blue: 0.5, alpha: 1).setStroke()
-                    outline.stroke()
-                    return
-                }
-                let filled = NSRect(x: x, y: barY, width: width, height: max(width, barHeight * CGFloat(left) / 100))
-                self.tone(left, ink).setFill()
-                NSBezierPath(roundedRect: filled, xRadius: width / 2, yRadius: width / 2).fill()
+                shape.fill()
+                guard used > 0 else { return }
+                NSGraphicsContext.saveGraphicsState()
+                shape.addClip()
+                self.tone(used, ink).setFill()
+                NSRect(x: x, y: barY, width: width, height: max(1, barHeight * CGFloat(used) / 100)).fill()
+                NSGraphicsContext.restoreGraphicsState()
             }
             for column in columns {
                 let bars: CGFloat = (column.account.five != nil ? 3 + 1.5 : 0) + 1.5

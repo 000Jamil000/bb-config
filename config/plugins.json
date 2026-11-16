@@ -434,5 +434,12 @@
     "enabled": true,
     "name": "Workflows",
     "source": "builtin:workflows"
+  },
+  {
+    "id": "local-transcribe",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Local Transcribe",
+    "source": "path:plugins/local-transcribe"
   }
 ]

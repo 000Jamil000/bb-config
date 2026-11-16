@@ -1430,3 +1430,25 @@ bb config-updates check
 Проверки: `npm test` и `npm run typecheck` в `plugins/config-updates`;
 `python3 -m unittest discover -s scripts -p 'test_updates.py'`;
 `bb config-updates check` (код 0 и строка о релизах; код 1 — ошибка проверки).
+
+## Native dictation: selecting Codex without a plugin patch
+
+The ordinary composer microphone uses Settings → AI services → voice, independently
+of Voice Mode. A personal installation can select Codex with
+`bb settings ai-services set voice codex --plugin provider-codex`. Verify with
+`bb settings ai-services show --json`: voice must name `provider-codex/codex` and
+the service must be ready. This does not change Voice Mode, thread titles or
+commit-message generation. Recognition quality still requires an actual speech
+check; service readiness alone is not evidence that translation errors are fixed.
+
+BB 0.49 supports one explicit service or Automatic, not a user-defined fallback
+order. Explicit Codex has no automatic bb cloud fallback. To switch manually use
+`bb settings ai-services set voice bb --plugin bb-ai`; to restore the default
+cloud-first fallback use `bb settings ai-services set voice automatic`.
+
+The owner's selection is saved only in ignored `.local/config/ai-services.json`;
+this is an optional personal setting, not a rollout to other installations.
+The current `scripts/restore.py` restores only `automatic`/`off` AI selections.
+For a saved explicit service, after restoring the corresponding installed provider,
+repeat the `set voice` command above and verify readiness. Do not assume the
+private JSON alone reapplies it. No plugin source or credential changes are needed.

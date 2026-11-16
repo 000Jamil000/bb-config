@@ -7,7 +7,7 @@ function setup(options = {}) {
   const launches = [], closed = [];
   const machines = [{id:'mac-id',name:'MacBook',status:'connected'}, {id:'tru-id',name:'Tru',status:'connected'}];
   const api = {
-    settings: { define: () => ({get: async () => ({leaseSeconds:120,projectName:'local-transcribe',fallback:'["self","available"]'})}) },
+    settings: { define: () => ({get: async () => ({workerHosts:'[]',autoSetup:true,leaseSeconds:120,projectName:'local-transcribe',fallback:'["self","available"]'})}) },
     storage: {kv: {get: async k => structuredClone(store.get(k)), set: async(k,v) => store.set(k,structuredClone(v)),list:async()=>[...store.keys()]}},
     sdk: {
       hosts: {list:async()=>machines},
@@ -24,6 +24,7 @@ function setup(options = {}) {
       },
     },
     hosts:{experimental_client:()=>({call:async(method,args,{hostId})=> {
+      if(method==='runtime')return {runtimePath:'/repo',workRoot:'/repo/work',runtimeVersion:'0.2.0',runtimeSha256:'hash',requirementsHash:'deps',managedPython:options.environmentPending?null:'python3',needsSetup:!!options.environmentPending};
       if(method==='lease')return true;
       if(method==='localCopy'){if(options.existing)throw new Error('Target already exists');return {path:args.target,size:3,sha256:'digest'};}
       if(method==='probe') return {ready:hostId==='mac-id'||!!options.truReady,device:hostId==='mac-id'?'mps':'cpu',platform:hostId==='mac-id'?'Darwin':'Linux',missing:hostId==='mac-id'||options.truReady?[]:['model missing']};
@@ -37,7 +38,7 @@ function setup(options = {}) {
     }})},
     rpc:{register:(_contract,handlers)=>rpc=handlers},
     agents:{registerTool:()=>{},contributeInstructions:()=>{}},
-    background:{service:(_name,handler)=>worker=handler},log:{error:error=>{throw new Error(error)}},
+    background:{service:(name,handler)=>{if(name==='transcription-jobs')worker=handler;}},log:{error:error=>{throw new Error(error)},warn:()=>{}},
   };
   plugin(api);
   return {rpc,launches,closed,store,worker};
@@ -151,4 +152,16 @@ test('temporary delivery failure resumes existing artifacts without running reco
     await until(async()=>(await s.rpc.status({jobId:r.jobId})).state==='completed');
     assert.equal(s.launches.length,1);assert.equal((await s.rpc.status({jobId:r.jobId})).result.path,'/out.txt');
   } finally {ctrl.abort();await running;}
+});
+
+test('new jobs wait for a matching managed environment instead of using a legacy Python',async()=>{
+ const options={environmentPending:true,truReady:true};const s=setup(options);const ctrl=new AbortController();
+ const r=await s.rpc.submit(input);const running=s.worker.start(ctrl.signal);
+ try {
+  await until(async()=>!!(await s.rpc.status({jobId:r.jobId})).waitingForWorker);
+  let job=await s.rpc.status({jobId:r.jobId});assert.equal(job.state,'queued');assert.equal(s.launches.length,0);
+  assert.deepEqual(job.attempts,[]);
+  options.environmentPending=false;const key='job:'+r.jobId;job=s.store.get(key);job.workerRetryAt=Date.now()-1;s.store.set(key,job);
+  await until(async()=>(await s.rpc.status({jobId:r.jobId})).state==='completed');assert.equal(s.launches.length,1);
+ } finally {ctrl.abort();await running;}
 });

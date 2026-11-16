@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.3",
+  "title": "Config Updates: экран нового треда, автопринятие, значок по необходимости",
+  "steps": [
+    {
+      "id": "plugin-config-updates",
+      "title": "Собрать и перезагрузить Config Updates 0.1.3",
+      "component": "config-updates",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "config-updates",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/config-updates к коммиту v1.0.1 (git checkout v1.0.1 -- plugins/config-updates), затем npm ci --include=dev, bb plugin build и bb plugin reload config-updates."
+    }
+  ]
+}

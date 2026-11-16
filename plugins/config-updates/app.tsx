@@ -21,9 +21,15 @@ function useUpdates() {
   const start = useCallback(async () => {
     setBusy("start");
     try {
-      const started = await rpc.call("start");
-      if (started.existing) toast.info(`Обновление до ${started.tag} уже выполняется — открываю его тред.`);
-      navigate.toThread(started.threadId);
+      const plan = await rpc.call("compose");
+      if (plan.threadId) {
+        toast.info(`Открываю тред, который уже ведёт обновление до ${plan.tag}.`);
+        navigate.toThread(plan.threadId);
+      } else if (plan.projectId && plan.prompt) {
+        // bb's own new-thread screen: the user sees and picks provider, model and permissions, then sends.
+        navigate.toCompose({ projectId: plan.projectId, hostId: plan.hostId ?? undefined, initialPrompt: plan.prompt, focusPrompt: true });
+        toast.info("Задание подготовлено. Выберите модель и отправьте сообщение.", { duration: 10_000 });
+      }
     } catch (error) {
       toast.error((error as Error).message, { duration: 15_000 });
     } finally { setBusy(null); }
@@ -55,7 +61,7 @@ function Summary({ status }: { status: UpdateStatus }) {
   const target = status.pending.at(-1);
   return <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
     <dt className="text-muted-foreground">Установлено</dt>
-    <dd>{status.installed ? <><b>{status.installed}</b>{status.installedAt && ` с ${day(status.installedAt)}`}</> : "версия не записана"}</dd>
+    <dd>{status.installed ? <><b>{status.installed}</b>{status.installedAt && ` с ${day(status.installedAt)}`}{status.installedAuto && " — принято автоматически, устанавливать было нечего"}</> : "версия не записана"}</dd>
     <dt className="text-muted-foreground">Доступно</dt>
     <dd>{target ? <><b>{target.tag}</b> от {day(target.publishedAt)}</> : status.okAt > 0 ? "новых релизов нет" : "не проверено"}</dd>
     <dt className="text-muted-foreground">Проверено</dt>
@@ -81,7 +87,7 @@ function FooterCard({ dismiss }: { dismiss(): void }) {
       {status.remaining > 0 && <p className="text-xs text-muted-foreground">Прошлое обновление применено частично, осталось шагов: {status.remaining}.</p>}
       <div className="flex flex-wrap gap-2">
         {target && <button type="button" className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy !== null}
-          onClick={() => { void start().then(dismiss); }}>{busy === "start" ? "Запускаю…" : status.runOwner ? "Открыть идущее обновление" : `Обновить до ${target.tag} с ИИ`}</button>}
+          onClick={() => { void start().then(dismiss); }}>{busy === "start" ? "Готовлю…" : status.runOwner ? "Открыть идущее обновление" : `Обновить до ${target.tag} с ИИ`}</button>}
         <button type="button" className={button} disabled={busy !== null} onClick={() => { void check(); }}>{busy === "check" ? "Проверяю…" : "Проверить"}</button>
         <button type="button" className={button} onClick={dismiss}>Скрыть</button>
       </div>
@@ -112,8 +118,8 @@ function Section() {
         {release.url && <a className="text-xs underline" href={release.url} target="_blank" rel="noreferrer">Релиз на GitHub</a>}
       </div>)}
       <button type="button" className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy !== null} onClick={() => { void start(); }}>
-        {busy === "start" ? "Запускаю…" : status.runOwner ? "Открыть выполняющееся обновление" : "Обновить с ИИ"}</button>
-      <p className="text-xs text-muted-foreground">Кнопка открывает тред агента: он проверит фактическое состояние, применит только нужные шаги закреплённого релиза и сообщит результат. Проверка сама ничего не устанавливает.</p>
+        {busy === "start" ? "Готовлю…" : status.runOwner ? "Открыть идущее обновление" : `Обновить до ${target.tag} с ИИ`}</button>
+      <p className="text-xs text-muted-foreground">Кнопка открывает экран нового треда с готовым заданием, проектом и машиной сервера: выберите модель и отправьте. Агент проверит фактическое состояние, применит только нужные шаги закреплённого релиза и сообщит результат. Проверка сама ничего не устанавливает.</p>
     </div> : status.okAt > 0 && !status.error && <p>Новых стабильных релизов нет.</p>}
     <button type="button" className={button} disabled={busy !== null} onClick={() => { void check(); }}>{busy === "check" ? "Проверяю…" : "Проверить сейчас"}</button>
   </div>;

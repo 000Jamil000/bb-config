@@ -30,6 +30,9 @@ KINDS = {'local-plugin', 'command', 'manual'}
 WHERE = {'server', 'executors'}
 DONE = {'verified', 'not-applicable'}
 SERVER = 'server'
+# Steps written during development wait in docs/releases/next/<id>.json (+ .md),
+# one pair per step, until `release` assembles them into a version.
+NEXT = 'next'
 
 
 class UpdateError(Exception):
@@ -66,7 +69,9 @@ def bb(*args):
 
 
 def installed_plugins():
-    listing = json.loads(bb('plugin', 'list', '--json'))
+    # The plugin has the list already and may run without `bb` on PATH.
+    supplied = os.environ.get('BB_CONFIG_PLUGINS_JSON')
+    listing = json.loads(supplied if supplied else bb('plugin', 'list', '--json'))
     plugins = listing if isinstance(listing, list) else listing.get('plugins', [])
     return {plugin['id']: plugin for plugin in plugins}
 
@@ -153,6 +158,27 @@ def load_manifests(root, commit=None):
     return ordered
 
 
+def next_steps(root):
+    """{id: step} of unreleased steps in the working tree."""
+    steps = {}
+    for path in sorted((root / 'docs/releases' / NEXT).glob('*.json')):
+        try:
+            step = json.loads(path.read_text())
+        except ValueError as error:
+            raise UpdateError(f'{path.name}: invalid JSON ({error})')
+        errors = manifest_errors({'schemaVersion': 1, 'version': NEXT, 'title': NEXT, 'steps': [step]}, NEXT)
+        if isinstance(step, dict) and step.get('id') != path.stem:
+            errors.append('step id must equal the file name')
+        if errors:
+            raise UpdateError(f'docs/releases/{NEXT}/{path.name}: ' + '; '.join(errors))
+        steps[step['id']] = step
+    return steps
+
+
+def version_tuple(version):
+    return tuple(int(part) for part in re.findall(r'\d+', version or '')[:3])
+
+
 def full_id(tag, step_id):
     return step_id if '/' in step_id else f'{tag}/{step_id}'
 
@@ -183,6 +209,13 @@ def validate(root, only=None):
                 problems.append(f'{tag}/{step["id"]}: {directory} needs package.json and package-lock.json')
                 continue
             # Verification compares versions, so a changed plugin must bump its version.
+            # A step for a plugin the release does not change delivers nothing:
+            # usually its sources were left uncommitted.
+            if previous and tag == tags[-1] and \
+                    git(root, 'rev-parse', '-q', '--verify', f'{previous}^{{commit}}', check=False).returncode == 0 and \
+                    git(root, 'diff', '--quiet', previous, 'HEAD', '--', directory, check=False).returncode == 0:
+                problems.append(f'{tag}/{step["id"]}: {directory} is unchanged in HEAD since {previous}; '
+                                'commit its changes or drop the step')
             if previous and git(root, 'rev-parse', '-q', '--verify', f'{previous}^{{commit}}', check=False).returncode == 0:
                 old = git(root, 'show', f'{previous}:{directory}/package.json', check=False)
                 changed = git(root, 'diff', '--quiet', previous, '--', directory, check=False).returncode != 0
@@ -211,6 +244,7 @@ def journal(root, write=False):
         data.setdefault('installed', None)
         data.setdefault('partial', None)
         data.setdefault('run', None)
+        data.setdefault('lastRun', None)
         data.setdefault('entries', [])
         yield data
         if write:
@@ -291,29 +325,58 @@ def execute(argv, root):
     return result.returncode, (result.stdout + result.stderr).strip()[-600:]
 
 
-def plugin_state(step, root, plugins):
-    """(ok, detail) — the running plugin is this checkout's build of this version."""
+def plugin_state(step, root, plugins, commit=None):
+    """(ok, detail) — the running plugin is this checkout's build of the release version.
+
+    The wanted version comes from the pinned commit, not from the working tree:
+    uncommitted local work must not pass as release content.
+    """
     directory = root / 'plugins' / step['plugin']
-    wanted = json.loads((directory / 'package.json').read_text())['version']
+    package = git(root, 'show', f'{commit}:plugins/{step["plugin"]}/package.json') if commit \
+        else (directory / 'package.json').read_text()
+    wanted = json.loads(package)['version']
     plugin = plugins.get(step['plugin'])
     if not plugin:
         return False, 'not installed'
     if Path(plugin.get('rootDir') or '').resolve() != directory.resolve():
         return False, f'installed from another source ({plugin.get("source")}), not from this checkout'
-    if plugin.get('version') != wanted:
+    newer = commit and version_tuple(plugin.get('version')) > version_tuple(wanted)
+    if plugin.get('version') != wanted and not newer:
         return False, f'installed {plugin.get("version")}, release has {wanted}'
     if plugin.get('enabled') and plugin.get('status') != 'running':
         return False, f'status {plugin.get("status")}: {plugin.get("statusDetail")}'
-    return True, f'{step["plugin"]} {wanted} from this checkout' + ('' if plugin.get('enabled') else ' (disabled by the user, kept)')
+    which = f'{plugin.get("version")} (newer than release {wanted}; a later build is installed)' if newer else wanted
+    return True, f'{step["plugin"]} {which} from this checkout' + ('' if plugin.get('enabled') else ' (disabled by the user, kept)')
 
 
-def run_step(root, step, install=False):
-    """Verify first; apply only when needed; verify again. Returns (status, how, detail)."""
+def settled(root, step, commit=None):
+    """(status, how, detail) when the step needs no action here, else None. Changes nothing."""
     if step['kind'] == 'local-plugin':
         plugins = installed_plugins()
-        ok, detail = plugin_state(step, root, plugins)
+        ok, detail = plugin_state(step, root, plugins, commit)
         if ok:
             return 'verified', 'existing', detail
+        if step['plugin'] not in plugins and not step.get('introduces'):
+            return 'not-applicable', 'not-selected', 'plugin is not installed here; the user did not choose it'
+        return None
+    if step.get('applies'):
+        code, output = execute(step['applies'], root)
+        if code != 0:
+            return 'not-applicable', 'applies-check', output
+    if not step.get('verify'):
+        return None
+    code, output = execute(step['verify'], root)
+    return ('verified', 'existing', output) if code == 0 else None
+
+
+def run_step(root, step, install=False, commit=None):
+    """Verify first; apply only when needed; verify again. Returns (status, how, detail)."""
+    done = settled(root, step, commit)
+    if done:
+        return done
+    if step['kind'] == 'local-plugin':
+        plugins = installed_plugins()
+        detail = plugin_state(step, root, plugins, commit)[1]
         directory = root / 'plugins' / step['plugin']
         present = step['plugin'] in plugins
         if not present and not step.get('introduces'):
@@ -323,6 +386,11 @@ def run_step(root, step, install=False):
                               'Otherwise record not-applicable.', 3)
         if present and Path(plugins[step['plugin']].get('rootDir') or '').resolve() != directory.resolve():
             return 'failed', 'apply', detail
+        relative = f'plugins/{step["plugin"]}'
+        if commit and (git(root, 'diff', '--quiet', commit, '--', relative, check=False).returncode != 0
+                       or git(root, 'status', '--porcelain', '--', relative)):
+            return 'failed', 'apply', (f'{relative} in this checkout differs from the release; building it would install '
+                                       'those other changes. Decide with the user (commit, stash); nothing was built.')
         for command in (['npm', '--prefix', str(directory), 'ci', '--include=dev'], ['bb', 'plugin', 'build', str(directory)],
                         ['bb', 'plugin', 'reload', step['plugin']] if present
                         else ['bb', 'plugin', 'install', f'path:{directory}', '--yes']):
@@ -331,19 +399,12 @@ def run_step(root, step, install=False):
             code, output = execute(command, root)
             if code != 0:
                 return 'failed', 'apply', f'{" ".join(command[:3])}: {output}'
-        ok, detail = plugin_state(step, root, installed_plugins())
+        ok, detail = plugin_state(step, root, installed_plugins(), commit)
         return ('verified', 'applied', detail) if ok else ('failed', 'verify', detail)
-    if step.get('applies'):
-        code, output = execute(step['applies'], root)
-        if code != 0:
-            return 'not-applicable', 'applies-check', output
     if not step.get('verify'):
         raise UpdateError('This step has no automatic check. Follow the release .md, then use `record` with evidence.', 3)
-    code, output = execute(step['verify'], root)
-    if code == 0:
-        return 'verified', 'existing', output
     if step['kind'] == 'manual':
-        raise UpdateError(f'Check failed: {output}. Follow the release .md, then run this step again.', 3)
+        raise UpdateError('Check failed. Follow the release .md, then run this step again.', 3)
     code, output = execute(step['apply'], root)
     if code != 0:
         return 'failed', 'apply', output
@@ -378,7 +439,7 @@ def command_fetch(args, root):
 def command_status(args, root):
     with journal(root) as data:
         return {'installed': data['installed'], 'partial': data['partial'], 'run': data['run'],
-                'journal': str(state_dir(root) / 'journal.json')}
+                'lastRun': data['lastRun'], 'journal': str(state_dir(root) / 'journal.json')}
 
 
 def command_baseline(args, root):
@@ -442,6 +503,8 @@ def command_run(args, root):
     if commit and not contains(root, commit):
         raise UpdateError('The checkout no longer contains the pinned commit. Run `fetch` again.')
     manifests = load_manifests(root, commit)
+    if args.development:
+        manifests[NEXT] = {'steps': list(next_steps(root).values())}
     tag, step = find_step(manifests, args.step)
     machine = args.machine or SERVER
     if (step['where'] == 'server') != (machine == SERVER):
@@ -449,7 +512,7 @@ def command_run(args, root):
     with journal(root) as data:
         dependencies_done(manifests, data, tag, step, machine, mode)
     try:
-        status, how, detail = run_step(root, step, args.install)
+        status, how, detail = run_step(root, step, args.install, commit)
     except UpdateError as error:
         if error.code != 3:
             with journal(root, write=True) as data:
@@ -471,6 +534,8 @@ def command_record(args, root):
         run = require_run(data, args.owner, args.development)
         commit = run['commit'] if run else None
         manifests = load_manifests(root, commit)
+        if args.development:
+            manifests[NEXT] = {'steps': list(next_steps(root).values())}
         tag, step = find_step(manifests, args.step)
         if (step['where'] == 'server') != (args.machine == SERVER):
             raise UpdateError(f'{args.step} runs on {step["where"]}; pass a matching --machine.')
@@ -499,6 +564,8 @@ def command_finish(args, root):
         remaining = pending(manifests, data, run['release'], run['machines'])
         data['partial'] = {'release': run['release'], 'commit': run['commit'], 'remaining': remaining,
                            'at': now()} if remaining else None
+        # The thread that ran the update, for the plugin (archiving, reuse).
+        data['lastRun'] = {'owner': run['owner'], 'release': run['release'], 'complete': not remaining, 'at': now()}
         data['run'] = None
         result = {'installed': data['installed'], 'partial': data['partial']}
     if result['partial']:
@@ -506,11 +573,106 @@ def command_finish(args, root):
     return result
 
 
+def command_release(args, root):
+    """Assemble docs/releases/vX.Y.Z.json and .md from the waiting steps in docs/releases/next/."""
+    key = version_key(args.release)
+    manifests = load_manifests(root)
+    if any(version_key(tag) >= key for tag in manifests):
+        raise UpdateError(f'{args.release} is not newer than {max(manifests, key=version_key)}')
+    waiting = next_steps(root)
+    chosen = [name for name in args.steps.split(',') if name] if args.steps else list(waiting)
+    problems = [f'no waiting step {name}' for name in chosen if name not in waiting]
+    if not chosen:
+        problems.append(f'docs/releases/{NEXT}/ has no steps')
+    directory = root / 'docs/releases' / NEXT
+    for name in chosen:
+        step = waiting.get(name)
+        if not step:
+            continue
+        if not (directory / f'{name}.md').is_file():
+            problems.append(f'{name}: {NEXT}/{name}.md is missing')
+        if step['kind'] == 'local-plugin' and git(root, 'status', '--porcelain', '--', f'plugins/{step["plugin"]}'):
+            problems.append(f'{name}: plugins/{step["plugin"]} has uncommitted changes; a release ships committed sources only')
+        for dependency in step.get('after', []):
+            if dependency.startswith(f'{NEXT}/') and dependency.split('/', 1)[1] not in chosen:
+                problems.append(f'{name}: depends on {dependency}, which is not in this release')
+    if problems:
+        raise UpdateError('\n'.join(problems))
+    steps, prose = [], []
+    for name in chosen:
+        step = dict(waiting[name])
+        after = [d.split('/', 1)[1] if d.startswith(f'{NEXT}/') else d for d in step.get('after', [])]
+        step.pop('after', None)
+        if after:
+            step['after'] = after
+        steps.append(step)
+        prose.append(f'### `{name}` — {step["title"]}\n\n{(directory / f"{name}.md").read_text().strip()}\n')
+    target = root / 'docs/releases'
+    (target / f'{args.release}.json').write_text(json.dumps(
+        {'schemaVersion': 1, 'version': args.release, 'title': args.title, 'steps': steps}, ensure_ascii=False, indent=2) + '\n')
+    (target / f'{args.release}.md').write_text(
+        f'# {args.release} — {args.title}\n\nОбщий порядок — [docs/updates.md](../updates.md).\n\n## Шаги\n\n'
+        + '\n'.join(prose) + '\n## Проверка релиза\n\n- Заполняется при публикации.\n')
+    for name in chosen:
+        (directory / f'{name}.json').unlink()
+        (directory / f'{name}.md').unlink()
+    return {'release': args.release, 'steps': chosen, 'left': [name for name in waiting if name not in chosen],
+            'problems': validate(root, args.release)}
+
+
+def command_accept(args, root):
+    """Mark a release installed without an agent when none of its steps needs any action.
+
+    Nothing is built, installed or configured: the pinned commit is fetched
+    (fast-forward only) and every pending step must already be settled by the
+    actual state. Otherwise nothing is recorded and the answer says why.
+    """
+    version_key(args.release)
+
+    def refuse(reason):
+        return {'accepted': False, 'reason': reason}
+
+    with journal(root) as data:
+        if data['run']:
+            return refuse(f'an update run is open (owner {data["run"]["owner"]})')
+    try:
+        command_fetch(args, root)
+        manifests = load_manifests(root, args.commit)
+    except UpdateError as error:
+        return refuse(str(error))
+    if args.release not in manifests:
+        return refuse(f'{args.release} has no manifest in the pinned commit')
+    with journal(root) as data:
+        base = version_key(installed_version(data)) if installed_version(data) else (-1, -1, -1)
+        rows = pending(manifests, data, args.release, [])
+    for tag, manifest in manifests.items():
+        if base < version_key(tag) <= version_key(args.release) and \
+                any(step['where'] != 'server' for step in manifest['steps']):
+            return refuse(f'{tag} has steps for executor machines')
+    results = []
+    for row in rows:
+        try:
+            done = settled(root, find_step(manifests, row['step'])[1], args.commit)
+        except UpdateError as error:
+            return refuse(f'{row["step"]}: {error}')
+        if not done:
+            return refuse(f'{row["step"]} has to be applied')
+        results.append((row['step'], *done))
+    with journal(root, write=True) as data:
+        if data['run']:
+            return refuse('an update run was opened meanwhile')
+        for name, status, how, detail in results:
+            add_entry(data, name, SERVER, status, how, detail, 'release', args.commit)
+        data['installed'] = {'release': args.release, 'commit': args.commit, 'how': 'auto-accept', 'at': now()}
+        data['partial'] = None
+        return {'accepted': True, 'installed': data['installed'], 'steps': [name for name, *_ in results]}
+
+
 def command_validate(args, root):
     problems = validate(root, args.release)
     if problems:
         raise UpdateError('\n'.join(problems))
-    return {'valid': sorted(load_manifests(root), key=version_key)}
+    return {'valid': sorted(load_manifests(root), key=version_key), 'waiting': sorted(next_steps(root))}
 
 
 def command_require_plugin(args, root):
@@ -548,7 +710,7 @@ def main(argv=None, root=ROOT):
     command.add_argument('--machines', help='comma-separated BB machine ids for executor steps')
     command.add_argument('--takeover', action='store_true', help='replace a certainly stopped run')
     command = add('run', command_run, run=True)
-    command.add_argument('step', help='vX.Y.Z/<step id>')
+    command.add_argument('step', help='vX.Y.Z/<step id>, or next/<step id> with --development')
     command.add_argument('--machine', help='BB machine id for an executor step run on this machine')
     command.add_argument('--install', action='store_true', help='the user agreed to install a new component')
     command.add_argument('--development', action='store_true', help='author check before publishing; no run lock')
@@ -559,6 +721,10 @@ def main(argv=None, root=ROOT):
     command.add_argument('--evidence', required=True)
     command.add_argument('--development', action='store_true')
     add('finish', command_finish, run=True)
+    add('accept', command_accept, release=True, commit=True)
+    command = add('release', command_release, release=True)
+    command.add_argument('--title', required=True)
+    command.add_argument('--steps', help='comma-separated ids from docs/releases/next/ (default: all)')
     command = add('validate', command_validate)
     command.add_argument('release', nargs='?')
     command = add('require-plugin', command_require_plugin)

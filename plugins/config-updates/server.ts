@@ -5,7 +5,7 @@ import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { buildPrompt, compareTags, newerThan, parseRepository, stableReleases, type LocalStatus, type Release } from "./releases.ts";
+import { buildPrompt, newerThan, parseRepository, stableReleases, type LocalStatus, type Release } from "./releases.ts";
 
 const run = promisify(execFile);
 const ReleaseSchema = z.object({ tag: z.string(), title: z.string(), notes: z.string(), url: z.string(), publishedAt: z.string() });
@@ -20,6 +20,8 @@ const StatusSchema = z.object({
   installed: z.string().nullable(),
   /** When the installed version was recorded in the journal (ISO), if known. */
   installedAt: z.string().nullable().default(null),
+  /** The installed release was accepted without an agent: nothing had to be applied. */
+  installedAuto: z.boolean().default(false),
   /** Unfinished steps of a previous run; the update stays available. */
   remaining: z.number(),
   /** Thread owning an open update run, if any. */
@@ -31,22 +33,30 @@ const StatusSchema = z.object({
   /** Commit the target tag pointed at when checked. */
   commit: z.string().nullable(),
   threadId: z.string().nullable(),
-  /** Release the update thread was started for. */
-  threadTag: z.string().nullable().default(null),
+  /** When that thread was started from the CLI (ms). */
+  threadAt: z.number().default(0),
+  /** Thread that ran the last finished update, from the journal. */
+  lastRunOwner: z.string().nullable().default(null),
 });
 export type UpdateStatus = z.infer<typeof StatusSchema>;
 const StartSchema = z.object({ threadId: z.string(), existing: z.boolean(), tag: z.string() });
+/** Either the thread already applying the update, or what to put on the new-thread screen. */
+const ComposeSchema = z.object({ tag: z.string(), threadId: z.string().nullable(), projectId: z.string().nullable(),
+  hostId: z.string().nullable(), prompt: z.string().nullable() });
 export const rpcContract = defineRpcContract({
   status: { input: z.null(), output: StatusSchema },
   check: { input: z.null(), output: StatusSchema },
-  start: { input: z.null(), output: StartSchema },
+  compose: { input: z.null(), output: ComposeSchema },
 });
 
-const EMPTY: UpdateStatus = { checkedAt: 0, okAt: 0, error: null, repository: "", installed: null, installedAt: null, remaining: 0,
-  runOwner: null, runRelease: null, pending: [], commit: null, threadId: null, threadTag: null };
+const EMPTY: UpdateStatus = { checkedAt: 0, okAt: 0, error: null, repository: "", installed: null, installedAt: null, installedAuto: false, remaining: 0,
+  runOwner: null, runRelease: null, pending: [], commit: null, threadId: null, threadAt: 0, lastRunOwner: null };
 const STALE_MS = 6 * 3_600_000;
 const SHA = /^[0-9a-f]{40}$/;
 const NOTES_FOR = 5;
+const START_WINDOW_MS = 15 * 60_000;
+/** bb's key of this plugin's sidebar footer item (`plugin:<plugin id>/<item id>`). */
+const FOOTER_KEY = "plugin:config-updates/updates";
 
 /** Checkout root: the plugin runs from <checkout>/plugins/config-updates (or its dist/). */
 function findRoot(): string {
@@ -84,6 +94,11 @@ export const io = {
     const { stdout } = await run("python3", [resolve(root, "scripts/updates.py"), "status"], { timeout: 30_000 });
     return JSON.parse(stdout) as LocalStatus;
   },
+  async accept(root: string, tag: string, commit: string, plugins: string): Promise<{ accepted: boolean; reason?: string }> {
+    const { stdout } = await run("python3", [resolve(root, "scripts/updates.py"), "accept", tag, "--commit", commit],
+      { timeout: 120_000, env: { ...process.env, BB_CONFIG_PLUGINS_JSON: plugins } });
+    return JSON.parse(stdout) as { accepted: boolean; reason?: string };
+  },
   async releases(repository: string): Promise<unknown> {
     return (await github(`/repos/${repository}/releases?per_page=100`, "application/vnd.github+json")).json();
   },
@@ -96,11 +111,15 @@ export default async function configUpdates(bb: BbPluginApi) {
   const settings = bb.settings.define({
     repository: { type: "string", label: "Репозиторий GitHub (owner/repo)", default: "",
       description: "Откуда брать стабильные релизы. Пусто — remote origin этого checkout." },
+    autoAccept: { type: "boolean", label: "Принимать релиз без агента, если устанавливать нечего", default: true,
+      description: "Когда все шаги релиза уже выполнены или неприменимы, версия отмечается установленной сразу при проверке. Ничего не собирается и не устанавливается." },
+    iconOnlyWhenNeeded: { type: "boolean", label: "Показывать значок в нижнем ряду только при обновлении", default: true,
+      description: "Без доступных обновлений значок убирается в меню «…» нижнего ряда боковой панели." },
     archiveWhenDone: { type: "boolean", label: "Архивировать тред после успешного обновления", default: true,
       description: "Тред обновления уходит в архив, когда релиз применён полностью и агент закончил ответ. При остатке или ошибке тред остаётся." },
   });
   let status: UpdateStatus = { ...EMPTY, ...((await bb.storage.kv.get<UpdateStatus>("status")) ?? {}) };
-  let local: LocalStatus = { installed: null, partial: null, run: null };
+  let local: LocalStatus = { installed: null, partial: null, run: null, lastRun: null };
   let root = "";
   let checking: Promise<UpdateStatus> | null = null;
   let starting: Promise<z.infer<typeof StartSchema>> | null = null;
@@ -112,6 +131,25 @@ export default async function configUpdates(bb: BbPluginApi) {
     return status;
   };
 
+  /**
+   * Keep the sidebar footer icon on the row only while there is something to
+   * act on; otherwise it moves into the footer's More menu. Uses bb's own
+   * preference for footer items, so the user can still override it there.
+   */
+  async function syncFooter() {
+    try {
+      if (!(await settings.get()).iconOnlyWhenNeeded) return;
+      const wanted = status.pending.length === 0 && status.remaining === 0 && !status.runOwner;
+      const { preferences } = await bb.sdk.system.uiPreferences.list();
+      const current = preferences["sidebar.hiddenFooterItems"];
+      if (current.value.includes(FOOTER_KEY) === wanted) return;
+      await bb.sdk.system.uiPreferences.set({ key: "sidebar.hiddenFooterItems", expectedRevision: current.revision,
+        value: wanted ? [...current.value, FOOTER_KEY] : current.value.filter((key) => key !== FOOTER_KEY) });
+    } catch (error) {
+      bb.log.warn(`Sidebar footer icon was not updated: ${String(error)}`);
+    }
+  }
+
   async function checkOnce(): Promise<UpdateStatus> {
     const checkedAt = Date.now();
     try {
@@ -122,17 +160,35 @@ export default async function configUpdates(bb: BbPluginApi) {
         throw new Error("Не удалось определить репозиторий GitHub: укажите owner/repo в настройках плагина.");
       }
       local = await io.local(root);
-      const installed = local.installed?.release ?? null;
-      // Stored status must stay small: full notes only for the newest releases.
-      const pending = newerThan(stableReleases(await io.releases(repository)), installed)
-        .map((release, index, all) => (index < all.length - NOTES_FOR ? { ...release, notes: "" } : release));
-      const target = pending.at(-1);
-      const commit = target ? await io.commit(repository, target.tag) : null;
+      const all = stableReleases(await io.releases(repository));
+      let pending = newerThan(all, local.installed?.release ?? null);
+      let target = pending.at(-1);
+      let commit = target ? await io.commit(repository, target.tag) : null;
       if (commit !== null && !SHA.test(commit)) throw new Error(`GitHub не вернул коммит релиза ${target!.tag}.`);
-      return await publish({ checkedAt, okAt: checkedAt, error: null, repository, installed, pending, commit,
-        installedAt: local.installed?.at ?? null,
+      // A release that needs no action here is accepted without an agent:
+      // the script only fetches the pinned commit and records what it verified.
+      if (target && commit && !local.run && (await settings.get()).autoAccept) {
+        const { plugins } = await bb.sdk.plugins.list();
+        const accepted = await io.accept(root, target.tag, commit, JSON.stringify(plugins.map((plugin) => ({
+          id: plugin.id, version: plugin.version, rootDir: plugin.rootDir, source: plugin.source,
+          enabled: plugin.enabled, status: plugin.status, statusDetail: plugin.statusDetail }))));
+        if (accepted.accepted) {
+          local = await io.local(root);
+          pending = newerThan(all, local.installed?.release ?? null);
+          target = pending.at(-1);
+          commit = target ? await io.commit(repository, target.tag) : null;
+        } else {
+          bb.log.info(`Release ${target.tag} needs an agent: ${accepted.reason ?? "unknown reason"}`);
+        }
+      }
+      // Stored status must stay small: full notes only for the newest releases.
+      pending = pending.map((release, index, list) => (index < list.length - NOTES_FOR ? { ...release, notes: "" } : release));
+      const next = await publish({ checkedAt, okAt: checkedAt, error: null, repository, installed: local.installed?.release ?? null, pending, commit,
+        installedAt: local.installed?.at ?? null, installedAuto: local.installed?.how === "auto-accept",
         remaining: local.partial?.remaining.length ?? 0, runOwner: local.run?.owner ?? null, runRelease: local.run?.release ?? null,
-        threadId: status.threadId, threadTag: status.threadTag });
+        threadId: status.threadId, threadAt: status.threadAt, lastRunOwner: local.lastRun?.owner ?? null });
+      await syncFooter();
+      return next;
     } catch (error) {
       // Keep the last known answer; never turn a failed check into "up to date".
       return await publish({ ...status, checkedAt, error: (error as Error).message.slice(0, 300) });
@@ -151,14 +207,23 @@ export default async function configUpdates(bb: BbPluginApi) {
     }
   }
 
-  async function startOnce(): Promise<z.infer<typeof StartSchema>> {
+  /** Where an update thread runs: the BB project of this checkout on the server machine. */
+  async function prepare() {
     const fresh = await check();
     if (fresh.error) throw new Error(`Проверка не удалась, обновление не запущено: ${fresh.error}`);
     const target = fresh.pending.at(-1);
     if (!target || !fresh.commit) throw new Error("Новых опубликованных релизов нет.");
     // One update at a time: reuse the thread that already works on it.
-    const existing = await liveThread(fresh.runOwner?.startsWith("thr_") ? fresh.runOwner : null) ?? await liveThread(fresh.threadId);
-    if (existing) return { threadId: existing, existing: true, tag: target.tag };
+    // The journal knows who works on it: the open run, or the thread that left
+    // steps unfinished. A thread just started from the CLI has not reached
+    // `begin` yet, so it is remembered for a short while.
+    const unfinished = local.partial && local.lastRun && !local.lastRun.complete ? local.lastRun.owner : null;
+    const justStarted = Date.now() - fresh.threadAt < START_WINDOW_MS ? fresh.threadId : null;
+    const candidates = [fresh.runOwner, unfinished, justStarted].filter((id): id is string => !!id && id.startsWith("thr_"));
+    for (const id of candidates) {
+      const existing = await liveThread(id);
+      if (existing) return { target, existing };
+    }
     const projects = await bb.sdk.projects.list();
     const { primaryHostId } = await bb.sdk.system.config();
     const sources = projects.flatMap((project) => project.sources.map((source) => ({ project, source })))
@@ -166,39 +231,60 @@ export default async function configUpdates(bb: BbPluginApi) {
       .sort((a, b) => Number(b.source.hostId === primaryHostId) - Number(a.source.hostId === primaryHostId));
     const match = sources[0];
     if (!match) throw new Error(`Добавьте каталог ${root} на машине сервера BB как проект BB, затем повторите.`);
+    return { target, existing: null, projectId: match.project.id, hostId: match.source.hostId,
+      prompt: buildPrompt({ repository: fresh.repository, root, target, commit: fresh.commit, pending: fresh.pending, local }) };
+  }
+
+  /**
+   * The interface path: hand the prepared task to bb's own new-thread screen,
+   * where the user sees and picks the provider, model and permissions.
+   */
+  async function compose(): Promise<z.infer<typeof ComposeSchema>> {
+    const plan = await prepare();
+    if (plan.existing) return { tag: plan.target.tag, threadId: plan.existing, projectId: null, hostId: null, prompt: null };
+    return { tag: plan.target.tag, threadId: null, projectId: plan.projectId!, hostId: plan.hostId!, prompt: plan.prompt! };
+  }
+
+  /** The CLI path: start the thread directly with the project's default provider and model. */
+  async function startOnce(): Promise<z.infer<typeof StartSchema>> {
+    const plan = await prepare();
+    if (plan.existing) return { threadId: plan.existing, existing: true, tag: plan.target.tag };
     const thread = await bb.sdk.threads.spawn({
-      projectId: match.project.id,
-      environment: { type: "host", hostId: match.source.hostId, workspace: { type: "unmanaged", path: root } },
-      title: `Обновление доработок BB до ${target.tag}`,
-      prompt: buildPrompt({ repository: fresh.repository, root, target, commit: fresh.commit, pending: fresh.pending, local }),
+      projectId: plan.projectId!,
+      environment: { type: "host", hostId: plan.hostId!, workspace: { type: "unmanaged", path: root } },
+      title: `Обновление доработок BB до ${plan.target.tag}`,
+      prompt: plan.prompt!,
     });
-    await publish({ ...status, threadId: thread.id, threadTag: target.tag });
-    return { threadId: thread.id, existing: false, tag: target.tag };
+    await publish({ ...status, threadId: thread.id, threadAt: Date.now() });
+    return { threadId: thread.id, existing: false, tag: plan.target.tag };
   }
   const start = () => (starting ??= startOnce().finally(() => { starting = null; }));
 
   /**
-   * The update thread finished a turn. Archive it only when the journal says the
-   * release it was started for is fully installed; a partial or failed update
-   * keeps its thread so the user sees what is left.
+   * A thread finished a turn. If the journal names it as the thread that ran
+   * the last update and that update is complete, archive it once. A partial
+   * or failed update keeps its thread so the user sees what is left. The
+   * journal, not this plugin, knows the thread: it may have been started from
+   * the new-thread screen.
    */
   bb.events.on("thread.idle", async ({ thread }) => {
-    if (!status.threadId || thread.id !== status.threadId || !status.threadTag) return;
+    if (thread.id !== status.lastRunOwner && thread.id !== status.runOwner && thread.id !== status.threadId) return;
     try {
       const journal = await io.local(root || io.root());
-      const installed = journal.installed?.release;
-      if (journal.run || journal.partial || !installed || compareTags(installed, status.threadTag) < 0) return;
-      const archive = (await settings.get()).archiveWhenDone;
-      const { threadId } = status;
-      await publish({ ...status, threadId: null, threadTag: null });
-      if (archive) await bb.sdk.threads.archive({ threadId });
+      const last = journal.lastRun;
+      if (journal.run || journal.partial || !last?.complete || last.owner !== thread.id) return;
+      const mark = `${last.owner}:${last.at}`;
+      if ((await bb.storage.kv.get<string>("archived-run")) === mark) return;
+      await bb.storage.kv.set("archived-run", mark);
+      if ((await settings.get()).archiveWhenDone) await bb.sdk.threads.archive({ threadId: thread.id });
+      await publish({ ...status, threadId: null });
       await check();
     } catch (error) {
       bb.log.warn(`Update thread was not archived: ${String(error)}`);
     }
   });
 
-  bb.rpc.register(rpcContract, { status: () => status, check, start });
+  bb.rpc.register(rpcContract, { status: () => status, check, compose });
   bb.background.schedule("check-releases", "17 */6 * * *", async () => { await check(); });
   bb.background.service("initial-check", {
     async start(signal) {
@@ -211,7 +297,7 @@ export default async function configUpdates(bb: BbPluginApi) {
     commands: [
       { name: "status", summary: "Последний результат проверки, без обращения к сети", usage: "status [--json]" },
       { name: "check", summary: "Проверить опубликованные стабильные релизы сейчас", usage: "check [--json]" },
-      { name: "start", summary: "Запустить тред агента, применяющий обновление", usage: "start" },
+      { name: "start", summary: "Запустить тред агента с провайдером и моделью проекта по умолчанию", usage: "start" },
     ],
     async run(argv) {
       const [command, flag] = argv;

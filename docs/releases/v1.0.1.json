@@ -12,16 +12,6 @@
       "plugin": "config-updates",
       "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
       "rollback": "Вернуть plugins/config-updates к коммиту v1.0.0 (git checkout v1.0.0 -- plugins/config-updates), затем npm ci --include=dev, bb plugin build и bb plugin reload config-updates."
-    },
-    {
-      "id": "plugin-project-logo",
-      "title": "Подбор или создание контекстной иконки — Project Logo 0.2.0",
-      "component": "project-logo",
-      "where": "server",
-      "kind": "local-plugin",
-      "plugin": "project-logo",
-      "rerun": "Безопасно: совпавшая версия проверяется, имеющиеся иконки сохраняются.",
-      "rollback": "Вернуть plugins/project-logo к v1.0.0, npm ci --include=dev, bb plugin build и bb plugin reload project-logo. Созданные иконки остаются в проектах."
     }
   ]
 }

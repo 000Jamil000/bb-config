@@ -1,0 +1,28 @@
+{
+  "id": "example-setting",
+  "title": "Перенести значение настройки в новый ключ",
+  "component": "example",
+  "where": "server",
+  "kind": "command",
+  "after": [
+    "next/example-plugin"
+  ],
+  "applies": [
+    "{python}",
+    "scripts/updates.py",
+    "require-plugin",
+    "example"
+  ],
+  "apply": [
+    "{python}",
+    "scripts/migrations/example_setting.py",
+    "--apply"
+  ],
+  "verify": [
+    "{python}",
+    "scripts/migrations/example_setting.py",
+    "--check"
+  ],
+  "rerun": "Безопасно: скрипт идемпотентен.",
+  "rollback": "Скрипт сохраняет прежнее значение в .local/updates/; вернуть его командой --restore."
+}

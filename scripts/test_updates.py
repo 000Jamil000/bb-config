@@ -173,6 +173,15 @@ class UpdatesTests(unittest.TestCase):
             count = len(commands)
             self.assertEqual(self.call('run', 'v1.0.0/demo')[1]['how'], 'existing')
             self.assertEqual(len(commands), count)
+            installed['demo']['version'] = '1.3.0'  # the author's later build: nothing to apply from this release
+            self.assertIn('newer than release 1.2.0', self.call('run', 'v1.0.0/demo')[1]['detail'])
+            installed['demo']['version'] = '1.1.0'
+            (self.repo.root / 'plugins/demo/package.json').write_text('{"version": "9.9.9"}')  # uncommitted local work
+            result = self.call('run', 'v1.0.0/demo')
+            self.assertEqual(result[0], 1)
+            self.assertIn('differs from the release', result[1])
+            self.assertEqual(len(commands), count)  # nothing was built from the modified checkout
+            self.repo.git(self.repo.root, 'checkout', '--', 'plugins/demo/package.json')
             installed['demo']['rootDir'] = '/elsewhere'
             self.assertEqual(self.call('run', 'v1.0.0/demo')[0], 1)  # another source is never replaced
 
@@ -191,6 +200,72 @@ class UpdatesTests(unittest.TestCase):
         self.assertIn('does not describe step `demo`', self.call('validate', root=self.repo.author)[1])
         self.assertTrue(updates.manifest_errors({'schemaVersion': 1, 'version': 'v9.9.9', 'title': 't', 'steps': [
             {'id': 'Bad id'}, step('x', where='moon'), step('y', kind='command', apply=None)]}, 'v1.0.0'))
+
+
+    def test_release_assembles_only_committed_waiting_steps(self):
+        author = self.repo.author
+        plugin = author / 'plugins/demo'
+        plugin.mkdir(parents=True)
+        (plugin / 'package.json').write_text('{"version": "1.0.0"}')
+        (plugin / 'package-lock.json').write_text('{}')
+        base = {'component': 'demo', 'kind': 'local-plugin', 'plugin': 'demo', 'apply': None, 'verify': None}
+        self.repo.release('v1.0.0', [step('demo', **base)])
+        waiting = author / 'docs/releases/next'
+        waiting.mkdir()
+        for name, extra in (('demo-two', base), ('script', {'after': ['next/demo-two']}), ('later', {})):
+            (waiting / f'{name}.json').write_text(json.dumps(step(name, **extra)))
+            (waiting / f'{name}.md').write_text(f'How `{name}` works.\n')
+        (plugin / 'package.json').write_text('{"version": "1.1.0"}')
+        self.assertEqual(self.call('run', 'next/script', '--development', root=author)[0], 2)  # dependency first
+        self.assertIn('uncommitted', self.call('release', 'v1.1.0', '--title', 'T', '--steps', 'demo-two,script', root=author)[1])
+        self.assertIn('not in this release', self.call('release', 'v1.1.0', '--title', 'T', '--steps', 'script', root=author)[1])
+        self.repo.commit('demo 1.1.0')
+        self.assertIn('not newer', self.call('release', 'v1.0.0', '--title', 'T', root=author)[1])
+        code, result = self.call('release', 'v1.1.0', '--title', 'T', '--steps', 'demo-two,script', root=author)
+        self.assertEqual((code, result['left'], result['problems']), (0, ['later'], []))
+        manifest = json.loads((author / 'docs/releases/v1.1.0.json').read_text())
+        self.assertEqual([(s['id'], s.get('after')) for s in manifest['steps']], [('demo-two', None), ('script', ['demo-two'])])
+        self.assertIn('How `script` works.', (author / 'docs/releases/v1.1.0.md').read_text())
+        self.assertEqual(sorted(p.name for p in waiting.iterdir()), ['later.json', 'later.md'])
+        self.assertEqual(self.call('validate', root=author)[1]['waiting'], ['later'])
+
+    def test_a_step_for_a_plugin_the_release_does_not_change_is_rejected(self):
+        plugin = self.repo.author / 'plugins/demo'
+        plugin.mkdir(parents=True)
+        (plugin / 'package.json').write_text('{"version": "1.0.0"}')
+        (plugin / 'package-lock.json').write_text('{}')
+        base = {'component': 'demo', 'kind': 'local-plugin', 'plugin': 'demo', 'apply': None, 'verify': None}
+        self.repo.release('v1.0.0', [step('demo', **base)])
+        self.repo.release('v1.0.1', [step('demo', **base)])
+        (plugin / 'package.json').write_text('{"version": "2.0.0"}')  # changed, but never committed
+        self.assertIn('unchanged in HEAD since v1.0.0', self.call('validate', root=self.repo.author)[1])
+
+    def test_accept_marks_a_release_installed_only_when_nothing_has_to_be_applied(self):
+        first = self.repo.release('v1.0.0', [step('one')])
+        refused = self.call('accept', 'v1.0.0', '--commit', first)[1]
+        self.assertEqual((refused['accepted'], 'has to be applied' in refused['reason']), (False, True))
+        self.assertFalse((self.repo.root / 'one.done').exists())  # accept never applies
+        self.assertIsNone(self.call('status')[1]['installed'])
+        (self.repo.root / 'one.done').write_text('x')  # already in place by other means
+        accepted = self.call('accept', 'v1.0.0', '--commit', first)[1]
+        self.assertEqual((accepted['accepted'], accepted['installed']['how'], accepted['steps']), (True, 'auto-accept', ['v1.0.0/one']))
+        second = self.repo.release('v1.1.0', [step('cli', where='executors')])
+        self.assertIn('executor machines', self.call('accept', 'v1.1.0', '--commit', second)[1]['reason'])
+        third = self.repo.release('v1.2.0', [])
+        self.assertIn('executor machines', self.call('accept', 'v1.2.0', '--commit', third)[1]['reason'])  # the skipped one still blocks
+        self.call('begin', 'v1.2.0', '--commit', third, '--machines', 'host_a')
+        self.assertIn('run is open', self.call('accept', 'v1.2.0', '--commit', third)[1]['reason'])
+        (self.repo.root / '.gitignore').write_text('local edit\n')
+        self.assertEqual(self.call('status')[1]['installed']['release'], 'v1.0.0')
+
+    def test_finish_remembers_the_thread_that_ran_the_update(self):
+        sha = self.repo.release('v1.0.0', [step('one')])
+        self.call('fetch', 'v1.0.0', '--commit', sha)
+        self.call('begin', 'v1.0.0', '--commit', sha)
+        self.call('run', 'v1.0.0/one')
+        self.call('finish')
+        last = self.call('status')[1]['lastRun']
+        self.assertEqual((last['owner'], last['release'], last['complete']), ('thr_a', 'v1.0.0', True))
 
 
 if __name__ == '__main__':

@@ -12,6 +12,12 @@ On that Mac, `bb Status.app` shows a count per state and a usage ring in the
 menu bar, and a panel on hover: usage per account, the agents, and a chat
 column (hover a thread to read it and reply; click it to open it in bb).
 
+The menu item is visible only while BB Desktop (`dev.bb.desktop`) is running.
+Quitting BB hides the item and closes its panel; launching BB restores it.
+Closing a BB window does not quit BB. The LaunchAgent remains enabled at login
+to observe launches, including when BB was not running at login. Workspace
+notifications update visibility immediately, with a two-second polling fallback.
+
 - `bb menubar-status show` — print the feed the menu bar would get.
 - `bb menubar-status sync` — write the file now.
 - `bb plugin rpc call menubar-status chat --input-file <json>` with

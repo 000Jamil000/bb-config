@@ -1,7 +1,7 @@
 #!/bin/zsh
 # Installs the bb menu bar item for the current macOS user:
 #  - bb Status.app, a native menu bar item (panel on hover, click to pin),
-#    started at login by a LaunchAgent;
+#    started at login by a LaunchAgent, visible only while BB Desktop is running;
 #  - the local helper (127.0.0.1:47615, LaunchAgent) that serves the panel
 #    from the files the menubar-status plugin keeps in this folder.
 # Neither calls bb: the plugin writes the data here and picks replies up.

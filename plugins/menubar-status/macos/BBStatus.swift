@@ -93,6 +93,13 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
     var panelURL = URL(string: "about:blank")!
 
     func start() {
+        // launchd keeps the observer alive; the menu item follows BB Desktop.
+        item.isVisible = false
+        for event in [NSWorkspace.didLaunchApplicationNotification,
+                      NSWorkspace.didTerminateApplicationNotification] {
+            NSWorkspace.shared.notificationCenter.addObserver(
+                self, selector: #selector(workspaceChanged(_:)), name: event, object: nil)
+        }
         let token = ((try? String(contentsOfFile: supportDir + "/token")) ?? "")
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let config = WKWebViewConfiguration()
@@ -257,6 +264,33 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
 
     // MARK: menu bar title
 
+    @objc func workspaceChanged(_ notification: Notification) {
+        guard let app = notification.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+              app.bundleIdentifier == "dev.bb.desktop" else { return }
+        refresh()
+    }
+
+    func syncVisibility() {
+        let desktopRunning = NSWorkspace.shared.runningApplications.contains {
+            $0.bundleIdentifier == "dev.bb.desktop" && !$0.isTerminated
+        }
+        guard item.isVisible != desktopRunning else { return }
+        if !desktopRunning {
+            showTimer?.invalidate()
+            hideTimer?.invalidate()
+            overButton = false
+            overPanel = false
+            close()
+        } else {
+            // Rebuild the image when BB relaunches, even if counts are unchanged.
+            lastSignature = ""
+            draw()
+        }
+        item.isVisible = desktopRunning
+        NSLog("bb Status: BB Desktop %@; menu item %@", desktopRunning ? "running" : "stopped",
+              desktopRunning ? "shown" : "hidden")
+    }
+
     func refresh() {
         var next: [Part] = []
         let grey = NSColor.systemGray
@@ -288,6 +322,8 @@ final class Controller: NSObject, WKScriptMessageHandler, WKNavigationDelegate {
         parts = next
         accounts = readAccounts()
         draw()
+        // Polling also catches a missed workspace notification after sleep.
+        syncVisibility()
     }
 
     /// Like the sidebar's usage rings: the account closest to its limit.

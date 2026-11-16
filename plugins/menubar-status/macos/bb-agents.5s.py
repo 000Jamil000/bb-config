@@ -15,6 +15,7 @@
 # and, wrapped, its submenu, so the list itself stays one line per agent.
 import json
 import os
+import socket
 import textwrap
 import time
 
@@ -22,6 +23,8 @@ STATUS_FILE = os.environ.get(
     "BB_MENUBAR_STATUS",
     os.path.expanduser("~/Library/Application Support/bb-menubar/status.json"),
 )
+HOME_DIR = os.path.expanduser("~/Library/Application Support/bb-menubar")
+PANEL_PORT = int(os.environ.get("BB_MENUBAR_PORT", "47615"))
 STALE_AFTER = 180  # seconds without a rewrite: server down or this Mac was asleep
 OPEN_APP = "bash=/usr/bin/open param1=-a param2=bb terminal=false"
 GREY = "#8E8E93"
@@ -72,6 +75,22 @@ def age(seconds):
     return f"{seconds // 86400} д"
 
 
+def panel_link():
+    """The panel's address when its local helper answers, else None.
+
+    With it, a left click opens the panel and a right click this menu; without
+    it, both open this menu.
+    """
+    try:
+        with open(os.path.join(HOME_DIR, "token"), encoding="utf-8") as handle:
+            token = handle.read().strip()
+        with socket.create_connection(("127.0.0.1", PANEL_PORT), timeout=0.2):
+            pass
+    except OSError:
+        return None
+    return f"http://127.0.0.1:{PANEL_PORT}/?t={token}"
+
+
 def header(parts):
     """The menu bar title: "bb" and one symbol (with a count) per live state."""
     text = " ".join(f":{symbol}:{f' {count}' if count else ''}" for symbol, _, count in parts)
@@ -80,7 +99,9 @@ def header(parts):
         f"sfcolor{'' if index == 1 else index}={colour}"
         for index, (_, colour, _) in enumerate(parts, start=1)
     )
-    print(f"bb {text} | {colours} sfsize=13")
+    link = panel_link()
+    panel = f" href={link} webview=true webvieww=400 webviewh=660" if link else ""
+    print(f"bb {text} | {colours} sfsize=13{panel}")
 
 
 def row(item, now):

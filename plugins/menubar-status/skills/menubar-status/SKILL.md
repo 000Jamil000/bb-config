@@ -20,3 +20,9 @@ The file is rewritten on thread events and at least once a minute; the widget
 marks the data stale when the file is older than three minutes (machine
 asleep, server down). The widget script is `macos/bb-agents.5s.py` in the
 plugin's source.
+
+On the Mac, `macos/install.sh` also installs a local helper (LaunchAgent
+`dev.bb.menubar`, 127.0.0.1:47615, token-protected) that serves
+`macos/panel.html`: a left click on the menu bar title opens it as a popover,
+a right click opens the plain SwiftBar menu. Check it with
+`launchctl print gui/$(id -u)/dev.bb.menubar`.

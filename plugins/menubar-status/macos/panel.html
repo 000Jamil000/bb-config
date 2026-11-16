@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>bb</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #f1f3f8; --card: #ffffff; --card-2: #e9ecf3; --line: rgba(20, 30, 60, .08);
+    --text: #0e1220; --muted: #6b7286; --faint: #9aa1b3;
+    --blue: #2f6bff; --orange: #ff8a1f; --red: #f0453a; --green: #1fb86a;
+    --blue-soft: #e4ecff; --orange-soft: #fff0df; --red-soft: #ffe7e5; --green-soft: #e1f7ea;
+    --shadow: 0 1px 2px rgba(20, 30, 60, .06), 0 6px 18px rgba(20, 30, 60, .06);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #16181f; --card: #21242e; --card-2: #2b2f3b; --line: rgba(255, 255, 255, .08);
+      --text: #f2f4f9; --muted: #a0a7b8; --faint: #717889;
+      --blue: #5b8cff; --orange: #ffa24a; --red: #ff6a60; --green: #3fd58a;
+      --blue-soft: #1e2a4a; --orange-soft: #40301c; --red-soft: #45221f; --green-soft: #17382a;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 20px rgba(0, 0, 0, .25);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+    display: flex; flex-direction: column; overflow: hidden;
+  }
+  header { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; }
+  .logo {
+    width: 28px; height: 28px; border-radius: 9px; background: var(--text); color: var(--bg);
+    display: grid; place-items: center; font-weight: 800; font-size: 13px; letter-spacing: -.5px;
+  }
+  header h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.4px; flex: 1; }
+  .live { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
+  .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
+  .live.off i { background: var(--orange); }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+  .icon-btn {
+    width: 32px; height: 32px; border-radius: 50%; background: var(--card-2);
+    display: grid; place-items: center;
+  }
+  .icon-btn:hover { filter: brightness(.96); }
+  .icon-btn svg { width: 15px; height: 15px; }
+
+  main { flex: 1; overflow-y: auto; padding: 0 14px 14px; }
+  main::-webkit-scrollbar { width: 0; }
+
+  .hero {
+    border-radius: 20px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+  }
+  .hero.needs { background: var(--orange-soft); border-color: transparent; }
+  .hero.error { background: var(--red-soft); border-color: transparent; }
+  .hero.running { background: var(--blue-soft); border-color: transparent; }
+  .hero .state { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12.5px; color: var(--muted); }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
+  .needs .dot, .dot.needs { background: var(--orange); }
+  .error .dot, .dot.error { background: var(--red); }
+  .running .dot, .dot.running { background: var(--blue); animation: pulse 1.4s ease-in-out infinite; }
+  .dot.unread { background: var(--green); }
+  @keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
+  .hero .big { font-size: 30px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; margin: 8px 0 10px; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
+    background: rgba(127, 135, 160, .16); font-size: 12px; font-weight: 500;
+  }
+  .chip b { font-weight: 700; }
+  .hero .cta {
+    margin-top: 12px; width: 100%; padding: 10px; border-radius: 999px; font-weight: 700; font-size: 13.5px;
+    background: var(--blue); color: #fff; box-shadow: 0 6px 16px rgba(47, 107, 255, .3);
+  }
+  .hero.needs .cta { background: var(--orange); box-shadow: 0 6px 16px rgba(255, 138, 31, .3); }
+
+  h2 {
+    margin: 16px 6px 8px; font-size: 11px; font-weight: 700; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--faint); display: flex; gap: 6px;
+  }
+  .row {
+    display: flex; gap: 11px; padding: 11px 12px; border-radius: 16px; background: var(--card);
+    border: 1px solid var(--line); margin-bottom: 7px; cursor: pointer; position: relative;
+    transition: transform .08s ease, box-shadow .12s ease;
+  }
+  .row:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
+  .row:active { transform: none; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 9px; flex: none; display: grid; place-items: center;
+    background: var(--card-2); position: relative; font-size: 15px;
+  }
+  .avatar svg { width: 17px; height: 17px; }
+  .avatar .dot { position: absolute; right: -3px; top: -3px; box-shadow: 0 0 0 2px var(--card); }
+  .body { min-width: 0; flex: 1; }
+  .title { font-weight: 650; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 54px; }
+  .meta { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .snippet {
+    margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.38;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .row:hover .snippet { -webkit-line-clamp: 6; color: var(--text); }
+  .when { position: absolute; right: 12px; top: 12px; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .row:hover .when { display: none; }
+  .web {
+    position: absolute; right: 9px; top: 8px; display: none; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--card-2); place-items: center;
+  }
+  .web svg { width: 13px; height: 13px; }
+  .row:hover .web { display: grid; }
+  .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; margin-right: 6px; }
+  .pill.needs { background: var(--orange-soft); color: var(--orange); }
+  .pill.error { background: var(--red-soft); color: var(--red); }
+  .pill.running { background: var(--blue-soft); color: var(--blue); }
+  .pill.unread { background: var(--green-soft); color: var(--green); }
+  .empty { text-align: center; color: var(--muted); padding: 28px 0; }
+  .banner {
+    margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; background: var(--orange-soft);
+    color: var(--orange); font-weight: 600; font-size: 12px;
+  }
+  footer { padding: 10px 14px 14px; }
+  .open {
+    width: 100%; padding: 11px; border-radius: 999px; background: var(--card-2); font-weight: 700; font-size: 13.5px;
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+  }
+  .open:hover { filter: brightness(.96); }
+  .open svg { width: 15px; height: 15px; }
+</style>
+</head>
+<body>
+<header>
+  <div class="logo">bb</div>
+  <h1>Агенты</h1>
+  <div class="live" id="live"><i></i><span id="liveText">на связи</span></div>
+</header>
+<main id="main"></main>
+<footer>
+  <button class="open" data-open="">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18"/></svg>
+    Открыть bb
+  </button>
+</footer>
+<script>
+const token = new URLSearchParams(location.search).get("t") || "";
+const STALE_MS = 180000;
+const LABEL = { needs: "ждёт вас", error: "ошибка", running: "работает", unread: "новый ответ" };
+const SECTIONS = [
+  ["needs", "Ждут вас"], ["error", "Ошибки"], ["running", "Работают"],
+  ["unread", "Новые ответы"], ["idle", "Недавние"],
+];
+const PROVIDER = {
+  "claude-code": ['<svg viewBox="0 0 24 24" fill="none" stroke="#d97757" stroke-width="2.3" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>', "Claude"],
+  "codex": ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 12 20 7.5M12 12v9M12 12 4 7.5"/></svg>', "Codex"],
+};
+const WEB_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+
+const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+function age(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return "сейчас";
+  if (s < 3600) return `${Math.floor(s / 60)} мин`;
+  if (s < 86400) return `${Math.floor(s / 3600)} ч`;
+  return `${Math.floor(s / 86400)} д`;
+}
+function plural(n, one, few, many) {
+  const m10 = n % 10, m100 = n % 100;
+  if (m10 === 1 && m100 !== 11) return one;
+  if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return few;
+  return many;
+}
+
+function hero(counts) {
+  const { needs = 0, running = 0, unread = 0, error = 0 } = counts;
+  let kind = "idle", state = "Всё спокойно", big = "Агенты свободны", cta = "";
+  if (needs) {
+    kind = "needs"; state = "Нужен ваш ответ";
+    big = `${needs} ${plural(needs, "агент ждёт", "агента ждут", "агентов ждут")} вас`;
+    cta = '<button class="cta" data-open="">Ответить в bb</button>';
+  } else if (error) {
+    kind = "error"; state = "Есть ошибки";
+    big = `${error} ${plural(error, "агент остановился", "агента остановились", "агентов остановились")}`;
+  } else if (running) {
+    kind = "running"; state = "Идёт работа";
+    big = `${running} ${plural(running, "агент работает", "агента работают", "агентов работают")}`;
+  } else if (unread) {
+    state = "Есть непрочитанное";
+    big = `${unread} ${plural(unread, "новый ответ", "новых ответа", "новых ответов")}`;
+  }
+  const chips = [
+    kind !== "needs" && needs ? ["needs", "ждут вас", needs] : null,
+    kind !== "running" && running ? ["running", "работают", running] : null,
+    kind !== "error" && error ? ["error", "с ошибкой", error] : null,
+    !(kind === "idle" && unread) && unread ? ["unread", "новых ответов", unread] : null,
+  ].filter(Boolean).map(([k, label, n]) => `<span class="chip"><i class="dot ${k}"></i>${label} <b>${n}</b></span>`).join("");
+  return `<section class="hero ${kind}">
+    <div class="state"><i class="dot"></i>${state}</div>
+    <div class="big">${big}</div>
+    ${chips ? `<div class="chips">${chips}</div>` : ""}${cta}
+  </section>`;
+}
+
+function row(item, now) {
+  const [glyph, name] = PROVIDER[item.provider] || ["", ""];
+  const state = item.state || "idle";
+  const meta = [item.project, item.machine, name].filter(Boolean).map(esc).join(" · ");
+  const pill = LABEL[state] ? `<span class="pill ${state}">${LABEL[state]}</span>` : "";
+  const snippet = state === "running" || !item.snippet ? "" : `<div class="snippet">${esc(item.snippet)}</div>`;
+  return `<article class="row" data-open="${esc(item.id)}" title="Открыть bb">
+    <div class="avatar">${glyph || "•"}${state === "idle" ? "" : `<i class="dot ${state}"></i>`}</div>
+    <div class="body">
+      <div class="title">${esc(item.title)}</div>
+      <div class="meta">${pill}${meta}</div>
+      ${snippet}
+    </div>
+    <span class="when">${age(now - item.updatedAt)}</span>
+    ${item.url ? `<button class="web" data-web="${esc(item.id)}" title="Открыть тред в браузере">${WEB_ICON}</button>` : ""}
+  </article>`;
+}
+
+let lastHtml = "";
+function render(feed) {
+  const now = Date.now();
+  const stale = !feed || now - feed.generatedAt > STALE_MS;
+  document.getElementById("live").classList.toggle("off", stale);
+  document.getElementById("liveText").textContent = stale ? "нет связи" : "на связи";
+  let html = "";
+  if (!feed) {
+    html = '<div class="empty">Нет данных от bb</div>';
+  } else {
+    if (stale) html += `<div class="banner">Нет связи с сервером bb — данные ${age(now - feed.generatedAt)} назад</div>`;
+    html += hero(feed.counts || {});
+    for (const [state, title] of SECTIONS) {
+      const group = (feed.items || []).filter((item) => (item.state || "idle") === state);
+      if (group.length === 0) continue;
+      html += `<h2>${title}</h2>` + group.map((item) => row(item, now)).join("");
+    }
+    if (!(feed.items || []).length) html += '<div class="empty">Тредов нет</div>';
+  }
+  if (html !== lastHtml) {
+    lastHtml = html;
+    document.getElementById("main").innerHTML = html;
+  }
+}
+
+async function tick() {
+  try {
+    const response = await fetch(`/status?t=${encodeURIComponent(token)}`, { cache: "no-store" });
+    render(await response.json());
+  } catch {
+    render(null);
+  }
+}
+document.addEventListener("click", (event) => {
+  const web = event.target.closest("[data-web]");
+  const open = event.target.closest("[data-open]");
+  if (!web && !open) return;
+  const thread = web ? web.dataset.web : open.dataset.open;
+  fetch(`/open?t=${encodeURIComponent(token)}&thread=${encodeURIComponent(thread)}${web ? "&web=1" : ""}`).catch(() => {});
+});
+tick();
+setInterval(tick, 2000);
+</script>
+</body>
+</html>

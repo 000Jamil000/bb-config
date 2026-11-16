@@ -221,6 +221,13 @@
     "source": "path:plugins/machine-tabs"
   },
   {
+    "id": "menubar-status",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Menubar Status",
+    "source": "path:plugins/menubar-status"
+  },
+  {
     "id": "monaco-editor",
     "version": "0.1.0",
     "enabled": true,
@@ -359,5 +366,12 @@
     "enabled": true,
     "name": "Workflows",
     "source": "builtin:workflows"
+  },
+  {
+    "id": "thread-account-usage",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Thread Account Usage",
+    "source": "path:plugins/thread-account-usage"
   }
 ]

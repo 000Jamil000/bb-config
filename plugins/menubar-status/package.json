@@ -1,0 +1,23 @@
+{
+  "name": "bb-plugin-menubar-status",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Menubar Status",
+    "description": "Keeps a small agent status file on one machine for a menu bar widget.",
+    "branding": {
+      "icon": "Activity"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.132"
+  }
+}

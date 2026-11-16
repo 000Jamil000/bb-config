@@ -35,7 +35,8 @@ export function installComposerFooter(signal: AbortSignal) {
       // Environment providers wrap their branch picker in a display:contents plugin root.
       while (branch?.parentElement?.matches('[data-bb-plugin-root][data-bb-plugin].contents')) branch = branch.parentElement;
       const machine = shell?.querySelector<HTMLElement>('button[aria-label="Machine"]');
-      const row = project?.parentElement ?? branch?.parentElement ?? machine?.parentElement;
+      const row = project?.parentElement ?? branch?.parentElement ?? machine?.parentElement
+        ?? entry.anchor.closest('[data-follow-up-composer]')?.querySelector<HTMLElement>('[data-follow-up-composer-footer] > :first-child');
       const plus = row?.querySelector<HTMLElement>('button[aria-label="New thread in this environment"]');
       if (!row || !entry.anchor.isConnected) { release(entry); continue; }
       let current = mounted.get(entry);

@@ -16,7 +16,7 @@ function HandoffButton() {
       void openOriginalHandoff(event.currentTarget, controller.signal)
         .catch((error) => { if (!controller.signal.aborted) toast.error(String(error.message ?? error)); })
         .finally(() => { if (!controller.signal.aborted) setBusy(false); });
-    }}><Icon name="ArrowTurnForward" className="size-3.5" />Handoff</button>;
+    }}><Icon name="ArrowTurnForward" className="size-3.5" /><span className="max-md:hidden">Handoff</span></button>;
 }
 
 export default definePluginApp((app) => {

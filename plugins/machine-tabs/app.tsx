@@ -1213,7 +1213,13 @@ function MachineThreadList(props: PluginThreadListProps) {
     const map = new Map<string, ProjectBadge>();
     for (const thread of threads) {
       const badge = projectBadges.get(thread.projectId);
-      if (badge) map.set(thread.id, badge);
+      if (!badge) continue;
+      // The machine is one hover away on every row, whatever the grouping.
+      const machine = thread.host?.name;
+      map.set(
+        thread.id,
+        machine ? { ...badge, name: `${badge.name} · ${machine}` } : badge,
+      );
     }
     return map;
   }, [threads, projectBadges]);

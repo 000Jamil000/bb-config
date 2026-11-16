@@ -48,24 +48,40 @@ function Notice() {
   return null;
 }
 
+const day = (value: string | number) => new Date(value).toLocaleDateString();
+
+/** What is installed, what is published, when it was checked: the same three lines everywhere. */
+function Summary({ status }: { status: UpdateStatus }) {
+  const target = status.pending.at(-1);
+  return <dl className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 text-xs">
+    <dt className="text-muted-foreground">Установлено</dt>
+    <dd>{status.installed ? <><b>{status.installed}</b>{status.installedAt && ` с ${day(status.installedAt)}`}</> : "версия не записана"}</dd>
+    <dt className="text-muted-foreground">Доступно</dt>
+    <dd>{target ? <><b>{target.tag}</b> от {day(target.publishedAt)}</> : status.okAt > 0 ? "новых релизов нет" : "не проверено"}</dd>
+    <dt className="text-muted-foreground">Проверено</dt>
+    <dd>{status.checkedAt ? new Date(status.checkedAt).toLocaleString() : "ещё нет"}{status.error && " — с ошибкой"}</dd>
+    {status.runRelease && <><dt className="text-muted-foreground">Сейчас</dt><dd>идёт обновление до {status.runRelease}</dd></>}
+  </dl>;
+}
+
 /** The card above the sidebar footer row, next to bb's own update notices. */
 function FooterCard({ dismiss }: { dismiss(): void }) {
   const { status, busy, check, start } = useUpdates();
   const target = status?.pending.at(-1);
   return <div className="space-y-2 rounded-lg border border-border bg-background p-3 text-sm shadow-sm" data-config-updates-card>
+    <p className="font-semibold">Обновления доработок BB</p>
     {!status ? <p className="text-muted-foreground">Загрузка…</p> : <>
+      <Summary status={status} />
       {status.error && <p role="alert" className="text-xs text-destructive">Проверка не удалась: {status.error} Это не означает, что обновлений нет.</p>}
-      {target ? <>
-        <p className="font-semibold">Обновление доработок BB {target.tag}</p>
-        {target.title !== target.tag && <p className="text-xs">{target.title}</p>}
+      {target && <div className="border-t border-border pt-2">
+        {target.title !== target.tag && <p className="text-xs font-medium">{target.title}</p>}
         <p className="line-clamp-4 whitespace-pre-wrap break-words text-xs text-muted-foreground">{target.notes || "Описание не заполнено."}</p>
-        {status.pending.length > 1 && <p className="text-xs text-muted-foreground">Вместе с пропущенными: {status.pending.length} релизов.</p>}
-      </> : <p className="text-muted-foreground">{status.okAt > 0 && !status.error ? "Новых релизов доработок нет." : "Релизы доработок не проверены."}
-        {status.installed && ` Установлено: ${status.installed}.`}</p>}
+        {status.pending.length > 1 && <p className="text-xs text-muted-foreground">Вместе с пропущенными: {status.pending.map((r) => r.tag).slice(-4).join(", ")}{status.pending.length > 4 && " и более ранние"}.</p>}
+      </div>}
       {status.remaining > 0 && <p className="text-xs text-muted-foreground">Прошлое обновление применено частично, осталось шагов: {status.remaining}.</p>}
       <div className="flex flex-wrap gap-2">
         {target && <button type="button" className={`${button} bg-primary text-primary-foreground hover:bg-primary/90`} disabled={busy !== null}
-          onClick={() => { void start().then(dismiss); }}>{busy === "start" ? "Запускаю…" : status.runOwner ? "Открыть обновление" : "Обновить с ИИ"}</button>}
+          onClick={() => { void start().then(dismiss); }}>{busy === "start" ? "Запускаю…" : status.runOwner ? "Открыть идущее обновление" : `Обновить до ${target.tag} с ИИ`}</button>}
         <button type="button" className={button} disabled={busy !== null} onClick={() => { void check(); }}>{busy === "check" ? "Проверяю…" : "Проверить"}</button>
         <button type="button" className={button} onClick={dismiss}>Скрыть</button>
       </div>
@@ -80,16 +96,15 @@ function Section() {
   if (!status) return <p className="text-sm text-muted-foreground">Загрузка…</p>;
   const target = status.pending.at(-1);
   return <div className="space-y-3 text-sm" data-config-updates>
-    <p>Установлено: <b>{status.installed ?? "версия не определена"}</b>
-      {status.remaining > 0 && <span className="text-muted-foreground"> · предыдущее обновление применено частично, осталось шагов: {status.remaining}</span>}</p>
-    <p className="text-muted-foreground">{status.checkedAt ? `Проверено: ${new Date(status.checkedAt).toLocaleString()}` : "Проверка ещё не выполнялась."}
-      {status.repository && ` · ${status.repository}`}</p>
+    <Summary status={status} />
+    {status.remaining > 0 && <p className="text-muted-foreground">Предыдущее обновление применено частично, осталось шагов: {status.remaining}.</p>}
+    {status.repository && <p className="text-xs text-muted-foreground">Репозиторий: {status.repository}</p>}
     {status.error && <p role="alert" className="rounded-md bg-destructive/10 px-3 py-2 text-destructive">
       Проверка не удалась: {status.error} Это не означает, что обновлений нет.
       {status.okAt > 0 && ` Ниже — данные последней успешной проверки (${new Date(status.okAt).toLocaleString()}).`}</p>}
     {target ? <div className="space-y-2 rounded-lg border border-border p-3">
       <p className="font-semibold">Доступно обновление {target.tag}{target.title !== target.tag && ` — ${target.title}`}</p>
-      <p className="text-xs text-muted-foreground">Опубликовано {new Date(target.publishedAt).toLocaleDateString()} · коммит {status.commit?.slice(0, 12)}
+      <p className="text-xs text-muted-foreground">Опубликовано {day(target.publishedAt)} · коммит {status.commit?.slice(0, 12)}
         {status.pending.length > 1 && ` · будут применены по порядку: ${status.pending.map((r) => r.tag).join(", ")}`}</p>
       {status.pending.slice().reverse().filter((release) => release.notes || release === target).map((release) => <div key={release.tag}>
         {status.pending.length > 1 && <p className="text-xs font-medium">{release.tag}</p>}

@@ -3,7 +3,7 @@
 export interface Release { tag: string; title: string; notes: string; url: string; publishedAt: string }
 export interface Remaining { step: string; machine: string }
 export interface LocalStatus {
-  installed: { release: string; commit: string } | null;
+  installed: { release: string; commit: string; at?: string } | null;
   partial: { release: string; remaining: Remaining[] } | null;
   run: { release: string; owner: string; startedAt: string } | null;
 }
@@ -38,7 +38,8 @@ export function stableReleases(raw: unknown): Release[] {
     if (draft || prerelease || !parseTag(tag) || typeof publishedAt !== "string") continue;
     releases.push({
       tag, publishedAt,
-      title: typeof name === "string" && name.trim() ? name.trim() : tag,
+      // "v1.2.0 — Title" would repeat the version next to the tag.
+      title: (typeof name === "string" ? name.trim() : "").replace(new RegExp(`^${tag.replace(/\./g, "\\.")}\\s*[—–:-]*\\s*`), "") || tag,
       notes: typeof body === "string" ? body.slice(0, NOTES_LIMIT) : "",
       url: typeof url === "string" && url.startsWith("https://") ? url : "",
     });

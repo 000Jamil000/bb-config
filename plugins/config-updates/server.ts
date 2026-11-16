@@ -18,10 +18,14 @@ const StatusSchema = z.object({
   error: z.string().nullable(),
   repository: z.string(),
   installed: z.string().nullable(),
+  /** When the installed version was recorded in the journal (ISO), if known. */
+  installedAt: z.string().nullable().default(null),
   /** Unfinished steps of a previous run; the update stays available. */
   remaining: z.number(),
   /** Thread owning an open update run, if any. */
   runOwner: z.string().nullable(),
+  /** Release the open run is applying. */
+  runRelease: z.string().nullable().default(null),
   /** Releases newer than the installed one, oldest first; the last is the target. */
   pending: z.array(ReleaseSchema),
   /** Commit the target tag pointed at when checked. */
@@ -36,8 +40,8 @@ export const rpcContract = defineRpcContract({
   start: { input: z.null(), output: StartSchema },
 });
 
-const EMPTY: UpdateStatus = { checkedAt: 0, okAt: 0, error: null, repository: "", installed: null, remaining: 0,
-  runOwner: null, pending: [], commit: null, threadId: null };
+const EMPTY: UpdateStatus = { checkedAt: 0, okAt: 0, error: null, repository: "", installed: null, installedAt: null, remaining: 0,
+  runOwner: null, runRelease: null, pending: [], commit: null, threadId: null };
 const STALE_MS = 6 * 3_600_000;
 const SHA = /^[0-9a-f]{40}$/;
 const NOTES_FOR = 5;
@@ -122,7 +126,8 @@ export default async function configUpdates(bb: BbPluginApi) {
       const commit = target ? await io.commit(repository, target.tag) : null;
       if (commit !== null && !SHA.test(commit)) throw new Error(`GitHub не вернул коммит релиза ${target!.tag}.`);
       return await publish({ checkedAt, okAt: checkedAt, error: null, repository, installed, pending, commit,
-        remaining: local.partial?.remaining.length ?? 0, runOwner: local.run?.owner ?? null, threadId: status.threadId });
+        installedAt: local.installed?.at ?? null,
+        remaining: local.partial?.remaining.length ?? 0, runOwner: local.run?.owner ?? null, runRelease: local.run?.release ?? null, threadId: status.threadId });
     } catch (error) {
       // Keep the last known answer; never turn a failed check into "up to date".
       return await publish({ ...status, checkedAt, error: (error as Error).message.slice(0, 300) });
@@ -195,10 +200,11 @@ export default async function configUpdates(bb: BbPluginApi) {
       if (flag === "--json") return { exitCode: result.error ? 1 : 0, stdout: JSON.stringify(result, null, 2) + "\n" };
       const target = result.pending.at(-1);
       const lines = [
-        `Установлено: ${result.installed ?? "не определено"}${result.remaining ? ` (не завершено шагов: ${result.remaining})` : ""}`,
+        `Установлено: ${result.installed ? `${result.installed}${result.installedAt ? ` (с ${result.installedAt.slice(0, 10)})` : ""}` : "не определено"}${result.remaining ? ` (не завершено шагов: ${result.remaining})` : ""}`,
         result.checkedAt ? `Проверено: ${new Date(result.checkedAt).toISOString()}` : "Проверка ещё не выполнялась.",
         ...(result.error ? [`ОШИБКА ПРОВЕРКИ: ${result.error}`, "Это не означает отсутствие обновлений."] : []),
-        target ? `Доступно: ${target.tag} — ${target.title} (${result.commit?.slice(0, 12)}); к применению: ${result.pending.map((r) => r.tag).join(", ")}`
+        ...(result.runRelease ? [`Сейчас идёт обновление до ${result.runRelease} (тред ${result.runOwner}).`] : []),
+        target ? `Доступно: ${target.tag}${target.title === target.tag ? "" : ` — ${target.title}`}, опубликован ${target.publishedAt.slice(0, 10)} (${result.commit?.slice(0, 12)}); к применению: ${result.pending.map((r) => r.tag).join(", ")}`
           : result.okAt ? "Новых стабильных релизов нет." : "",
       ].filter(Boolean);
       return { exitCode: result.error ? 1 : 0, stdout: lines.join("\n") + "\n" };

@@ -66,8 +66,20 @@ class UpdateTests(unittest.TestCase):
             run.assert_not_called()
         self.assertEqual((self.root / 'server.ts').read_text(), 'different API\n')
 
-    def test_new_api_line_is_rejected(self):
+    def test_new_release_with_reformatted_anchor_is_prepared(self):
+        # A new version is no longer refused by its number; staging decides.
         (self.root / 'package.json').write_text('{"version":"0.2.0"}')
+        spec = {**self.spec, 'changes': [{'file': 'server.ts', 'before': 'const a = f(x, y);',
+                                          'after': 'const a = f(x, y) ?? null;'}]}
+        (self.root / 'server.ts').write_text('top\nconst a = f(\n  x,\n  y);\nend\n')
+        changed = updater.forward_prepare(self.root, spec)
+        self.assertEqual(changed['server.ts'], 'top\nconst a = f(x, y) ?? null;\nend\n')
+        # Already customized, even if reformatted: nothing to do.
+        (self.root / 'server.ts').write_text('const a = f(x,\n y) ?? null;\n')
+        self.assertEqual(updater.forward_prepare(self.root, spec), {})
+
+    def test_ambiguous_anchor_is_rejected(self):
+        (self.root / 'server.ts').write_text('original\noriginal\n')
         with self.assertRaises(ValueError):
             updater.forward_prepare(self.root, self.spec)
 

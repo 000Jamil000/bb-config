@@ -15,7 +15,7 @@
 | [Thread Account Usage](plugins/thread-account-usage) | Окна квот аккаунта у текущего треда, отдельно от расхода токенов | Не требуется |
 | [Handoff Button](plugins/handoff-button) | Кнопку открытия оригинальной панели Handoff в composer | Установите оригинальный Handoff из каталога BB |
 | [Web BB Button](plugins/web-bb-button) | Глобус в левой панели, открывающий BB в браузере | Укажите публичный URL своего BB в настройках |
-| [Voice Mode Keeper](plugins/voice-mode-keeper) | Сохраняет правки Voice Mode ([список](plugins/voice-mode)) при обновлениях из каталога: проверяет, собирает, откатывает при несовместимости | Установите Voice Mode из каталога BB. Правки русскоязычные: голос говорит по-русски от первого лица |
+| [Plugin Keeper](plugins/voice-mode-keeper) | Сохраняет ваши правки каталожных плагинов при их обновлениях: Voice Mode ([список правок](plugins/voice-mode)), исправления Needs You и Tokenomics. После обновления сам накладывает правки на новую версию (с допуском на сдвиги и переформатирование), проверяет тестами и сборкой, откатывает при несовместимости | Установите Voice Mode, Needs You и Tokenomics из каталога BB. Правки Voice Mode русскоязычные: голос говорит по-русски от первого лица |
 
 Патчи к сторонним плагинам (ставятся отдельно, оригиналы остаются из каталога):
 [Needs You](plugins/inbox-compat) — `python3 scripts/apply_inbox_compat.py --host <ID машины сервера> --apply`,

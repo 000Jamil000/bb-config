@@ -47,9 +47,10 @@ python3 scripts/snapshot.py --check
 Applying rebuilds/reloads the managed plugin and ends any current voice session.
 Changed source and bundles are backed up under ignored `.local/plugin-patches/`;
 build/reload failures restore that backup. No credentials or audio are copied.
-The manual script refuses unknown versions/ambiguous edits. Normal compatible
-catalog updates are handled by the keeper, using `auto_update.py` in staging;
-no manual reapply is needed. Incompatible source contracts still require
+The manual script refuses unknown versions/ambiguous edits. Catalog updates
+are handled by the keeper, using `auto_update.py` in staging: any version is
+attempted, anchors may move or be reformatted but must be unique, and staging
+tests decide; no manual reapply is needed. Incompatible source contracts still require
 adapting `changes.json`. To remove the customizations, disable the keeper, then reinstall the
 original `voice-mode` catalog entry and keep the existing subscription settings.
 

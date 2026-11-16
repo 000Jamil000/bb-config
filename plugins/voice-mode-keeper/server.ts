@@ -7,11 +7,17 @@ import { setTimeout as delay } from "node:timers/promises";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 
-const Status = z.object({ state: z.enum(["idle", "checking", "ready", "attention"]), message: z.string(), version: z.string() });
+const State = z.enum(["idle", "checking", "ready", "attention"]);
+/** A catalog plugin whose small source fix is kept across updates (patch_keeper.py). */
+const Kept = z.object({ plugin: z.string(), name: z.string(), state: State, message: z.string(), version: z.string() });
+const Status = z.object({ state: State, message: z.string(), version: z.string(), kept: z.array(Kept).default([]) });
 export type KeeperStatus = z.infer<typeof Status>;
 export const rpcContract = defineRpcContract({ status: { input: z.null(), output: Status } });
 const PREFERENCE_KEYS = ["voice", "connection", "messageText", "prefixMessages", "widgetStyle", "vadThreshold", "silenceDurationMs", "noiseReduction"];
-const INITIAL: KeeperStatus = { state: "checking", message: "Проверяю совместимость Voice Mode…", version: "" };
+const INITIAL: KeeperStatus = { state: "checking", message: "Проверяю совместимость Voice Mode…", version: "", kept: [] };
+const KEPT_PLUGINS = ["inbox", "tokenomics"];
+/** Recheck kept fixes this often even without an update (cheap when in place). */
+const KEPT_RECHECK_MS = 10 * 60_000;
 
 function workerPath() {
   const directory = dirname(fileURLToPath(import.meta.url));
@@ -19,6 +25,33 @@ function workerPath() {
   const path = paths.find(existsSync);
   if (!path) throw new Error("Исходники сопровождения Voice Mode не найдены в bb-config.");
   return path;
+}
+
+/** Runs patch_keeper.py; one JSON status line per kept plugin. */
+async function runPatchKeeper(cliPath: string, serverUrl: string, signal: AbortSignal): Promise<z.infer<typeof Kept>[]> {
+  const script = resolve(dirname(fileURLToPath(import.meta.url)), "../patch_keeper.py");
+  const path = existsSync(script) ? script : resolve(dirname(fileURLToPath(import.meta.url)), "patch_keeper.py");
+  return new Promise((resolveResult, reject) => {
+    const child = spawn("python3", [path], {
+      detached: true, stdio: ["ignore", "pipe", "ignore"],
+      env: { ...process.env, BB_CLI: cliPath, BB_SERVER_URL: serverUrl, PATH: `${dirname(cliPath)}:${process.env.PATH ?? ""}` },
+    });
+    let output = "";
+    const stop = () => { try { if (child.pid) process.kill(-child.pid, "SIGTERM"); } catch { /* exited */ } };
+    const timeout = setTimeout(stop, 300_000);
+    signal.addEventListener("abort", stop, { once: true });
+    child.stdout.on("data", (chunk: Buffer) => { output = (output + chunk.toString()).slice(-65_536); });
+    child.on("error", reject);
+    child.on("close", () => {
+      clearTimeout(timeout);
+      signal.removeEventListener("abort", stop);
+      if (signal.aborted) return reject(new Error("Cancelled"));
+      const rows = output.split("\n").filter(Boolean).flatMap((line) => {
+        try { return [Kept.parse(JSON.parse(line))]; } catch { return []; }
+      });
+      resolveResult(rows);
+    });
+  });
 }
 
 async function runWorker(script: string, cliPath: string, serverUrl: string, signal: AbortSignal, snapshot = false): Promise<KeeperStatus> {
@@ -64,7 +97,11 @@ export default async function keeper(bb: BbPluginApi) {
   let preferenceInstall = (await bb.storage.kv.get<string>("preference-install")) ?? "";
   const script = workerPath();
   const policy = createHash("sha256").update(readFileSync(resolve(dirname(script), "changes.json"))).digest("hex");
-  const publish = async (next: KeeperStatus) => {
+  let kept: z.infer<typeof Kept>[] = status.kept ?? [];
+  let keptObserved = "";
+  let keptCheckedAt = 0;
+  const publish = async (incoming: KeeperStatus) => {
+    const next = { ...incoming, kept };
     if (JSON.stringify(next) === JSON.stringify(status)) return;
     status = next;
     await bb.storage.kv.set("status", status);
@@ -79,7 +116,7 @@ export default async function keeper(bb: BbPluginApi) {
           const plugin = plugins.find((p) => p.id === "voice-mode");
           if (!plugin || !plugin.enabled) {
             observed = "";
-            await publish({ state: "idle", message: "Voice Mode выключен или не установлен.", version: "" });
+            await publish({ state: "idle", message: "Voice Mode выключен или не установлен.", version: "", kept: [] });
           } else {
             const jobs = await bb.sdk.plugins.experimental_updateJobs.list();
             const busy = jobs.some((job) => job.pluginId === "voice-mode" && (job.state === "queued" || job.state === "running"));
@@ -121,7 +158,31 @@ export default async function keeper(bb: BbPluginApi) {
             }
           }
         } catch {
-          if (!signal.aborted) await publish({ state: "attention", message: "Не удалось проверить обновление Voice Mode. Исходный плагин продолжает работать.", version: "" });
+          if (!signal.aborted) await publish({ state: "attention", message: "Не удалось проверить обновление Voice Mode. Исходный плагин продолжает работать.", version: "", kept: [] });
+        }
+        // Needs You and Tokenomics: re-apply their small fixes after updates.
+        try {
+          const { plugins } = await bb.sdk.plugins.list();
+          const jobs = await bb.sdk.plugins.experimental_updateJobs.list();
+          const busy = jobs.some((job) => KEPT_PLUGINS.includes(job.pluginId) && (job.state === "queued" || job.state === "running"));
+          const signature = plugins.filter((p) => KEPT_PLUGINS.includes(p.id))
+            .map((p) => `${p.id}|${p.enabled}|${p.rootDir}|${p.version}|${p.app?.bundle?.hash ?? ""}`).join(";");
+          const { cliPath } = await settings.get();
+          if (!busy && cliPath && existsSync(cliPath)
+            && (signature !== keptObserved || Date.now() - keptCheckedAt > KEPT_RECHECK_MS)) {
+            const rows = await runPatchKeeper(cliPath, bb.server.loopbackBaseUrl, signal);
+            keptCheckedAt = Date.now();
+            if (rows.length) {
+              kept = rows;
+              // Reapplying rebuilds and reloads: take the new bundle hash next time.
+              const { plugins: after } = await bb.sdk.plugins.list();
+              keptObserved = after.filter((p) => KEPT_PLUGINS.includes(p.id))
+                .map((p) => `${p.id}|${p.enabled}|${p.rootDir}|${p.version}|${p.app?.bundle?.hash ?? ""}`).join(";");
+              await publish(status);
+            }
+          }
+        } catch {
+          // Next iteration retries.
         }
         try { await delay(30_000, undefined, { signal }); } catch { break; }
       }

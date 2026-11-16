@@ -1,4 +1,4 @@
-# Voice Mode Keeper
+# Plugin Keeper (id `voice-mode-keeper`)
 
 Automatically preserves the managed Voice Mode catalog installation's personal
 customizations. It does not create a fork or supply a voice model.
@@ -18,10 +18,24 @@ copied. Same-install preferences changed by the user take precedence over the
 cached values. Disabled Voice Mode is not re-enabled.
 After successful preservation it updates the private bb-config snapshot.
 
-Automatic forward application is limited to 0.1.x (0.1.15+) and exact, unique
-source anchors. New APIs or failed checks require adapting the patch, rather
-than forcing it. This is a tested compatibility layer, not a guarantee about
-arbitrary future upstream versions.
+Any new release is attempted: each edit's source anchor may move or be
+reformatted (line breaks and indentation are ignored when matching) but must
+still occur exactly once. Whether the result works is decided by upstream
+tests, the added regression tests, TypeScript and build in staging; on any
+failure the release keeps running unmodified and a notice explains why. This
+is a tested compatibility layer, not a guarantee about every future version.
+
+It also keeps the small fixes of two more catalog plugins, Needs You (`inbox`)
+and Tokenomics, with `patch_keeper.py`: after an update (and every 10 minutes)
+it checks whether the fix is in place, whether the author has shipped it (then
+the patch is no longer needed), and otherwise applies the stored diff to a
+copy with `patch --fuzz=2` (moved lines, small nearby changes), builds it with
+the installed dependencies, then installs the files and reloads; a failed
+start restores the original files and bundle. Tests: `test_patch_keeper.py`
+(moved code with a nearby edit, shipped fix, misfit, failed start). The fixes
+were also sent upstream: notpritam/bb-plugin-inbox#3 and
+danielbachhuber/bb-plugins#100; once released, the keeper reports the patch as
+no longer needed.
 
 Restore from bb-config with `python3 scripts/restore.py --plugins --apply`.
 The sibling `plugins/voice-mode` patch directory must remain alongside this

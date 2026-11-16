@@ -28,15 +28,42 @@ def inventory():
     return next((p for p in plugins if p['id'] == 'voice-mode'), None)
 
 
-def compatible_version(version):
-    match = re.fullmatch(r'0\.1\.(\d+)', version)
-    return bool(match and int(match[1]) >= 15)
+def loose(fragment):
+    """The fragment as a pattern that ignores how whitespace is laid out."""
+    # Tokens in order; any whitespace may appear between them (a line break
+    # after "(" from a formatter), and words stay separated by some.
+    tokens = re.findall(r'\w+|\S', fragment)
+    pattern = ''
+    for index, token in enumerate(tokens):
+        if index:
+            pattern += r'\s+' if token[0].isalnum() and tokens[index - 1][-1].isalnum() else r'\s*'
+        pattern += re.escape(token)
+    return re.compile(pattern)
+
+
+def present(text, fragment):
+    return fragment in text or loose(fragment).search(text) is not None
+
+
+def find_unique(text, fragment):
+    """(start, end) of the single place fragment occurs, exactly or reformatted."""
+    if text.count(fragment) == 1:
+        start = text.index(fragment)
+        return start, start + len(fragment)
+    if text.count(fragment) > 1:
+        return None
+    matches = list(loose(fragment).finditer(text))
+    return (matches[0].start(), matches[0].end()) if len(matches) == 1 else None
 
 
 def forward_prepare(root, spec):
-    """Only exact, unique source anchors; no fuzzy application on new releases."""
-    if not compatible_version(json.loads((root / 'package.json').read_text())['version']):
-        raise ValueError('New Voice Mode API version needs a compatibility review')
+    """Re-applies the edits to a new release by their source anchors.
+
+    Any version is attempted: an anchor may move or be reformatted, but it must
+    still occur exactly once. Whether the result still works is decided by the
+    upstream tests, the added regression tests, typecheck and build in
+    staging; on any failure the release keeps running unmodified.
+    """
     changed = {}
     for name in spec['fileStates']:
         original = (root / name).read_text()
@@ -44,13 +71,14 @@ def forward_prepare(root, spec):
         for edit in spec['changes']:
             if edit['file'] != name:
                 continue
-            if edit['after'] and edit['after'] in text:
+            if edit['after'] and present(text, edit['after']):
                 continue
-            if not edit['after'] and edit['before'] not in text:
+            if not edit['after'] and not present(text, edit['before']):
                 continue
-            if text.count(edit['before']) != 1:
+            span = find_unique(text, edit['before'])
+            if span is None:
                 raise ValueError('Voice Mode source contracts changed: ' + name)
-            text = text.replace(edit['before'], edit['after'], 1)
+            text = text[:span[0]] + edit['after'] + text[span[1]:]
         if text != original:
             changed[name] = text
     return changed

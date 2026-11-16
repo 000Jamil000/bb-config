@@ -17,14 +17,21 @@ function Notice() {
   useEffect(() => {
     if (status?.state === "attention") toast.warning(status.message, { id: "voice-mode-compatibility", duration: 15_000 });
     else toast.dismiss("voice-mode-compatibility");
+    for (const kept of status?.kept ?? []) {
+      if (kept.state === "attention") toast.warning(kept.message, { id: `kept-${kept.plugin}`, duration: 15_000 });
+      else toast.dismiss(`kept-${kept.plugin}`);
+    }
   }, [status]);
   return null;
 }
 
 export default definePluginApp((app) => {
   app.slots.experimental_appOverlay({ id: "update-status", component: Notice });
-  app.slots.settingsSection({ id: "update-status", title: "Сохранение настроек Voice Mode", component: () => {
+  app.slots.settingsSection({ id: "update-status", title: "Правки плагинов после обновлений", component: () => {
     const status = useStatus();
-    return <p role="status">{status?.message ?? "Проверяю…"}</p>;
+    return <div role="status">
+      <p>Voice Mode: {status?.message ?? "Проверяю…"}</p>
+      {(status?.kept ?? []).map((kept) => <p key={kept.plugin}>{kept.name} {kept.version}: {kept.message}</p>)}
+    </div>;
   }});
 });

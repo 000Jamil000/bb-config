@@ -178,7 +178,7 @@
   },
   {
     "id": "handoff",
-    "version": "0.7.4",
+    "version": "0.8.1",
     "enabled": true,
     "name": "Handoff",
     "source": "git:https://github.com/vburojevic/bb-plugin-handoff.git@semver:>=0.7.0",
@@ -409,9 +409,9 @@
   },
   {
     "id": "voice-mode-keeper",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "enabled": true,
-    "name": "Voice Mode Keeper",
+    "name": "Plugin Keeper",
     "source": "path:plugins/voice-mode-keeper"
   },
   {

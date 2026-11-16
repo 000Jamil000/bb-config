@@ -452,7 +452,7 @@
   },
   {
     "id": "local-transcribe",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "enabled": true,
     "name": "Local Transcribe",
     "source": "path:plugins/local-transcribe"

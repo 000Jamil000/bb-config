@@ -11,6 +11,7 @@
     --blue: #2f6bff; --orange: #ff8a1f; --red: #f0453a; --green: #1fb86a;
     --blue-soft: #e4ecff; --orange-soft: #fff0df; --red-soft: #ffe7e5; --green-soft: #e1f7ea;
     --shadow: 0 1px 2px rgba(20, 30, 60, .06), 0 6px 18px rgba(20, 30, 60, .06);
+    --list-w: 400px;
   }
   @media (prefers-color-scheme: dark) {
     :root {
@@ -29,64 +30,83 @@
     -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
     display: flex; flex-direction: column; overflow: hidden;
   }
-  header { display: flex; align-items: center; gap: 10px; padding: 16px 18px 12px; }
+  .cols { flex: 1; display: flex; min-height: 0; }
+  button { font: inherit; color: inherit; border: 0; cursor: pointer; background: none; padding: 0; }
+  svg { display: block; }
+
+  /* ---------- list ---------- */
+  #list { width: var(--list-w); flex: none; display: flex; flex-direction: column; min-height: 0; }
+  header { display: flex; align-items: center; gap: 10px; padding: 8px 10px 8px 16px; border-bottom: 1px solid var(--line); flex: none; min-width: 0; }
+  body { overflow-x: hidden; }
   .logo {
     width: 28px; height: 28px; border-radius: 9px; background: var(--text); color: var(--bg);
     display: grid; place-items: center; font-weight: 800; font-size: 13px; letter-spacing: -.5px;
   }
-  header h1 { margin: 0; font-size: 19px; font-weight: 800; letter-spacing: -.4px; flex: 1; }
+  header h1 { margin: 0; font-size: 18px; font-weight: 800; letter-spacing: -.4px; }
   .live { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; }
   .live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); }
   .live.off i { background: var(--orange); }
-  button { font: inherit; color: inherit; border: 0; cursor: pointer; }
-  .icon-btn {
-    width: 32px; height: 32px; border-radius: 50%; background: var(--card-2);
-    display: grid; place-items: center;
+
+  /* Accounts in one line beside the title, like bb's own usage list. */
+  .usage { flex: 1; display: flex; justify-content: flex-end; gap: 5px; min-width: 0; overflow: hidden; }
+  .acct {
+    flex: none; display: flex; align-items: center; gap: 7px; padding: 4px 8px 4px 6px; border-radius: 10px;
+    background: var(--card); border: 1px solid var(--line);
   }
-  .icon-btn:hover { filter: brightness(.96); }
-  .icon-btn svg { width: 15px; height: 15px; }
+  .who { display: flex; flex-direction: column; align-items: center; gap: 1px; min-width: 26px; flex: none; }
+  .who .g { position: relative; line-height: 0; }
+  .who svg { width: 13px; height: 13px; }
+  .who sup { position: absolute; left: 12px; top: -4px; font-size: 8.5px; font-weight: 800; color: var(--green); line-height: 1; }
+  .who .plan { font-size: 8px; font-weight: 700; padding: 0 4px; border-radius: 5px; background: var(--card-2); color: var(--muted); line-height: 12px; }
+  .who span { font-size: 9px; font-weight: 700; color: var(--muted); letter-spacing: .2px; white-space: nowrap; }
+  .wins { display: grid; grid-template-columns: auto 30px auto auto; align-items: center; column-gap: 5px; row-gap: 1px; }
+  .wins .k { font-size: 9.5px; color: var(--muted); }
+  .wins .bar { width: 30px; height: 3px; border-radius: 2px; background: var(--card-2); overflow: hidden; }
+  .wins .bar i { display: block; height: 100%; border-radius: 2px; background: var(--muted); }
+  .wins b { font-size: 11px; font-weight: 700; font-variant-numeric: tabular-nums; text-align: right; }
+  .wins small { font-size: 9.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .wins [data-level=warning] { color: var(--orange); } .wins i[data-level=warning] { background: var(--orange); }
+  .wins [data-level=blocked] { color: var(--red); } .wins i[data-level=blocked] { background: var(--red); }
 
-  main { flex: 1; overflow-y: auto; padding: 0 14px 14px; }
+  main { flex: 1; overflow-y: auto; padding: 12px 14px 14px; }
   main::-webkit-scrollbar { width: 0; }
-
   .hero {
-    border-radius: 20px; padding: 16px 18px; background: var(--card); box-shadow: var(--shadow);
+    border-radius: 18px; padding: 13px 16px; background: var(--card); box-shadow: var(--shadow);
     border: 1px solid var(--line);
   }
   .hero.needs { background: var(--orange-soft); border-color: transparent; }
   .hero.error { background: var(--red-soft); border-color: transparent; }
   .hero.running { background: var(--blue-soft); border-color: transparent; }
-  .hero .state { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12.5px; color: var(--muted); }
+  .hero .state { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 12px; color: var(--muted); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--faint); flex: none; }
   .needs .dot, .dot.needs { background: var(--orange); }
   .error .dot, .dot.error { background: var(--red); }
   .running .dot, .dot.running { background: var(--blue); animation: pulse 1.4s ease-in-out infinite; }
   .dot.unread { background: var(--green); }
   @keyframes pulse { 50% { opacity: .35; transform: scale(.8); } }
-  .hero .big { font-size: 30px; font-weight: 800; letter-spacing: -1px; line-height: 1.1; margin: 8px 0 10px; }
+  .hero .big { font-size: 24px; font-weight: 800; letter-spacing: -.8px; line-height: 1.15; margin: 6px 0 8px; }
   .chips { display: flex; flex-wrap: wrap; gap: 6px; }
   .chip {
-    display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px;
-    background: rgba(127, 135, 160, .16); font-size: 12px; font-weight: 500;
+    display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px;
+    background: rgba(127, 135, 160, .16); font-size: 11.5px; font-weight: 500;
   }
   .chip b { font-weight: 700; }
-  .hero .cta {
-    margin-top: 12px; width: 100%; padding: 10px; border-radius: 999px; font-weight: 700; font-size: 13.5px;
-    background: var(--blue); color: #fff; box-shadow: 0 6px 16px rgba(47, 107, 255, .3);
-  }
-  .hero.needs .cta { background: var(--orange); box-shadow: 0 6px 16px rgba(255, 138, 31, .3); }
 
   h2 {
-    margin: 16px 6px 8px; font-size: 11px; font-weight: 700; letter-spacing: .09em;
+    margin: 14px 6px 7px; font-size: 11px; font-weight: 700; letter-spacing: .09em;
     text-transform: uppercase; color: var(--faint); display: flex; gap: 6px;
   }
   .row {
-    display: flex; gap: 11px; padding: 11px 12px; border-radius: 16px; background: var(--card);
+    display: flex; gap: 11px; padding: 10px 12px; border-radius: 15px; background: var(--card);
     border: 1px solid var(--line); margin-bottom: 7px; cursor: pointer; position: relative;
-    transition: transform .08s ease, box-shadow .12s ease;
+    transition: box-shadow .12s ease, border-color .12s ease;
   }
-  .row:hover { box-shadow: var(--shadow); transform: translateY(-1px); }
-  .row:active { transform: none; }
+  .row:hover { box-shadow: var(--shadow); }
+  .row.selected { border-color: var(--blue); box-shadow: 0 0 0 1px var(--blue); }
+  .row .go { position: absolute; right: 9px; top: 8px; display: none; width: 26px; height: 26px; border-radius: 50%;
+    background: var(--card-2); place-items: center; color: var(--muted); }
+  .row .go svg { width: 13px; height: 13px; }
+  .row:hover .go { display: grid; }
   .avatar {
     width: 30px; height: 30px; border-radius: 9px; flex: none; display: grid; place-items: center;
     background: var(--card-2); position: relative; font-size: 15px;
@@ -94,38 +114,86 @@
   .avatar svg { width: 17px; height: 17px; }
   .avatar .dot { position: absolute; right: -3px; top: -3px; box-shadow: 0 0 0 2px var(--card); }
   .body { min-width: 0; flex: 1; }
-  .title { font-weight: 650; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 54px; }
+  .title { font-weight: 650; font-size: 13.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; padding-right: 44px; }
   .meta { color: var(--muted); font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .snippet {
     margin-top: 4px; color: var(--muted); font-size: 12px; line-height: 1.38;
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
   }
-  .row:hover .snippet { -webkit-line-clamp: 6; color: var(--text); }
-  .when { position: absolute; right: 12px; top: 12px; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
-  .row:hover .when { display: none; }
-  .web {
-    position: absolute; right: 9px; top: 8px; display: none; width: 26px; height: 26px; border-radius: 50%;
-    background: var(--card-2); place-items: center;
+  .activity {
+    margin-top: 5px; display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--blue);
+    font-weight: 550; white-space: nowrap; overflow: hidden;
   }
-  .web svg { width: 13px; height: 13px; }
-  .row:hover .web { display: grid; }
+  .activity span { overflow: hidden; text-overflow: ellipsis; }
+  .activity .dot { width: 7px; height: 7px; }
+  .when { position: absolute; right: 12px; top: 11px; color: var(--faint); font-size: 11px; font-variant-numeric: tabular-nums; }
+  .row:hover .when { display: none; }
+  .acts { position: absolute; right: 8px; top: 7px; display: none; gap: 4px; }
+  .row:hover .acts { display: flex; }
+  .act {
+    width: 26px; height: 26px; border-radius: 50%; background: var(--card-2); display: grid; place-items: center;
+  }
+  .act:hover { background: var(--blue); color: #fff; }
+  .act svg { width: 13px; height: 13px; }
   .pill { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 700; margin-right: 6px; }
   .pill.needs { background: var(--orange-soft); color: var(--orange); }
   .pill.error { background: var(--red-soft); color: var(--red); }
   .pill.running { background: var(--blue-soft); color: var(--blue); }
   .pill.unread { background: var(--green-soft); color: var(--green); }
+  .pill.done { background: var(--card-2); color: var(--muted); }
   .empty { text-align: center; color: var(--muted); padding: 28px 0; }
   .banner {
-    margin: 0 0 10px; padding: 10px 14px; border-radius: 14px; background: var(--orange-soft);
+    margin: 0 0 10px; padding: 9px 13px; border-radius: 13px; background: var(--orange-soft);
     color: var(--orange); font-weight: 600; font-size: 12px;
   }
-  footer { padding: 10px 14px 14px; }
-  .open {
-    width: 100%; padding: 11px; border-radius: 999px; background: var(--card-2); font-weight: 700; font-size: 13.5px;
-    display: flex; align-items: center; justify-content: center; gap: 8px;
+
+  /* ---------- chat ---------- */
+  #chat {
+    display: flex; width: 440px; flex: none; flex-direction: column; min-height: 0;
+    border-left: 1px solid var(--line); background: var(--card); position: relative;
   }
-  .open:hover { filter: brightness(.96); }
-  .open svg { width: 15px; height: 15px; }
+  .chat-empty {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 10px; color: var(--faint); font-size: 12.5px; text-align: center; padding: 30px; background: var(--card);
+    z-index: 5;
+  }
+  .chat-empty svg { width: 34px; height: 34px; opacity: .5; }
+  body.selected .chat-empty { display: none; }
+  .chat-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+  .chat-head .body { flex: 1; }
+  .chat-head .title { padding-right: 0; font-size: 14px; }
+  .icon-btn { width: 30px; height: 30px; border-radius: 50%; background: var(--card-2); display: grid; place-items: center; flex: none; }
+  .icon-btn:hover { filter: brightness(.95); }
+  .icon-btn svg { width: 14px; height: 14px; }
+  #messages { flex: 1; overflow-y: auto; padding: 14px 14px 6px; display: flex; flex-direction: column; gap: 10px; user-select: text; cursor: auto; }
+  .msg { max-width: 92%; padding: 9px 12px; border-radius: 15px; font-size: 12.8px; line-height: 1.45; word-wrap: break-word; }
+  .msg.agent { align-self: flex-start; background: var(--bg); border-bottom-left-radius: 5px; }
+  .msg.user { align-self: flex-end; background: var(--blue); color: #fff; border-bottom-right-radius: 5px; }
+  .msg.thread { align-self: flex-end; background: var(--card-2); border-bottom-right-radius: 5px; }
+  .msg.thread::before { content: "от другого треда"; display: block; font-size: 10.5px; color: var(--muted); margin-bottom: 2px; }
+  .msg.sending { opacity: .6; }
+  .msg p { margin: 0 0 6px; } .msg p:last-child { margin: 0; }
+  .msg code { font: 11.5px ui-monospace, SFMono-Regular, Menlo, monospace; background: rgba(127, 135, 160, .18); padding: 1px 4px; border-radius: 4px; }
+  .msg pre { margin: 6px 0; padding: 8px 10px; border-radius: 9px; background: rgba(127, 135, 160, .14); overflow-x: auto; }
+  .msg pre code { background: none; padding: 0; }
+  .msg ul { margin: 4px 0; padding-left: 18px; }
+  .msg .time { display: block; font-size: 10px; opacity: .55; margin-top: 3px; text-align: right; }
+  .chat-note { text-align: center; color: var(--faint); font-size: 11.5px; padding: 6px 0; }
+  .chat-foot { padding: 8px 12px 12px; border-top: 1px solid var(--line); }
+  .chat-foot .activity { margin: 0 4px 8px; }
+  .pending-box { margin: 0 0 8px; padding: 9px 12px; border-radius: 12px; background: var(--orange-soft); color: var(--orange); font-size: 12px; font-weight: 600; display: flex; gap: 8px; align-items: center; }
+  .pending-box span { flex: 1; }
+  .pending-box button { padding: 5px 10px; border-radius: 999px; background: var(--orange); color: #fff; font-weight: 700; font-size: 11.5px; }
+  .composer { display: flex; align-items: flex-end; gap: 8px; padding: 6px 6px 6px 12px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); }
+  .composer:focus-within { border-color: var(--blue); }
+  textarea {
+    flex: 1; border: 0; outline: 0; resize: none; background: none; color: var(--text);
+    font: 13px/1.4 -apple-system, BlinkMacSystemFont, sans-serif; max-height: 140px; padding: 5px 0; user-select: text;
+  }
+  .send { width: 30px; height: 30px; border-radius: 50%; background: var(--blue); color: #fff; display: grid; place-items: center; flex: none; }
+  .send:disabled { background: var(--card-2); color: var(--faint); cursor: default; }
+  .send svg { width: 14px; height: 14px; }
+  .error-line { color: var(--red); font-size: 11.5px; margin: 6px 4px 0; }
 </style>
 </head>
 <body>
@@ -133,27 +201,58 @@
   <div class="logo">bb</div>
   <h1>Агенты</h1>
   <div class="live" id="live"><i></i><span id="liveText">на связи</span></div>
+  <div class="usage" id="usage"></div>
 </header>
-<main id="main"></main>
-<footer>
-  <button class="open" data-open="">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M3 9h18"/></svg>
-    Открыть bb
-  </button>
-</footer>
+<div class="cols">
+<section id="list">
+  <main id="main"></main>
+</section>
+<section id="chat">
+  <div class="chat-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.6A8 8 0 1 1 21 12z"/></svg>
+    Наведите на тред — здесь появится переписка.<br>Клик по треду открывает его в bb.
+  </div>
+  <div class="chat-head">
+    <div class="avatar" id="chatAvatar"></div>
+    <div class="body">
+      <div class="title" id="chatTitle"></div>
+      <div class="meta" id="chatMeta"></div>
+    </div>
+    <button class="icon-btn" id="chatOpen" title="Открыть тред в bb"></button>
+    <button class="icon-btn" id="chatClose" title="Убрать переписку"></button>
+  </div>
+  <div id="messages"></div>
+  <div class="chat-foot">
+    <div id="chatStatus"></div>
+    <div class="composer">
+      <textarea id="input" rows="1" placeholder="Ответить агенту…"></textarea>
+      <button class="send" id="send" disabled title="Отправить (Enter)"></button>
+    </div>
+    <div class="error-line" id="sendError" hidden></div>
+  </div>
+</section>
+</div>
 <script>
 const token = new URLSearchParams(location.search).get("t") || "";
+const native = window.webkit?.messageHandlers?.bb;
+const post = (message) => native?.postMessage(message);
+const api = (path) => `${path}${path.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
 const STALE_MS = 180000;
+const RECENT_MS = 3 * 3600 * 1000;
 const LABEL = { needs: "ждёт вас", error: "ошибка", running: "работает", unread: "новый ответ" };
-const SECTIONS = [
-  ["needs", "Ждут вас"], ["error", "Ошибки"], ["running", "Работают"],
-  ["unread", "Новые ответы"], ["idle", "Недавние"],
-];
 const PROVIDER = {
   "claude-code": ['<svg viewBox="0 0 24 24" fill="none" stroke="#d97757" stroke-width="2.3" stroke-linecap="round"><path d="M12 3v18M3 12h18M5.6 5.6l12.8 12.8M18.4 5.6 5.6 18.4"/></svg>', "Claude"],
   "codex": ['<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 20 7.5v9L12 21l-8-4.5v-9z"/><path d="M12 12 20 7.5M12 12v9M12 12 4 7.5"/></svg>', "Codex"],
 };
-const WEB_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>';
+const ICON = {
+  chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>',
+  open: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  close: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg>',
+  send: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>',
+};
+document.getElementById("chatOpen").innerHTML = ICON.open;
+document.getElementById("chatClose").innerHTML = ICON.close;
+document.getElementById("send").innerHTML = ICON.send;
 
 const esc = (text) => String(text ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 function age(ms) {
@@ -163,6 +262,13 @@ function age(ms) {
   if (s < 86400) return `${Math.floor(s / 3600)} ч`;
   return `${Math.floor(s / 86400)} д`;
 }
+function until(iso) {
+  if (!iso) return "";
+  const m = Math.max(0, Math.round((Date.parse(iso) - Date.now()) / 60000));
+  if (m < 60) return `${m} мин`;
+  if (m < 1440) return `${Math.floor(m / 60)} ч ${m % 60} мин`;
+  return `${Math.floor(m / 1440)} д ${Math.floor((m % 1440) / 60)} ч`;
+}
 function plural(n, one, few, many) {
   const m10 = n % 10, m100 = n % 100;
   if (m10 === 1 && m100 !== 11) return one;
@@ -170,13 +276,69 @@ function plural(n, one, few, many) {
   return many;
 }
 
+/* ---------- usage ---------- */
+const usageLevel = (p) => (p >= 100 ? "blocked" : p >= 90 ? "warning" : "normal");
+function compactReset(iso) {
+  if (!iso) return "";
+  const m = Math.round((Date.parse(iso) - Date.now()) / 60000);
+  if (m <= 0) return "↻";
+  if (m < 60) return `↻${m}м`;
+  if (m < 1440) return `↻${Math.floor(m / 60)}ч${m % 60 ? `\u202f${m % 60}м` : ""}`;
+  return `↻${Math.floor(m / 1440)}д\u202f${Math.floor((m % 1440) / 60)}ч`;
+}
+/* Plan prices are a static table (USD per month), shown as a hint only. */
+function planPrice(provider, plan) {
+  const p = String(plan || "").toLowerCase();
+  if (!p) return "";
+  if (/free/.test(p)) return "$0";
+  if (provider === "claude-code") {
+    if (/max/.test(p)) return /20/.test(p) ? "$200" : /5/.test(p) ? "$100" : "";
+    if (/pro/.test(p)) return "$20";
+  } else if (provider === "codex") {
+    if (/pro/.test(p)) return "$200";
+    if (/plus/.test(p)) return "$20";
+  }
+  return "";
+}
+function renderUsage(data) {
+  const box = document.getElementById("usage");
+  const order = { "claude-code": 0, codex: 1 };
+  const accounts = (data?.accounts || [])
+    .filter((a) => a.windows?.some((w) => w.kind === "five-hour" || w.kind === "weekly"))
+    .sort((a, b) => (order[a.provider] ?? 9) - (order[b.provider] ?? 9));
+  box.innerHTML = accounts.map((a) => {
+    const [glyph, name] = PROVIDER[a.provider] || ["", a.provider];
+    const hosts = a.hosts || [];
+    // One machine by name; several by initials, as in the menu bar.
+    const where = hosts.length === 1 ? hosts[0] : hosts.map((h) => h.trim()[0]?.toUpperCase()).join("");
+    const rows = ["five-hour", "weekly"].map((k) => a.windows.find((w) => w.kind === k)).filter(Boolean).map((w) => {
+      const p = Math.round(w.usedPercent), level = usageLevel(w.usedPercent);
+      const tip = `${w.label}: ${p}% использовано${w.resetsAt ? ` · сброс через ${until(w.resetsAt)}` : ""}`;
+      return `<span class="k" title="${esc(tip)}">${w.kind === "five-hour" ? "5ч" : "Нед"}</span>` +
+        `<span class="bar" title="${esc(tip)}"><i data-level="${level}" style="width:${Math.min(100, p)}%"></i></span>` +
+        `<b data-level="${level}" title="${esc(tip)}">${p}%</b><small>${compactReset(w.resetsAt)}</small>`;
+    }).join("");
+    const price = planPrice(a.provider, a.plan);
+    const plan = a.plan ? `<span class="plan">${esc(a.plan)}${price ? ` ${price}` : ""}</span>` : "";
+    const resets = a.resets > 0 ? `<sup title="Доступно сбросов лимита: ${a.resets}">+${a.resets}</sup>` : "";
+    const tip = [name, a.plan && `${a.plan}${price ? ` (${price}/мес)` : ""}`, hosts.join(", "),
+      a.resets > 0 && `сбросов лимита: ${a.resets}`].filter(Boolean).join(" · ");
+    return `<div class="acct" title="${esc(tip)}">
+      <div class="who"><span class="g">${glyph}${resets}</span><span>${esc(where)}</span>${plan}</div><div class="wins">${rows}</div></div>`;
+  }).join("");
+  box.hidden = !accounts.length;
+}
+async function loadUsage() {
+  try { renderUsage(await (await fetch(api("/usage"))).json()); } catch { /* keep the last */ }
+}
+
+/* ---------- list ---------- */
 function hero(counts) {
   const { needs = 0, running = 0, unread = 0, error = 0 } = counts;
-  let kind = "idle", state = "Всё спокойно", big = "Агенты свободны", cta = "";
+  let kind = "idle", state = "Всё спокойно", big = "Агенты свободны";
   if (needs) {
     kind = "needs"; state = "Нужен ваш ответ";
     big = `${needs} ${plural(needs, "агент ждёт", "агента ждут", "агентов ждут")} вас`;
-    cta = '<button class="cta" data-open="">Ответить в bb</button>';
   } else if (error) {
     kind = "error"; state = "Есть ошибки";
     big = `${error} ${plural(error, "агент остановился", "агента остановились", "агентов остановились")}`;
@@ -196,7 +358,7 @@ function hero(counts) {
   return `<section class="hero ${kind}">
     <div class="state"><i class="dot"></i>${state}</div>
     <div class="big">${big}</div>
-    ${chips ? `<div class="chips">${chips}</div>` : ""}${cta}
+    ${chips ? `<div class="chips">${chips}</div>` : ""}
   </section>`;
 }
 
@@ -204,22 +366,26 @@ function row(item, now) {
   const [glyph, name] = PROVIDER[item.provider] || ["", ""];
   const state = item.state || "idle";
   const meta = [item.project, item.machine, name].filter(Boolean).map(esc).join(" · ");
-  const pill = LABEL[state] ? `<span class="pill ${state}">${LABEL[state]}</span>` : "";
-  const snippet = state === "running" || !item.snippet ? "" : `<div class="snippet">${esc(item.snippet)}</div>`;
-  return `<article class="row" data-open="${esc(item.id)}" title="Открыть bb">
+  const pill = LABEL[state] ? `<span class="pill ${state}">${LABEL[state]}</span>`
+    : now - item.updatedAt < RECENT_MS ? '<span class="pill done">готово</span>' : "";
+  const detail = state === "running"
+    ? `<div class="activity"><i class="dot running"></i><span>${esc(item.activity || "Работает")}</span></div>`
+    : item.snippet ? `<div class="snippet">${esc(item.snippet)}</div>` : "";
+  return `<article class="row${chat.id === item.id ? " selected" : ""}" data-row="${esc(item.id)}" title="Открыть в bb">
     <div class="avatar">${glyph || "•"}${state === "idle" ? "" : `<i class="dot ${state}"></i>`}</div>
     <div class="body">
       <div class="title">${esc(item.title)}</div>
       <div class="meta">${pill}${meta}</div>
-      ${snippet}
+      ${detail}
     </div>
     <span class="when">${age(now - item.updatedAt)}</span>
-    ${item.url ? `<button class="web" data-web="${esc(item.id)}" title="Открыть тред в браузере">${WEB_ICON}</button>` : ""}
+    <span class="go">${ICON.open}</span>
   </article>`;
 }
 
+let feed = null;
 let lastHtml = "";
-function render(feed) {
+function render() {
   const now = Date.now();
   const stale = !feed || now - feed.generatedAt > STALE_MS;
   document.getElementById("live").classList.toggle("off", stale);
@@ -230,36 +396,240 @@ function render(feed) {
   } else {
     if (stale) html += `<div class="banner">Нет связи с сервером bb — данные ${age(now - feed.generatedAt)} назад</div>`;
     html += hero(feed.counts || {});
-    for (const [state, title] of SECTIONS) {
-      const group = (feed.items || []).filter((item) => (item.state || "idle") === state);
-      if (group.length === 0) continue;
-      html += `<h2>${title}</h2>` + group.map((item) => row(item, now)).join("");
+    const items = feed.items || [];
+    const recent = (i) => i.state === "unread" || (i.state === "idle" && now - i.updatedAt < RECENT_MS);
+    const sections = [
+      ["Ждут вас", items.filter((i) => i.state === "needs")],
+      ["Ошибки", items.filter((i) => i.state === "error")],
+      ["Работают", items.filter((i) => i.state === "running")],
+      ["Только что закончили", items.filter(recent)],
+      ["Ранее", items.filter((i) => i.state === "idle" && !recent(i))],
+    ];
+    for (const [title, group] of sections) {
+      if (group.length) html += `<h2>${title}</h2>` + group.map((item) => row(item, now)).join("");
     }
-    if (!(feed.items || []).length) html += '<div class="empty">Тредов нет</div>';
+    if (!items.length) html += '<div class="empty">Тредов нет</div>';
   }
   if (html !== lastHtml) {
     lastHtml = html;
     document.getElementById("main").innerHTML = html;
   }
 }
+async function loadFeed() {
+  try { feed = await (await fetch(api("/status"), { cache: "no-store" })).json(); } catch { feed = null; }
+  render();
+  prefetchChats();
+}
 
-async function tick() {
+/* ---------- chat ---------- */
+const chat = { id: "", data: null, sending: [], timer: 0 };
+// Conversations are local files, kept fresh by the plugin: read them all
+// ahead, so hovering a thread switches instantly.
+const chatCache = new Map();
+let prefetching = false;
+async function fetchChat(id) {
+  const response = await fetch(api(`/chat?thread=${encodeURIComponent(id)}`), { cache: "no-store" });
+  const data = await response.json();
+  return response.ok ? data : { waiting: true, messages: [] };
+}
+async function prefetchChats() {
+  if (prefetching || !feed) return;
+  prefetching = true;
   try {
-    const response = await fetch(`/status?t=${encodeURIComponent(token)}`, { cache: "no-store" });
-    render(await response.json());
-  } catch {
-    render(null);
+    await Promise.all((feed.items || []).map(async (item) => {
+      try { chatCache.set(item.id, await fetchChat(item.id)); } catch { /* keep the last */ }
+    }));
+    if (chat.id && chatCache.has(chat.id)) { chat.data = chatCache.get(chat.id); renderChat(); }
+  } finally {
+    prefetching = false;
   }
 }
-document.addEventListener("click", (event) => {
-  const web = event.target.closest("[data-web]");
-  const open = event.target.closest("[data-open]");
-  if (!web && !open) return;
-  const thread = web ? web.dataset.web : open.dataset.open;
-  fetch(`/open?t=${encodeURIComponent(token)}&thread=${encodeURIComponent(thread)}${web ? "&web=1" : ""}`).catch(() => {});
+const messagesBox = document.getElementById("messages");
+const input = document.getElementById("input");
+const sendButton = document.getElementById("send");
+
+function markdown(text) {
+  const blocks = String(text).split(/```[^\n]*\n?/);
+  return blocks.map((part, index) => {
+    if (index % 2) return `<pre><code>${esc(part.replace(/\n$/, ""))}</code></pre>`;
+    return esc(part)
+      .replace(/`([^`\n]+)`/g, "<code>$1</code>")
+      .replace(/\*\*([^*\n]+)\*\*/g, "<b>$1</b>")
+      .replace(/\[([^\]\n]+)\]\([^)\s]+\)/g, "<u>$1</u>")
+      .split(/\n{2,}/).map((p) => p.trim()).filter(Boolean)
+      .map((p) => /^(?:[-*] .*(?:\n|$))+$/.test(p)
+        ? `<ul>${p.split("\n").map((l) => `<li>${l.replace(/^[-*] /, "")}</li>`).join("")}</ul>`
+        : `<p>${p.replace(/\n/g, "<br>")}</p>`)
+      .join("");
+  }).join("");
+}
+function clock(at) {
+  const d = new Date(at);
+  return d.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" });
+}
+
+function renderChat() {
+  const item = (feed?.items || []).find((i) => i.id === chat.id);
+  const data = chat.data;
+  const provider = item?.provider;
+  const [glyph, name] = PROVIDER[provider] || ["•", ""];
+  document.getElementById("chatAvatar").innerHTML = glyph || "•";
+  document.getElementById("chatTitle").textContent = data?.title || item?.title || "Тред";
+  const state = data ? (data.pending ? "needs" : data.status === "active" ? "running" : data.status === "error" ? "error" : "idle") : item?.state;
+  const where = [item?.project, item?.machine, name].filter(Boolean).map(esc).join(" · ");
+  document.getElementById("chatMeta").innerHTML = (LABEL[state] ? `<span class="pill ${state}">${LABEL[state]}</span>` : "") + where;
+
+  const nearBottom = messagesBox.scrollHeight - messagesBox.scrollTop - messagesBox.clientHeight < 60;
+  let html = "";
+  if (!data) html = '<div class="chat-note">Загружаю переписку…</div>';
+  else if (data.waiting) html = '<div class="chat-note">Переписка появится через пару секунд</div>';
+  else if (data.error) html = `<div class="chat-note">Не удалось загрузить: ${esc(data.error)}</div>`;
+  else {
+    if (!data.messages.length) html += '<div class="chat-note">Сообщений пока нет</div>';
+    html += data.messages.map((m) => `<div class="msg ${m.role}">${markdown(m.role === "thread" ? m.text.replace(/^\[bb message from thread:[^\]]*\]\s*/, "") : m.text)}<span class="time">${clock(m.at)}</span></div>`).join("");
+  }
+  // Sent from here, not yet in the thread's log.
+  const known = new Set((data?.messages || []).filter((m) => m.role === "user").map((m) => m.text.trim()));
+  chat.sending = chat.sending.filter((text) => !known.has(text.trim()));
+  html += chat.sending.map((text) => `<div class="msg user sending">${markdown(text)}<span class="time">отправляю…</span></div>`).join("");
+  if (messagesBox.dataset.html !== html) {
+    messagesBox.dataset.html = html;
+    messagesBox.innerHTML = html;
+    if (nearBottom || chat.justOpened) messagesBox.scrollTop = messagesBox.scrollHeight;
+    chat.justOpened = false;
+  }
+
+  let status = "";
+  if (data?.pending) {
+    status = `<div class="pending-box"><span>${data.pendingThreadId && data.pendingThreadId !== chat.id ? "Субагент ждёт" : "Агент ждёт"} решения — разрешение или ответ на вопрос</span><button data-open="${esc(data.pendingThreadId || chat.id)}">Открыть в bb</button></div>`;
+  } else if (data?.status === "active") {
+    status = `<div class="activity"><i class="dot running"></i><span>${esc(data.activity || "Работает")}</span></div>`;
+  }
+  const box = document.getElementById("chatStatus");
+  if (box.innerHTML !== status) box.innerHTML = status;
+}
+
+async function loadChat() {
+  const id = chat.id;
+  if (!id) return;
+  try {
+    const data = await fetchChat(id);
+    chatCache.set(id, data);
+    if (chat.id === id) chat.data = data;
+  } catch {
+    if (chat.id === id && !chat.data) chat.data = { error: "помощник bb не отвечает", messages: [] };
+  }
+  if (chat.id === id) renderChat();
+}
+function pollChat(ms = 1500) {
+  clearTimeout(chat.timer);
+  if (!chat.id || document.hidden) return;
+  chat.timer = setTimeout(async () => { await loadChat(); pollChat(); }, ms);
+}
+
+function selectChat(id) {
+  if (chat.id === id) return;
+  chat.id = id; chat.data = chatCache.get(id) || null; chat.sending = []; chat.justOpened = true;
+  messagesBox.dataset.html = "";
+  input.value = ""; autosize();
+  document.getElementById("sendError").hidden = true;
+  document.body.classList.add("selected");
+  renderChat(); lastHtml = ""; render();
+  loadChat().then(() => pollChat());
+}
+function clearChat() {
+  chat.id = ""; chat.data = null;
+  clearTimeout(chat.timer);
+  document.body.classList.remove("selected");
+  lastHtml = ""; render();
+}
+
+function autosize() {
+  input.style.height = "auto";
+  input.style.height = `${Math.min(140, input.scrollHeight)}px`;
+  sendButton.disabled = !input.value.trim();
+}
+async function send() {
+  const text = input.value.trim();
+  if (!text || !chat.id) return;
+  const id = chat.id;
+  input.value = ""; autosize();
+  chat.sending.push(text); chat.justOpened = true;
+  renderChat();
+  const error = document.getElementById("sendError");
+  error.hidden = true;
+  try {
+    const response = await fetch(api("/send"), {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread: id, text }),
+    });
+    if (!response.ok) throw new Error((await response.json()).error || "не отправилось");
+  } catch (e) {
+    chat.sending = chat.sending.filter((t) => t !== text);
+    if (chat.id === id) { input.value = text; autosize(); }
+    error.textContent = `Не отправлено: ${e.message}`; error.hidden = false;
+    renderChat();
+    return;
+  }
+  // The plugin picks the reply up within a couple of seconds; if it does not
+  // appear in the conversation, show why.
+  const sentAt = Date.now();
+  loadChat().then(() => pollChat(800));
+  setTimeout(async () => {
+    if (!chat.sending.includes(text)) return;
+    let reason = "bb пока не забрал сообщение — сервер недоступен?";
+    try {
+      const failed = await (await fetch(api("/errors"), { cache: "no-store" })).json();
+      if (failed && failed.thread === id && failed.at >= sentAt) reason = failed.error;
+    } catch { /* keep the generic reason */ }
+    if (chat.id === id && chat.sending.includes(text)) {
+      error.textContent = `Не доставлено: ${reason}`; error.hidden = false;
+    }
+  }, 15000);
+}
+
+input.addEventListener("input", autosize);
+// Pin only on a real click or key press inside: focus alone also comes back
+// when the panel reappears on hover, and must not keep it open.
+document.addEventListener("mousedown", () => post({ type: "pin" }), true);
+document.addEventListener("keydown", (event) => { if (event.key !== "Escape") post({ type: "pin" }); }, true);
+input.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey && !event.isComposing) { event.preventDefault(); send(); }
 });
-tick();
-setInterval(tick, 2000);
+sendButton.addEventListener("click", send);
+document.getElementById("chatClose").addEventListener("click", clearChat);
+document.getElementById("chatOpen").addEventListener("click", () => openInBB(chat.id));
+
+function openInBB(id) {
+  fetch(api(`/open?thread=${encodeURIComponent(id || "")}`)).catch(() => {});
+  post({ type: "close" });
+}
+document.addEventListener("click", (event) => {
+  const open = event.target.closest("[data-open]");
+  if (open) { event.stopPropagation(); openInBB(open.dataset.open); return; }
+  const target = event.target.closest("[data-row]");
+  if (target) openInBB(target.dataset.row);
+});
+// Hovering a thread shows its conversation. A short pause, so passing over
+// rows on the way to the chat does not switch it; a reply being typed keeps it.
+let hoverTimer = 0;
+document.getElementById("main").addEventListener("mouseover", (event) => {
+  const target = event.target.closest("[data-row]");
+  clearTimeout(hoverTimer);
+  if (!target || target.dataset.row === chat.id || input.value.trim()) return;
+  hoverTimer = setTimeout(() => selectChat(target.dataset.row), 110);
+});
+document.getElementById("main").addEventListener("mouseleave", () => clearTimeout(hoverTimer));
+
+/* ---------- native hooks ---------- */
+window.bbShown = () => { loadFeed(); loadUsage(); if (chat.id) { loadChat(); pollChat(); } };
+window.bbHidden = () => { clearTimeout(chat.timer); document.activeElement?.blur?.(); };
+window.bbEscape = () => post({ type: "close" });
+document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !native) window.bbEscape(); });
+
+loadFeed(); loadUsage();
+setInterval(loadFeed, 2000);
+setInterval(loadUsage, 60000);
 </script>
 </body>
 </html>

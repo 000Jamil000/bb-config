@@ -125,3 +125,5 @@
 @media(max-width:350px){
  [data-follow-up-composer] [data-promptbox-action-row]>[data-promptbox-expanded-only]{flex-basis:100%;min-width:0}
 }
+
+.tau-row-identity .tau-plan{align-self:flex-start;padding:0 4px;border-radius:4px;background:var(--muted);color:var(--muted-foreground);font-size:8px;font-weight:600;line-height:13px;white-space:nowrap}

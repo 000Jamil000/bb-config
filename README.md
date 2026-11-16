@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | [Machine Tabs](plugins/machine-tabs) | Вкладки машин над списком тредов, двухуровневая группировка (проект, машина, день), поиск без учёта раскладки, блок «Last 5», значки проектов | Не требуется. Значок проекта — файл `.bb/icon.svg` или `.bb/icon.png` в корне проекта, затем `bb machine-tabs icons` |
 | [Project Logo](plugins/project-logo) | Подбирает общий значок проекта по названию и первому сообщению; сохраняет существующие значки | Дополнительных настроек нет; для показа нужен Machine Tabs. Подбор выполняет агент при следующем создании сессии провайдера |
-| [Menubar Status](plugins/menubar-status) | Значок bb в строке меню macOS со статусом агентов и панелью по клику: кто ждёт вас, кто работает, последние ответы | Задайте `hostId` и `filePath` в настройках плагина; на Mac: `brew install --cask swiftbar`, затем `zsh install.sh` из `plugins/menubar-status/macos` |
+| [Menubar Status](plugins/menubar-status) | Значок bb в строке меню macOS: статусы агентов и кольцо usage; по наведению — панель с usage аккаунтов, агентами (с текущим шагом) и чатом сбоку, где можно ответить агенту | Задайте `hostId` и `filePath` в настройках плагина; на Mac (нужен `xcode-select --install`): `zsh install.sh` из `plugins/menubar-status/macos` |
 | [Proxy Manager](plugins/proxy-manager) | Управление прокси, проверку соединений и маршрутов провайдеров | Добавьте собственные прокси |
 | [Project Open](plugins/project-open) | Кнопки у треда: открыть папку проекта в Finder и терминал BB | Для Finder — локальный обработчик на Mac (см. README плагина) |
 | [Push Button](plugins/push-button) | Кнопку «попросить агента запушить» в строке ветки; сам Git не запускает | Не требуется |

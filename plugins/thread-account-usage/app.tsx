@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { definePluginApp, experimental_useProviders, useBbContext, useBbNavigate, useRpc, useSettings, useSidebarSplitLayout } from '@get-bb/plugin-sdk/app';
 import type { rpcContract, Account, Snapshot, QuotaWindow } from './contract';
-import { accountExhausted, appliesToModel } from './logic';
+import { accountExhausted, appliesToModel, planLabel } from './logic';
 import './app.css';
 
 type Filter = 'all' | 'five-hour' | 'weekly' | 'model';
@@ -69,6 +69,7 @@ function AccountsGrid({ accounts, filter, now, logos, onDetails }: { accounts: A
       <div className="tau-row-identity" title={`${a.email ?? a.providerName}\n${a.hostNames.join(', ')}`}>
         <strong>{logos[a.providerId]&&<img className="tau-grid-logo" src={logos[a.providerId]!} alt={a.providerName}/>}<span>{a.email?.split('@')[0]??'Аккаунт неизвестен'}</span></strong>
         <small>{a.hostNames.map(n=>n.replace(/\s*[—–].*$/,'').trim()).join(' · ')}</small>
+        {a.plan&&<small className="tau-plan" title="Тариф и цена в месяц (справочно)">{planLabel(a.providerId,a.plan)}</small>}
         {(a.resetCount??0)>0&&<sup className="tau-row-reset" title="Доступные сбросы лимита">+{a.resetCount}</sup>}
       </div>
       <div className="tau-row-windows">{windows.length ? windows.map((w,i)=>{
@@ -234,7 +235,7 @@ function QuotaControl({ threadId, target }: { threadId: string | null; target?:H
         {error && <p className="tau-error" role="alert">{error}</p>}
         {view === 'thread' ? <>
           {snapshot && <div className="tau-account-heading"><strong>{account?.email ?? 'Аккаунт не подтверждён'}</strong>
-            <small>{account?.providerName ?? snapshot.providerId} · {snapshot.hostName ?? 'Нет машины'}{account?.plan ? ` · ${account.plan}` : ''}</small>
+            <small>{account?.providerName ?? snapshot.providerId} · {snapshot.hostName ?? 'Нет машины'}{account?.plan ? ` · ${planLabel(account.providerId, account.plan)}` : ''}</small>
             {snapshot.model && <small>Модель запуска: {snapshot.model}</small>}</div>}
           {snapshot?.message && <p className="tau-empty">{snapshot.message}</p>}
           {account && <><WindowRows account={account} filter={filter} model={snapshot?.model} now={now} />
@@ -244,7 +245,7 @@ function QuotaControl({ threadId, target }: { threadId: string | null; target?:H
           {!snapshot && <p className="tau-empty">{loading ? 'Проверяем аккаунт треда…' : 'Данные пока не получены'}</p>}
         </> : <>
           {detailsKey ? <>
-            {details?.account&&<div className="tau-account-heading"><strong>{details.account.email}</strong><small>{details.account.providerName} · {details.account.plan}</small><small>{details.account.hostNames.join(' · ')}</small><small>Получено из BB: {details.account.fetchedAt?new Date(details.account.fetchedAt).toLocaleString():'неизвестно'}</small><small>Доступные сбросы: {details.account.resetCount===null?'не сообщены':details.account.resetCount}</small></div>}
+            {details?.account&&<div className="tau-account-heading"><strong>{details.account.email}</strong><small>{details.account.providerName} · {planLabel(details.account.providerId, details.account.plan)}</small><small>{details.account.hostNames.join(' · ')}</small><small>Получено из BB: {details.account.fetchedAt?new Date(details.account.fetchedAt).toLocaleString():'неизвестно'}</small><small>Доступные сбросы: {details.account.resetCount===null?'не сообщены':details.account.resetCount}</small></div>}
             {details?.account&&<WindowRows account={details.account} filter={filter} now={now}/>}
             {detailsError&&<p className="tau-error">Не удалось загрузить подробности</p>}
             {!details&&!detailsError&&<p className="tau-empty">Загружаем…</p>}

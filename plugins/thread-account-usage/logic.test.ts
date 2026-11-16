@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { accountExhausted, appliesToModel, classifyWindow, dedupeAccounts, riskyOverride } from './logic.ts';
+import { accountExhausted, appliesToModel, classifyWindow, dedupeAccounts, riskyOverride, planLabel } from './logic.ts';
 import type { Account, QuotaWindow } from './contract.ts';
 const window = (label: string, kind: QuotaWindow['kind']): QuotaWindow => ({ label, kind, usedPercent: 100, resetsAt: null });
 test('model weekly quotas remain distinct from the account weekly quota', () => {
@@ -46,4 +46,13 @@ test('account status excludes model-only caps and stale readings',()=>{
   assert.equal(accountExhausted({...a,windows:[window('Current session','five-hour')]}),true);
   assert.equal(accountExhausted({...a,windows:[window('Weekly limit','weekly')]}),true);
   assert.equal(accountExhausted({...a,status:'stale',windows:[window('Current session','five-hour')]}),false);
+});
+
+test('plan label with a static monthly price', () => {
+  assert.equal(planLabel('claude-code', 'Pro'), 'Pro $20');
+  assert.equal(planLabel('claude-code', 'Max 20x'), 'Max 20x $200');
+  assert.equal(planLabel('codex', 'Pro'), 'Pro $200');
+  assert.equal(planLabel('codex', 'Plus'), 'Plus $20');
+  assert.equal(planLabel('codex', 'Enterprise'), 'Enterprise');
+  assert.equal(planLabel('codex', null), '');
 });

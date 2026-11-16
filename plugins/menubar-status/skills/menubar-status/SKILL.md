@@ -1,28 +1,34 @@
 ---
 name: menubar-status
-description: Inspect or resync the agent status file that feeds the macOS menu bar widget (`bb menubar-status`).
+description: Inspect or resync the agent status feed behind the macOS menu bar item and its hover panel (`bb menubar-status`), or diagnose the panel's chat and usage.
 ---
 
 # Menubar Status
 
 The Menubar Status plugin writes a small JSON summary of the agents (who needs
-the user, who is running, the last reply of each) to a file on one machine. A
-SwiftBar widget on that machine reads the file and shows a count in the menu
-bar and the list on click. The widget makes no network calls.
+the user, who is running and their current step, the last reply of each) to
+`status.json` on one machine. Subagents are folded into their top-level thread.
+On that Mac, `bb Status.app` shows a count per state and a usage ring in the
+menu bar, and a panel on hover: usage per account, the agents, and a chat
+column (hover a thread to read it and reply; click it to open it in bb).
 
-- `bb menubar-status show` — print the feed the widget would get.
+- `bb menubar-status show` — print the feed the menu bar would get.
 - `bb menubar-status sync` — write the file now.
+- `bb plugin rpc call menubar-status chat --input-file <json>` with
+  `{"threadId": "..."}` — the conversation the panel shows.
+- `send` with `{"threadId", "text"}` — what the reply field does
+  (`threads.send`, mode `auto`).
 - Settings (`bb plugin config menubar-status set <key> <value>`): `hostId`
-  (machine with the widget), `filePath` (absolute path of the file there),
-  `webUrl` (public BB address for "open in browser" links), `maxItems`.
+  (Mac with the menu bar item), `filePath` (absolute path of `status.json`
+  there), `webUrl`, `maxItems`.
 
-The file is rewritten on thread events and at least once a minute; the widget
-marks the data stale when the file is older than three minutes (machine
-asleep, server down). The widget script is `macos/bb-agents.5s.py` in the
-plugin's source.
-
-On the Mac, `macos/install.sh` also installs a local helper (LaunchAgent
-`dev.bb.menubar`, 127.0.0.1:47615, token-protected) that serves
-`macos/panel.html`: a left click on the menu bar title opens it as a popover,
-a right click opens the plain SwiftBar menu. Check it with
-`launchctl print gui/$(id -u)/dev.bb.menubar`.
+The Mac never calls bb. The plugin writes everything to the folder of
+`filePath` on that machine: `status.json`, `chats/<thread>.json` (the listed
+threads' conversations, rewritten when a thread changes), `usage.json` (every
+two minutes), and polls `outbox/` every 1.5 s for the panel's replies and
+"open in bb" requests (failures go to `errors.json`). The local helper
+(`macos/server.py`, LaunchAgent `dev.bb.menubar`, 127.0.0.1:47615,
+token-protected) only reads those files and queues requests; the app is
+LaunchAgent `dev.bb.status`. A reply that never shows up: check the plugin log
+(`bb plugin logs menubar-status`) and `errors.json`. Install or update the Mac
+side with `zsh install.sh` in `macos/` (needs `swiftc`).

@@ -7,6 +7,8 @@ export interface FeedThread {
   projectId: string;
   providerId?: string;
   title: string | null;
+  /** bb's own title from the first message, while `title` is still empty. */
+  titleFallback?: string | null;
   status: string;
   parentThreadId?: string | null;
   hasPendingInteraction?: boolean;
@@ -25,6 +27,8 @@ export interface FeedItem {
   state: AgentState;
   /** Last assistant reply, one line; empty when none is known. */
   snippet: string;
+  /** What a running agent is doing right now, e.g. "Команда: npm test". */
+  activity: string;
   updatedAt: number;
   url: string;
 }
@@ -68,28 +72,60 @@ export function buildFeed(input: {
   projectNames: ReadonlyMap<string, string>;
   machineNames: ReadonlyMap<string, string>;
   snippets: Readonly<Record<string, string>>;
+  activities?: Readonly<Record<string, string>>;
   webUrl: string;
   maxItems: number;
   now: number;
 }): Feed {
+  const byId = new Map(input.threads.map((thread) => [thread.id, thread]));
+  // Subagents are shown through their top-level thread: a parent whose
+  // subagent works is working, and one whose subagent waits is waiting.
+  const rootOf = (thread: FeedThread): FeedThread => {
+    let current = thread;
+    for (let depth = 0; depth < 20 && current.parentThreadId; depth += 1) {
+      const parent = byId.get(current.parentThreadId);
+      if (!parent) break;
+      current = parent;
+    }
+    return current;
+  };
+  const effective = new Map<string, { state: AgentState; activity: string }>();
+  for (const thread of input.threads) {
+    const root = rootOf(thread);
+    const state = stateOf(thread);
+    const own = root.id === thread.id;
+    const current = effective.get(root.id);
+    const activity = state === "running" ? (input.activities?.[thread.id] ?? "") : "";
+    const candidate = {
+      state: own || state === "needs" || state === "running" ? state : "idle" as AgentState,
+      activity: own || !activity ? activity : `Субагент: ${activity}`,
+    };
+    if (!current || RANK[candidate.state] < RANK[current.state]) {
+      effective.set(root.id, candidate);
+    } else if (candidate.state === current.state && candidate.activity && (own || !current.activity)) {
+      // Same state: the parent's own step is the one to show.
+      effective.set(root.id, { state: current.state, activity: candidate.activity });
+    }
+  }
+  const rows = input.threads
+    .filter((thread) => rootOf(thread).id === thread.id)
+    .map((thread) => ({ thread, ...effective.get(thread.id)! }));
   const counts = { needs: 0, running: 0, unread: 0, error: 0 };
-  const rows = input.threads.map((thread) => ({ thread, state: stateOf(thread) }));
   for (const { state } of rows) if (state !== "idle") counts[state] += 1;
   const base = input.webUrl.replace(/\/+$/, "");
   const items = rows
-    // What needs a look comes first, then the most recent; subagents only
-    // when they themselves need something.
-    .filter(({ thread, state }) => thread.parentThreadId == null || state === "needs")
+    // What needs a look comes first, then the most recent.
     .sort((a, b) => RANK[a.state] - RANK[b.state] || b.thread.updatedAt - a.thread.updatedAt)
     .slice(0, input.maxItems)
-    .map(({ thread, state }) => ({
+    .map(({ thread, state, activity }) => ({
       id: thread.id,
-      title: oneLine(thread.title, 60) || "Untitled",
+      title: oneLine(thread.title, 60) || oneLine(thread.titleFallback, 60) || "Без названия",
       project: input.projectNames.get(thread.projectId) ?? "",
       machine: input.machineNames.get(thread.id) ?? "",
       provider: thread.providerId ?? "",
       state,
       snippet: input.snippets[thread.id] ?? "",
+      activity: state === "running" ? activity : "",
       updatedAt: thread.updatedAt,
       url: base ? `${base}/projects/${thread.projectId}/threads/${thread.id}` : "",
     }));
@@ -100,4 +136,79 @@ export function buildFeed(input: {
 export function sameContent(a: Feed | null, b: Feed): boolean {
   if (a === null) return false;
   return JSON.stringify({ ...a, generatedAt: 0 }) === JSON.stringify({ ...b, generatedAt: 0 });
+}
+
+interface ActivityItem {
+  type?: string;
+  command?: string;
+  path?: string;
+  tool?: string;
+  description?: string;
+  changes?: { path?: string }[];
+  presentation?: { label?: { pending?: string } };
+}
+
+const base = (path: string | undefined) => (path ?? "").split("/").filter(Boolean).at(-1) ?? "";
+
+/** A short Russian phrase for the item an agent has just started. */
+export function describeActivity(item: ActivityItem | null | undefined): string {
+  if (!item) return "";
+  switch (item.type) {
+    case "agentMessage":
+      return "Пишет ответ";
+    case "reasoning":
+      return "Думает";
+    case "commandExecution": {
+      if (item.description) return oneLine(item.description, 70);
+      // Codex wraps commands as /bin/bash -lc '<command>'.
+      const command = (item.command ?? "").replace(/^\S*\/(?:ba|z)?sh -l?c '([\s\S]*)'$/, "$1");
+      return `Команда: ${oneLine(command, 60)}`;
+    }
+    case "fileRead":
+      return `Читает ${base(item.path)}`.trim();
+    case "fileChange": {
+      const names = [...new Set((item.changes ?? []).map((change) => base(change.path)).filter(Boolean))];
+      return `Правит ${names.slice(0, 2).join(", ")}${names.length > 2 ? "…" : ""}`.trim();
+    }
+    case "toolCall":
+      return `Инструмент ${item.tool ?? ""}`.trim();
+    case "imageView":
+      return "Смотрит изображение";
+    case "backgroundTask":
+      return item.description ? `Фон: ${oneLine(item.description, 60)}` : "Фоновая задача";
+    default:
+      return oneLine(item.presentation?.label?.pending ?? "", 60);
+  }
+}
+
+export interface ChatMessage {
+  role: "user" | "agent" | "thread";
+  text: string;
+  at: number;
+}
+
+interface RawEvent {
+  type: string;
+  createdAt: number | string;
+  data: Record<string, unknown>;
+}
+
+/**
+ * The conversation as the panel shows it: what the user (or another thread)
+ * sent and what the agent replied, oldest first. Tool steps are left out.
+ */
+export function chatFromEvents(events: readonly RawEvent[], limit = 40): ChatMessage[] {
+  const out: ChatMessage[] = [];
+  for (const event of events) {
+    const at = typeof event.createdAt === "number" ? event.createdAt : Date.parse(event.createdAt);
+    if (event.type === "client/turn/requested") {
+      const data = event.data as { initiator?: string; senderThreadId?: string | null; input?: { type?: string; text?: string }[] };
+      const text = (data.input ?? []).filter((part) => part.type === "text").map((part) => part.text ?? "").join("\n").trim();
+      if (text) out.push({ role: data.senderThreadId ? "thread" : "user", text: text.slice(0, 4000), at });
+    } else if (event.type === "item/completed") {
+      const item = (event.data as { item?: { type?: string; text?: string } }).item;
+      if (item?.type === "agentMessage" && item.text?.trim()) out.push({ role: "agent", text: item.text.trim().slice(0, 8000), at });
+    }
+  }
+  return out.slice(-limit);
 }

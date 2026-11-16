@@ -36,3 +36,25 @@ export function dedupeAccounts(accounts: Account[]): Account[] {
   }
   return [...result.values()];
 }
+
+/** Monthly price of a plan in USD — a static table, shown as a hint only. */
+export function planPrice(providerId: string, plan: string | null | undefined): string {
+  const p = (plan ?? '').toLowerCase();
+  if (!p) return '';
+  if (/free/.test(p)) return '$0';
+  if (providerId === 'claude-code') {
+    if (/max/.test(p)) return /20/.test(p) ? '$200' : /5/.test(p) ? '$100' : '';
+    if (/pro/.test(p)) return '$20';
+  } else if (providerId === 'codex') {
+    if (/pro/.test(p)) return '$200';
+    if (/plus/.test(p)) return '$20';
+  }
+  return '';
+}
+
+/** "Pro $20", "Plus", or "" when the plan is unknown. */
+export function planLabel(providerId: string, plan: string | null | undefined): string {
+  if (!plan) return '';
+  const price = planPrice(providerId, plan);
+  return price ? `${plan} ${price}` : plan;
+}

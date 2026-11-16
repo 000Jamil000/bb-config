@@ -120,6 +120,13 @@
     "installSource": "browser-automation@bb-official"
   },
   {
+    "id": "code-open",
+    "version": "0.4.0",
+    "enabled": true,
+    "name": "Code Open",
+    "source": "path:plugins/code-open"
+  },
+  {
     "id": "codex-realtime",
     "version": "0.1.0",
     "enabled": true,
@@ -221,6 +228,14 @@
     "source": "builtin:keep-awake"
   },
   {
+    "id": "kodaforge",
+    "version": "0.7.0",
+    "enabled": true,
+    "name": "KodaForge",
+    "source": "git:https://github.com/Kodaks94/bb-plugin-kodaforge.git@semver:>=0.7.0 <1.0.0",
+    "installSource": "kodaforge@bb-community"
+  },
+  {
     "id": "limits",
     "version": "1.1.8",
     "enabled": false,
@@ -230,7 +245,7 @@
   },
   {
     "id": "machine-tabs",
-    "version": "0.1.0",
+    "version": "0.1.2",
     "enabled": true,
     "name": "Machine Tabs",
     "source": "path:plugins/machine-tabs"

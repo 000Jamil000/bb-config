@@ -985,12 +985,18 @@ const HIDE_EMPTY_GROUPS = `
 }
 /* Groups with no thread (projects never used here) go below the rest as
    dim one-line headers: still there for New thread, out of the way. */
-[data-machine-tabs-list] :has(> [data-sidebar-visibility-group]) {
+/* The groups' container is addressed by bb's own class, not by
+   \`:has(> [data-sidebar-visibility-group])\`. A \`:has()\` on a bare universal
+   subject makes the browser recheck the whole page after every DOM insertion
+   anywhere: scrolling a code editor (which inserts a line per frame) spent
+   seconds in style recalculation because of these two rules. Never write
+   \`:has()\` here without a class or attribute on its subject. */
+[data-machine-tabs-list] div.space-y-4 {
   display: flex;
   flex-direction: column;
   gap: 1rem;
 }
-[data-machine-tabs-list] :has(> [data-sidebar-visibility-group]) > * {
+[data-machine-tabs-list] div.space-y-4 > [data-sidebar-visibility-group] {
   margin-top: 0;
   margin-bottom: 0;
 }
@@ -1095,8 +1101,10 @@ const HIDE_EMPTY_GROUPS = `
   margin-left: auto;
 }
 /* One mark per row: the agent's icon sits small in the top right corner of
-   the project mark instead of beside it. */
-span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] {
+   the project mark instead of beside it. The icon itself is the subject of
+   :has() (it comes right before the title); a bare \`span:has()\` here made
+   every span on the page, including each line of a code editor, a candidate. */
+[data-machine-tabs-list] [data-sidebar-thread-provider]:has(+ .bb-thread-title > [data-machine-tabs-badge]) {
   position: absolute;
   left: 9px;
   top: calc(50% - 13px);
@@ -1107,7 +1115,7 @@ span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-
   background: var(--sidebar, var(--background));
   box-shadow: 0 0 0 1px var(--sidebar, var(--background));
 }
-span:has(> .bb-thread-title > [data-machine-tabs-badge]) > [data-sidebar-thread-provider] > span {
+[data-machine-tabs-list] [data-sidebar-thread-provider]:has(+ .bb-thread-title > [data-machine-tabs-badge]) > span {
   width: 10px;
   height: 10px;
 }`;

@@ -1,0 +1,7 @@
+{
+  "version": "0.7.0",
+  "patched": {
+    "EditorGroup.tsx": "7a08f7e72fa2de3a00516cdb9e9b7065f5682dd3fb9b8d21a7e85988f5992ca0",
+    "TerminalPanel.tsx": "67889c2c322d3f8535a8146cb878a06331bf6dd1cacf0508a77e884a4dc55227"
+  }
+}

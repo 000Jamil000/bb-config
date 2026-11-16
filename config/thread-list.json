@@ -27,6 +27,7 @@
   ],
   "hiddenGroups": [],
   "rowActions": [
+    "code-open/open-code-menu",
     "bb--core/newThreadInEnvironment",
     "bb--core/archive"
   ],

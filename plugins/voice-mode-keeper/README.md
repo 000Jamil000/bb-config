@@ -26,7 +26,7 @@ failure the release keeps running unmodified and a notice explains why. This
 is a tested compatibility layer, not a guarantee about every future version.
 
 It also keeps the small fixes of two more catalog plugins, Needs You (`inbox`)
-and Tokenomics, with `patch_keeper.py`: after an update (and every 10 minutes)
+Tokenomics and KodaForge, with `patch_keeper.py`: after an update (and every 10 minutes)
 it checks whether the fix is in place, whether the author has shipped it (then
 the patch is no longer needed), and otherwise applies the stored diff to a
 copy with `patch --fuzz=2` (moved lines, small nearby changes), builds it with

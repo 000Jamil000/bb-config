@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Keeps small source fixes on catalog plugins across their updates.
 
-For each kept plugin (Needs You, Tokenomics), on every run:
+For each kept plugin (Needs You, Tokenomics, KodaForge), on every run:
 
 - the fix is already in the installed source → nothing to do;
 - the author has shipped the fix (our pull request merged, or their own) →
@@ -46,6 +46,18 @@ KEPT = {
         'files': ['server.ts'],
         'shipped': lambda text: re.search(r'sizeTokens:\s*sizeOf\([\s\S]{0,400}?\)\s*\?\?\s*null',
                                           text['server.ts']) is not None,
+    },
+    'kodaforge': {
+        'name': 'KodaForge',
+        'source': 'git:https://github.com/Kodaks94/bb-plugin-kodaforge.git@',
+        'patches': ['plugins/kodaforge-compat/editor.patch', 'plugins/kodaforge-compat/terminal.patch',
+                    'plugins/kodaforge-compat/tabs.patch'],
+        'files': ['components/EditorGroup.tsx', 'components/TerminalPanel.tsx', 'app.tsx', 'server.ts'],
+        # Shipped when the editor sets its own unicode highlighting, the terminal
+        # no longer waits on the idle poll interval, and tabs can be closed at once.
+        'shipped': lambda text: 'unicodeHighlight' in text['components/EditorGroup.tsx']
+                                and 'nextPollDelay' not in text['components/TerminalPanel.tsx']
+                                and 'Close all' in text['app.tsx'],
     },
 }
 

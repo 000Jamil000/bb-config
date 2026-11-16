@@ -26,7 +26,8 @@ function setup(options: { offline?: boolean; refreshFails?: boolean } = {}) {
         ++writes; files.set(args.path, Buffer.from(args.content, "base64").toString()); return { ok: true };
       },
     },
-    threads: { updatePluginMetadata: async () => ({ metadata: { checked: true } }) },
+    environments: { get: async () => ({ hostId: "remote-host" }) },
+    threads: { get: async () => ({ projectId: "p", environmentId: "env" }), updatePluginMetadata: async () => ({ metadata: { checked: true } }) },
     plugins: { callRpc: async () => { if (options.refreshFails) throw new Error("disabled"); return { icons: {} }; } },
   } as never });
   return { bb, harness, files, writes: () => writes };
@@ -48,7 +49,7 @@ test("new standard thread gets both tools and context instructions; checked/pers
   const config = await harness.behavior.resolveAgentConfiguration(ctx);
   assert.match(JSON.stringify(config), /FIRST user message/);
   assert.match(JSON.stringify(config), /project_logo_install/);
-  const checked = await harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({ pluginMetadata: { checked: true } }));
+  const checked = await harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({ pluginMetadata: { checked: true, checkVersion: 2 } }));
   assert.doesNotMatch(JSON.stringify(checked), /project_logo_status/);
   const personal = await harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({ project: { kind: "personal" } }));
   assert.doesNotMatch(JSON.stringify(personal), /project_logo_status/);
@@ -80,11 +81,76 @@ test("offline source and directory escape cannot cause a write", async () => {
   }
 });
 
-test("saved image survives unavailable Machine Tabs and status marks thread checked", async () => {
+test("missing status remains retryable; saved image survives unavailable Machine Tabs", async () => {
   const s = setup({ refreshFails: true }); await plugin(s.bb);
   await s.harness.behavior.callAgentTool("project_logo_status", {}, { threadId: "t", projectId: "p" });
-  assert.equal(s.harness.inspection.sdk.callsTo("threads.updatePluginMetadata").length, 1);
+  assert.equal(s.harness.inspection.sdk.callsTo("threads.updatePluginMetadata").length, 0);
   const result = await s.harness.behavior.runCli(["install", "p", "download.svg", "project asset"]);
   assert.match(result.stdout ?? "", /installed/); assert.equal(s.writes(), 1);
+  await s.harness.lifecycle.dispose();
+});
+
+
+test("legacy checked threads retry contextual generation", async () => {
+  const s = setup(); await plugin(s.bb);
+  const config = await s.harness.behavior.resolveAgentConfiguration(makePluginAgentConfigurationContext({
+    project: { kind: "standard" }, pluginMetadata: { checked: true },
+  }));
+  assert.match(JSON.stringify(config), /CREATE/);
+  assert.match(JSON.stringify(config), /project_logo_install/);
+  await s.harness.behavior.callAgentTool("project_logo_install", { svg, sourceUrl: "generated from project context" }, { threadId: "t", projectId: "p" });
+  assert.equal(s.files.get("/checkout/.bb/icon.svg"), svg);
+  assert.equal(s.harness.inspection.sdk.callsTo("threads.updatePluginMetadata").length, 1);
+  await s.harness.lifecycle.dispose();
+});
+
+test("generated icons reject active SVG and ambiguous inputs without completing setup", async () => {
+  for (const input of [{ svg: '<svg xmlns="http://www.w3.org/2000/svg"><script/></svg>' },
+    { svg, filePath: "download.svg" }, {}]) {
+    const s = setup(); await plugin(s.bb);
+    await assert.rejects(() => s.harness.behavior.callAgentTool("project_logo_install", { ...input, sourceUrl: "generated" }, { threadId: "t", projectId: "p" }));
+    assert.equal(s.writes(), 0);
+    assert.equal(s.harness.inspection.sdk.callsTo("threads.updatePluginMetadata").length, 0);
+    await s.harness.lifecycle.dispose();
+  }
+});
+
+test("existing icon completes current-version status and create preserves it", async () => {
+  const s = setup(); s.files.set("/checkout/favicon.svg", svg); await plugin(s.bb);
+  await s.harness.behavior.callAgentTool("project_logo_status", {}, { threadId: "t", projectId: "p" });
+  assert.equal(s.harness.inspection.sdk.callsTo("threads.updatePluginMetadata").length, 1);
+  const result = await s.harness.behavior.runCli(["create", "p", svg]);
+  assert.match(result.stdout ?? "", /existing/); assert.equal(s.writes(), 0);
+  await s.harness.lifecycle.dispose();
+});
+
+test("thread host wins over offline default for status and install", async () => {
+  const s = setup();
+  s.harness.sdk.stub("projects.get", async () => ({ id: "p", name: "project", kind: "standard", sources: [
+    { type: "local_path", hostId: "offline-default", path: "/mac", isDefault: true },
+    { type: "local_path", hostId: "remote-host", path: "/checkout", isDefault: false },
+  ] }) as never);
+  s.harness.sdk.stub("files.list", async (args: { hostId?: string }) => {
+    assert.equal(args.hostId, "remote-host");
+    return { entries: [] } as never;
+  });
+  await plugin(s.bb);
+  const result = await s.harness.behavior.callAgentTool("project_logo_status", {}, { threadId: "t", projectId: "p" });
+  assert.match(JSON.stringify(result), /remote-host/);
+  await s.harness.behavior.callAgentTool("project_logo_install", { svg, sourceUrl: "generated" }, { threadId: "t", projectId: "p" });
+  assert.equal(s.files.get("/checkout/.bb/icon.svg"), svg);
+  assert.equal(s.writes(), 1);
+  await s.harness.lifecycle.dispose();
+});
+
+test("missing source on thread machine never falls back to another machine", async () => {
+  const s = setup();
+  s.harness.sdk.stub("environments.get", async () => ({ hostId: "other-host" }) as never);
+  await plugin(s.bb);
+  for (const name of ["project_logo_status", "project_logo_install"]) {
+    await assert.rejects(() => s.harness.behavior.callAgentTool(name, name.endsWith("install") ? { svg, sourceUrl: "generated" } : {}, { threadId: "t", projectId: "p" }), /No project source checkout on current thread host/);
+  }
+  assert.equal(s.harness.inspection.sdk.callsTo("files.list").length, 0);
+  assert.equal(s.writes(), 0);
   await s.harness.lifecycle.dispose();
 });

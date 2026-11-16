@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-project-logo",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "type": "module",
   "engines": {
     "bb": ">=0.49",
@@ -8,12 +8,14 @@
   },
   "bb": {
     "name": "Project Logo",
-    "description": "Automatically select project logos using project name and the first user message.",
+    "description": "Automatically select or create a contextual project icon using the project name and first user message.",
     "branding": {
       "icon": "Image"
     },
     "server": "./server.ts",
-    "skills": ["skills"]
+    "skills": [
+      "skills"
+    ]
   },
   "dependencies": {
     "saxes": "^6.0.0",

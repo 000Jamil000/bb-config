@@ -1,49 +1,49 @@
 ---
 name: project-logo
-description: Inspect or install an authentic shared project logo, selected using the project name and the thread's first user message.
+description: Automatically select or create a shared contextual project icon using the project name and first user message.
 ---
-
 # Project Logo
-
-The plugin automatically supplies first-use instructions and native tools to
-agents in standard projects. The agent uses the project name AND its first user
-message to identify the subject. This uses the thread's existing agent and tools;
-it does not start another thread or call a separate AI subscription.
-
-Use `project_logo_status` to resolve the real project source host/root and check
-for an icon. Existing `.bb/icon.png`, `.bb/icon.svg`, `favicon.png`,
-`favicon.svg`, `favicon.ico` take priority. Project images are shared by all
-threads. Machine Tabs displays them grey.
-
-If absent, prefer artwork already in the project, then an authentic emblem from
-the brand's official website. Use the compact mark without wordmark when
-available. Preserve SVG as vector; PNG is also supported, maximum 256 KiB.
-Never invent a brand or approximate its mark. If context is ambiguous, skip
-without interrupting the user's task. A later new thread can try again.
-
-Download to a temporary file inside the source checkout on its actual host.
-Call `project_logo_install` with `filePath` relative to that root and `sourceUrl`
-containing the source page URL or `project asset`. Only passive, self-contained
-SVG elements are accepted; scripts, stylesheets and external references are
-rejected. Use another original asset when validation rejects one. Remove your
-temporary file afterwards. Do not commit/push automatically.
-
+At the start of each unchecked standard-project thread, call `project_logo_status`.
+Use BOTH the project name and the FIRST user message, plus README when useful,
+to infer the project purpose. Existing icons win. If absent, choose project-owned
+artwork or an authentic official emblem for a clearly identified brand.
+For original projects or when no suitable authentic asset exists, CREATE an
+original simple SVG symbol based on this context. Do not ask the user to choose
+an icon. Use bold monochrome shapes, no text, a transparent background and a
+compact composition readable at 20px. Do not approximate existing brand marks.
+Author vectors directly; a separate image-generation service is unnecessary.
+Call `project_logo_install` with exactly one of:
+- `svg`: complete passive self-contained SVG, `sourceUrl`: `generated from project context`.
+- `filePath`: relative image path inside the resolved source checkout, `sourceUrl`: source page URL or `project asset`.
+PNG and SVG are supported, maximum 256 KiB. The plugin writes via SDK to the
+project source host/root returned by status; the agent need not write outside
+its workspace. For downloads use a temporary file in that source checkout and
+remove only that temporary file afterwards. Active SVG/external references fail
+validation. Existing icons are never overwritten; concurrent installs serialize.
+Machine Tabs refreshes immediately and displays the shared project image grey.
+This image applies to the project and all its chats. A new conversation does
+not replace an existing project image; separate per-thread images are unsupported.
+Respect explicit instructions to avoid changes. If a host/tool is unavailable,
+report the limitation briefly and continue the main task. Missing status does
+not mark the thread complete, so a subsequent provider session can retry.
+Successful installation or existing-image status completes the current policy
+version; old checked-only metadata gets rechecked once after the upgrade.
+Instructions arrive at provider-session construction, not through an independent
+background AI worker. Already-running sessions may need a runtime restart after
+their active turn finishes. No extra threads, account changes, commits or pushes.
+Source selection (0.2.1): agent tools and CLI invoked within a thread resolve
+its environment through the SDK and select a project source on that machine.
+The default source on another machine is not contacted. If there is no source
+on the thread machine, the operation fails without writing. The shared icon
+lives in the project source root, not a temporary thread worktree. CLI without
+a matching project thread keeps the project's default source selection.
 Manual CLI:
-
 ```sh
 bb project-logo status <project-id>
 bb project-logo install <project-id> <relative-image-path> <source-page-url>
+bb project-logo create <project-id> '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">...</svg>'
+bb machine-tabs icons
 ```
-
-These commands resolve the project's source host, independently of the CLI's
-current working directory. They never replace an existing icon. Installation
-refreshes Machine Tabs immediately; if unavailable, its regular refresh picks
-the image up later. `bb machine-tabs icons` forces that refresh.
-
-The automatic step runs when BB constructs the next provider session. A running
-session may need to restart before receiving the tools/instructions. Successful
-status checks mark the thread checked in this plugin's thread metadata, so
-follow-up sessions do not repeat the lookup. There is no background daemon
-performing independent AI requests: the active thread's agent performs the lookup
-alongside its normal work. Agents may skip it under explicit user constraints or
-when their search/file tools are unavailable.
+Files checked in order: `.bb/icon.png`, `.bb/icon.svg`, `favicon.png`,
+`favicon.svg`, `favicon.ico`. Images belong in the source project's own backup;
+bb-config stores the plugin and recovery instructions, not other project artwork.

@@ -1,0 +1,11 @@
+{
+  "connection": "plugin",
+  "model": "gpt-realtime-2",
+  "voice": "shimmer",
+  "vadThreshold": 0.7,
+  "silenceDurationMs": 900,
+  "noiseReduction": "far_field",
+  "widgetStyle": "detailed",
+  "messageText": "verbatim",
+  "prefixMessages": true
+}

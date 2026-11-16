@@ -41,15 +41,35 @@ def install_source(plugin):
     return plugin['source'].replace('@semver:', '@')
 
 
-def plan(install_plugins=False, root=ROOT):
-    """Commands are argv arrays; saved text is never interpreted by a shell."""
+def installed_ids():
+    """Plugin ids the connected BB already has, or None when it cannot be asked."""
+    try:
+        listing = json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json'], text=True,
+                                                     stderr=subprocess.DEVNULL))
+    except (OSError, subprocess.CalledProcessError, ValueError):
+        return None
+    plugins = listing if isinstance(listing, list) else listing.get('plugins', [])
+    return {plugin['id'] for plugin in plugins}
+
+
+def plan(install_plugins=False, root=ROOT, installed=None):
+    """Commands are argv arrays; saved text is never interpreted by a shell.
+
+    `installed` is the set of plugin ids BB already has, so a second run is
+    safe: installed catalog plugins are left to their own updates, local ones
+    are rebuilt and reloaded. Some bundled plugins are not registered on a
+    fresh BB; those missing are installed before they are enabled. None
+    (BB unreachable) plans a full install and skips bundled plugins.
+    """
     commands = []
     manifest = read('plugins', root)
     if install_plugins:
         for plugin in manifest:
             source = install_source(plugin)
             if source.startswith('builtin:'):
-                continue  # Bundled with BB; check availability at apply time.
+                if installed is not None and plugin['id'] not in installed:
+                    commands.append(['bb', 'plugin', 'install', source, '--yes'])
+                continue
             if source.startswith('path:'):
                 relative = Path(source.removeprefix('path:'))
                 if relative.is_absolute() or '..' in relative.parts:
@@ -57,12 +77,15 @@ def plan(install_plugins=False, root=ROOT):
                 directory = root / relative
                 if not (directory / 'package.json').is_file():
                     raise ValueError('Missing plugin sources: ' + str(relative))
+                already = installed is not None and plugin['id'] in installed
                 commands.extend([
                     ['npm', '--prefix', str(directory), 'ci'],
                     ['bb', 'plugin', 'build', str(directory)],
-                    ['bb', 'plugin', 'install', 'path:' + str(directory), '--yes'],
+                    ['bb', 'plugin', 'reload', plugin['id']] if already
+                    else ['bb', 'plugin', 'install', 'path:' + str(directory), '--yes'],
                 ])
-            else:
+            elif installed is None or plugin['id'] not in installed:
+                # Already installed catalog plugins keep their own updates.
                 commands.append(['bb', 'plugin', 'install', source, '--yes'])
     # Make commands contributed by bundled plugins available before their prefs.
     if install_plugins:
@@ -114,7 +137,7 @@ def main():
     parser.add_argument('--apply', action='store_true', help='Execute the plan (default: print only)')
     parser.add_argument('--plugins', action='store_true', help='Also install plugins and restore enabled/disabled state')
     args = parser.parse_args()
-    commands = plan(args.plugins)
+    commands = plan(args.plugins, installed=installed_ids() if args.plugins else None)
     if args.apply and args.plugins:
         # path: sources are read by the BB server. Refuse a remote-server path
         # mismatch before running even npm ci or changing any preferences.
@@ -122,14 +145,30 @@ def main():
         if not Path(status['dataDir']).is_dir():
             raise SystemExit('Run --plugins --apply on the BB server machine, in its bb-config checkout. '
                              'Local plugin paths are server-side; this CLI is connected remotely.')
+    skipped = []
     for command in commands:
         # All saved settings may contain personal text; previews show keys only.
         has_value = command[:3] in ([ 'bb', 'settings', 'general' ],
             ['bb', 'settings', 'experiment']) or command[:4] in (
             ['bb', 'settings', 'ui', 'set'], ['bb', 'thread-list', 'prefs', 'set']) or command[:3] == ['bb', 'plugin', 'config']
-        print(shlex.join(command[:-1] + ['<saved value>'] if has_value else command), flush=True)
-        if args.apply:
+        shown = shlex.join(command[:-1] + ['<saved value>'] if has_value else command)
+        print(shown, flush=True)
+        if not args.apply:
+            continue
+        if command[:2] == ['bb', 'settings'] or command[:2] == ['bb', 'thread-list'] or command[:3] == ['bb', 'plugin', 'config']:
+            # A saved preference this BB version no longer accepts must not
+            # abort the rest; plugin installs and builds stay fatal.
+            result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            if result.returncode != 0:
+                reason = (result.stderr.strip().splitlines() or ['failed'])[-1][:160]
+                print(f'  skipped: {reason}', flush=True)
+                skipped.append(shown)
+        else:
             subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+    if skipped:
+        print(f'\n{len(skipped)} saved preference(s) were not accepted by this BB version and were skipped:')
+        for shown in skipped:
+            print('  ' + shown)
     print('\nManual steps: docs/customizations.md (credentials, routes, machine IDs, keyboard/custom CSS).')
     print('Finish with: python3 scripts/setup_tracking.py --apply')
 

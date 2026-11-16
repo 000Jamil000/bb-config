@@ -5,7 +5,7 @@
   "serverMove": true,
   "performanceDiagnostics": false,
   "pluginUpdates": false,
-  "resumeThreadsAfterRestart": false,
+  "resumeThreadsAfterRestart": true,
   "skipFocusedThreadNotifications": false,
   "threadContextCard": false,
   "threadRowMetadata": false,

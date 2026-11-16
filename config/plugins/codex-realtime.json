@@ -1,0 +1,4 @@
+{
+  "model": "gpt-realtime-2.1",
+  "allowedPlugins": "voice-mode"
+}

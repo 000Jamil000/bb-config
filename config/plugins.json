@@ -79,7 +79,7 @@
   {
     "id": "bb--provider-usage",
     "version": "0.1.0",
-    "enabled": true,
+    "enabled": false,
     "name": "Provider usage",
     "source": "builtin:provider-usage"
   },
@@ -118,6 +118,14 @@
     "name": "Browser Automation",
     "source": "builtin:browser-automation",
     "installSource": "browser-automation@bb-official"
+  },
+  {
+    "id": "codex-realtime",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "ChatGPT Realtime Connection",
+    "source": "git:https://github.com/gpambrozio/bb-plugins.git@semver:codex-realtime/:>=0.1.0",
+    "installSource": "codex-realtime@bb-community"
   },
   {
     "id": "concurrency-limit",
@@ -208,7 +216,7 @@
   {
     "id": "limits",
     "version": "1.1.8",
-    "enabled": true,
+    "enabled": false,
     "name": "Limits",
     "source": "git:https://github.com/artwist-polyakov/bb-plugins.git@semver:limits/:^1.0.0",
     "installSource": "limits@bb-community"
@@ -261,6 +269,13 @@
     "enabled": false,
     "name": "Plugin API Tester",
     "source": "builtin:plugin-api-tester"
+  },
+  {
+    "id": "project-logo",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Project Logo",
+    "source": "path:plugins/project-logo"
   },
   {
     "id": "project-open",
@@ -347,11 +362,57 @@
     "source": "builtin:side-chat"
   },
   {
+    "id": "thread-account-usage",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Thread Account Usage",
+    "source": "path:plugins/thread-account-usage"
+  },
+  {
     "id": "thread-list",
     "version": "0.1.0",
     "enabled": true,
     "name": "Thread list",
     "source": "builtin:thread-list"
+  },
+  {
+    "id": "tokenomics",
+    "version": "0.2.2",
+    "enabled": true,
+    "name": "Tokenomics",
+    "source": "git:https://github.com/danielbachhuber/bb-plugins.git@semver:tokenomics/:^0.2.0",
+    "installSource": "tokenomics@bb-community"
+  },
+  {
+    "id": "usage",
+    "version": "0.3.27",
+    "enabled": true,
+    "name": "Usage",
+    "source": "git:https://github.com/MayankBansal12/bb-plugin-usage.git@semver:^0.3.1",
+    "installSource": "usage@bb-community"
+  },
+  {
+    "id": "usage-tracker",
+    "version": "0.1.17",
+    "enabled": false,
+    "name": "Usage Tracker",
+    "source": "git:https://github.com/MateoCerquetella/bb-plugins.git@semver:usage-tracker/:^0.1.16",
+    "installSource": "usage-tracker@bb-community"
+  },
+  {
+    "id": "voice-mode",
+    "version": "0.1.15",
+    "enabled": true,
+    "name": "Voice Mode",
+    "source": "git:https://github.com/steveafrost/bb-plugin-voice-mode.git@semver:>=0.1.5",
+    "installSource": "voice-mode@bb-community"
+  },
+  {
+    "id": "voice-mode-keeper",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Voice Mode Keeper",
+    "source": "path:plugins/voice-mode-keeper"
   },
   {
     "id": "web-bb-button",
@@ -366,12 +427,5 @@
     "enabled": true,
     "name": "Workflows",
     "source": "builtin:workflows"
-  },
-  {
-    "id": "thread-account-usage",
-    "version": "0.1.0",
-    "enabled": true,
-    "name": "Thread Account Usage",
-    "source": "path:plugins/thread-account-usage"
   }
 ]

@@ -21,11 +21,13 @@ function workerPath() {
   return path;
 }
 
-async function runWorker(script: string, cliPath: string, signal: AbortSignal, snapshot = false): Promise<KeeperStatus> {
+async function runWorker(script: string, cliPath: string, serverUrl: string, signal: AbortSignal, snapshot = false): Promise<KeeperStatus> {
   return new Promise((resolveResult, reject) => {
     const child = spawn("python3", [script, ...(snapshot ? ["--snapshot"] : [])], {
       detached: true, stdio: ["ignore", "pipe", "ignore"],
-      env: { ...process.env, BB_CLI: cliPath, VOICE_KEEPER_NODE: process.execPath,
+      // The CLI otherwise targets the default port, which on a machine with a
+      // second BB (or one on another port) is a different server.
+      env: { ...process.env, BB_CLI: cliPath, BB_SERVER_URL: serverUrl, VOICE_KEEPER_NODE: process.execPath,
         PATH: `${dirname(cliPath)}:${process.env.PATH ?? ""}` },
     });
     let output = "";
@@ -87,14 +89,14 @@ export default async function keeper(bb: BbPluginApi) {
               const signature = `${plugin.rootDir}|${plugin.version}|${plugin.app?.bundle?.hash ?? ""}|${policy}|${cliPath}`;
               if (signature !== observed) {
                 await publish(INITIAL);
-                let result = await runWorker(script, cliPath, signal);
+                let result = await runWorker(script, cliPath, bb.server.loopbackBaseUrl, signal);
                 if (result.state === "ready" && preferenceInstall && preferenceInstall !== plugin.rootDir && Object.keys(preferences).length) {
                   const settings = await bb.sdk.plugins.getSettings({ pluginId: "voice-mode" });
                   const supported = Object.fromEntries(Object.entries(preferences).filter(([key]) => key in settings.schema));
                   if (Object.keys(supported).length) await bb.sdk.plugins.updateSettings({ pluginId: "voice-mode", values: supported });
                 }
                 if (result.state === "ready") {
-                  const snapshot = await runWorker(script, cliPath, signal, true);
+                  const snapshot = await runWorker(script, cliPath, bb.server.loopbackBaseUrl, signal, true);
                   if (snapshot.state === "attention") result = snapshot;
                 }
                 await publish(result);

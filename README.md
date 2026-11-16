@@ -6,10 +6,20 @@
 
 | Плагин | Что добавляет | Настройка после установки |
 | --- | --- | --- |
-| [Machine Tabs](plugins/machine-tabs) | Вкладки машин, группировку и оформление списка тредов | Выберите машины и вид списка |
-| [Proxy Manager](plugins/proxy-manager) | Управление прокси, проверку соединений и маршрутов провайдеров | Добавьте собственные прокси и выберите маршруты |
+| [Machine Tabs](plugins/machine-tabs) | Вкладки машин над списком тредов, двухуровневая группировка (проект, машина, день), поиск без учёта раскладки, блок «Last 5», значки проектов | Не требуется. Значок проекта — файл `.bb/icon.svg` или `.bb/icon.png` в корне проекта, затем `bb machine-tabs icons` |
+| [Project Logo](plugins/project-logo) | Подбирает общий значок проекта по названию и первому сообщению; сохраняет существующие значки | Дополнительных настроек нет; для показа нужен Machine Tabs. Подбор выполняет агент при следующем создании сессии провайдера |
+| [Menubar Status](plugins/menubar-status) | Значок bb в строке меню macOS со статусом агентов и панелью по клику: кто ждёт вас, кто работает, последние ответы | Задайте `hostId` и `filePath` в настройках плагина; на Mac: `brew install --cask swiftbar`, затем `zsh install.sh` из `plugins/menubar-status/macos` |
+| [Proxy Manager](plugins/proxy-manager) | Управление прокси, проверку соединений и маршрутов провайдеров | Добавьте собственные прокси |
+| [Project Open](plugins/project-open) | Кнопки у треда: открыть папку проекта в Finder и терминал BB | Для Finder — локальный обработчик на Mac (см. README плагина) |
+| [Push Button](plugins/push-button) | Кнопку «попросить агента запушить» в строке ветки; сам Git не запускает | Не требуется |
+| [Thread Account Usage](plugins/thread-account-usage) | Окна квот аккаунта у текущего треда, отдельно от расхода токенов | Не требуется |
 | [Handoff Button](plugins/handoff-button) | Кнопку открытия оригинальной панели Handoff в composer | Установите оригинальный Handoff из каталога BB |
-| [Web BB Button](plugins/web-bb-button) | Глобус в левой панели, открывающий BB в браузере | Укажите публичный URL своего BB в настройках плагина |
+| [Web BB Button](plugins/web-bb-button) | Глобус в левой панели, открывающий BB в браузере | Укажите публичный URL своего BB в настройках |
+| [Voice Mode Keeper](plugins/voice-mode-keeper) | Сохраняет правки Voice Mode ([список](plugins/voice-mode)) при обновлениях из каталога: проверяет, собирает, откатывает при несовместимости | Установите Voice Mode из каталога BB. Правки русскоязычные: голос говорит по-русски от первого лица |
+
+Патчи к сторонним плагинам (ставятся отдельно, оригиналы остаются из каталога):
+[Needs You](plugins/inbox-compat) — `python3 scripts/apply_inbox_compat.py --host <ID машины сервера> --apply`,
+[Tokenomics](plugins/tokenomics-compat) — `python3 scripts/apply_tokenomics_compat.py --apply`.
 
 ## Установка одного плагина
 
@@ -24,8 +34,7 @@ bb plugin build plugins/machine-tabs
 bb plugin install path:"$PWD/plugins/machine-tabs"
 ```
 
-Вместо `machine-tabs` подставьте `proxy-manager`, `handoff-button` или
-`web-bb-button`. Для Handoff Button сначала установите оригинальный Handoff
+Вместо `machine-tabs` подставьте каталог любого плагина из таблицы. Для Handoff Button сначала установите оригинальный Handoff
 из каталога BB. Его формы и логика переноса остаются в оригинальном плагине.
 
 После установки откройте **Settings → Installed plugins**.
@@ -67,8 +76,11 @@ python3 scripts/private_backup.py
 
 ## Восстановление целой установки
 
-Обычная установка отдельных плагинов не требует этих команд. Для восстановления
-своего BB сначала верните собственную `.local/config/`, затем просмотрите план:
+Обычная установка отдельных плагинов не требует этих команд. Без своей
+`.local/config/` скрипт ставит набор из публичного `config/plugins.json` (все
+плагины из таблицы и нужные из каталога) с нейтральными настройками. Для
+восстановления своего BB сначала верните собственную `.local/config/`, затем
+просмотрите план:
 
 ```sh
 python3 scripts/restore.py --plugins

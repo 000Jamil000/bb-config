@@ -3,6 +3,10 @@
 <head>
 <meta charset="utf-8">
 <title>bb</title>
+<script>
+// The Windows client asks for its own variant of the page: fonts, rows for limits without data.
+if (new URLSearchParams(location.search).get("ui") === "windows") { document.documentElement.classList.add("windows"); document.title = "bb Status panel"; }
+</script>
 <style>
   :root {
     color-scheme: light dark;
@@ -194,6 +198,16 @@
   .send:disabled { background: var(--card-2); color: var(--faint); cursor: default; }
   .send svg { width: 14px; height: 14px; }
   .error-line { color: var(--red); font-size: 11.5px; margin: 6px 4px 0; }
+  /* Native Windows popup: readable at normal desktop scaling. */
+  html.windows body { font-family: "Segoe UI", sans-serif; font-size: 14px; }
+  html.windows .who span, html.windows .who .plan { font-size: 11px; }
+  html.windows .wins .k, html.windows .wins small { font-size: 12px; }
+  html.windows .wins b { font-size: 14px; }
+  html.windows .wins { row-gap: 4px; column-gap: 7px; }
+  html.windows .title { font-size: 15px; }
+  html.windows .meta, html.windows .live { font-size: 12px; }
+  html.windows { --faint: #697386; }
+  @media (prefers-color-scheme: dark) { html.windows { --faint: #b4bed1; --muted: #c0c8d7; } }
 </style>
 </head>
 <body>
@@ -234,7 +248,8 @@
 </div>
 <script>
 const token = new URLSearchParams(location.search).get("t") || "";
-const native = window.webkit?.messageHandlers?.bb;
+// The app that shows this page: WKWebView on macOS, WebView2 on Windows.
+const native = window.webkit?.messageHandlers?.bb ?? window.chrome?.webview;
 const post = (message) => native?.postMessage(message);
 const api = (path) => `${path}${path.includes("?") ? "&" : "?"}t=${encodeURIComponent(token)}`;
 const STALE_MS = 180000;
@@ -311,13 +326,26 @@ function renderUsage(data) {
     const hosts = a.hosts || [];
     // One machine by name; several by initials, as in the menu bar.
     const where = hosts.length === 1 ? hosts[0] : hosts.map((h) => h.trim()[0]?.toUpperCase()).join("");
-    const rows = ["five-hour", "weekly"].map((k) => a.windows.find((w) => w.kind === k)).filter(Boolean).map((w) => {
+    const rows = ["five-hour", "weekly"].map((k) => {
+      const w = a.windows.find((w) => w.kind === k);
+      // Windows client: say that bb has no figure for a limit instead of leaving it out
+      // (the service did not report it for this account); nothing is put in its place.
+      if (!w && !document.documentElement.classList.contains("windows")) return "";
+      if (!w) return `<span class="k">${k === "five-hour" ? "5ч" : "Нед"}</span><span></span><b title="Сервис аккаунта не сообщает bb этот лимит">—</b><small>нет данных</small>`;
       const p = Math.round(w.usedPercent), level = usageLevel(w.usedPercent);
       const tip = `${w.label}: ${p}% использовано${w.resetsAt ? ` · сброс через ${until(w.resetsAt)}` : ""}`;
       return `<span class="k" title="${esc(tip)}">${w.kind === "five-hour" ? "5ч" : "Нед"}</span>` +
         `<span class="bar" title="${esc(tip)}"><i data-level="${level}" style="width:${Math.min(100, p)}%"></i></span>` +
         `<b data-level="${level}" title="${esc(tip)}">${p}%</b><small>${compactReset(w.resetsAt)}</small>`;
-    }).join("");
+    }).join("") + (!document.documentElement.classList.contains("windows") ? "" :
+      // Windows client: every other limit bb reports (a model's week, a daily or shorter window) by its own name.
+      a.windows.filter((w) => w.kind !== "five-hour" && w.kind !== "weekly").map((w) => {
+        const p = Math.round(w.usedPercent), level = usageLevel(w.usedPercent);
+        const tip = `${w.label}: ${p}% использовано${w.resetsAt ? ` · сброс через ${until(w.resetsAt)}` : ""}`;
+        return `<span class="k" title="${esc(tip)}">${esc(w.label)}</span>` +
+          `<span class="bar" title="${esc(tip)}"><i data-level="${level}" style="width:${Math.min(100, p)}%"></i></span>` +
+          `<b data-level="${level}" title="${esc(tip)}">${p}%</b><small>${compactReset(w.resetsAt)}</small>`;
+      }).join(""));
     const price = planPrice(a.provider, a.plan);
     const plan = a.plan ? `<span class="plan">${esc(a.plan)}${price ? ` ${price}` : ""}</span>` : "";
     const resets = a.resets > 0 ? `<sup title="Доступно сбросов лимита: ${a.resets}">+${a.resets}</sup>` : "";

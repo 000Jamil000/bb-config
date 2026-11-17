@@ -1,6 +1,6 @@
 {
   "id": "plugin-menubar-status-windows",
-  "title": "Menubar Status 0.3.0: значок в области уведомлений Windows",
+  "title": "Menubar Status 0.3.1: полоска статуса на панели задач Windows",
   "component": "menubar-status",
   "where": "server",
   "kind": "local-plugin",

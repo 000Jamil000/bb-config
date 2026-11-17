@@ -19,10 +19,17 @@ to observe launches, including when BB was not running at login. Workspace
 notifications update visibility immediately, with a two-second polling fallback.
 
 On a Windows PC the counterpart is `bb Status.exe` (`windows/install.ps1`): a
-strip on the taskbar with the agents by state and each account's limits, always
-in view, and the same panel above the taskbar on hover (click pins it);
-`install.ps1 -Ui tray` gives a notification-area icon instead. `filePath` is then a
-Windows path such as `C:/Users/example/AppData/Local/bb-menubar/status.json`.
+strip at the left end of the taskbar laid out like the menu bar title (bb, a
+symbol and count per agent state, per agent its mark and per account a thick
+5-hour and a thin weekly bar over the machines' initials, one reset timer), and
+the same panel above it on hover, in a WebView2 window of its own. Pointing does
+not take the keyboard; a click in the panel does, so a reply can be typed.
+`install.ps1 -Ui tray` gives a notification-area icon instead. `filePath` is then
+a Windows path such as `C:/Users/example/AppData/Local/bb-menubar/status.json`.
+A limit bb has no figure for (a missing 5-hour window) gets no bar and shows as
+"нет данных" in the panel: check `bb settings usage --refresh --json` before
+looking for a fault in the client. `windows/test-render.ps1` draws the strip for
+made-up data, `windows/test-hover.ps1` checks hover and focus with the real pointer.
 
 - `bb menubar-status show` — print the feed the menu bar would get.
 - `bb menubar-status sync` — write the file now.

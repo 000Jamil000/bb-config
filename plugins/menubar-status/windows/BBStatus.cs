@@ -1,23 +1,28 @@
-// bb Status for Windows: the counterpart of the macOS menu bar item.
+// bb Status for Windows: the counterpart of the macOS menu bar item (macos/BBStatus.swift).
 //
 // It only reads the files the menubar-status plugin keeps next to it (status.json,
 // usage.json) and never calls bb. What it shows, chosen by the one-word file "ui":
-//   strip (default)  a strip on the taskbar itself, at its left end where Windows
-//                    puts the weather: the agents by state and every account's
-//                    limits, always in view, like the title in the macOS menu bar;
+//   strip (default)  a strip at the left end of the taskbar, laid out like the menu
+//                    bar title: "bb", a symbol and a count per agent state, then per
+//                    agent its mark and per account two bars filling upwards (thick:
+//                    5 hours, thin: week) over the machines' initials, then the time
+//                    until the limit that matters resets;
 //   tray             a notification-area icon with the most urgent state and a count;
 //   both             both.
 // Pointing at either opens the panel (panel.html, served by the local helper
-// server.py) above the taskbar; it hides when the pointer leaves; a click pins it,
-// a second click hides it; a right click opens the menu. Everything is shown only
-// while BB Desktop runs. Built by install.ps1 with the C# compiler that ships with
-// Windows (C# 5).
+// server.py) above the taskbar without taking the keyboard focus; it hides when the
+// pointer leaves; a click pins it, a second click hides it; a right click opens the
+// menu. Everything is shown only while BB Desktop runs. Built by install.ps1 with
+// the C# compiler that ships with Windows (C# 5).
 //
 // Windows 11 has no place for third-party taskbar content, so the strip is a small
 // borderless window kept above the taskbar; it steps aside for full-screen windows.
-// Windows also has no web view that a plain .NET Framework program can host, so
-// the panel is an Edge app window of its own profile (<folder>\edge-profile): this
-// program owns that process, places its window and shows or hides it.
+// The panel is this program's own borderless window around a WebView2 (the Edge
+// engine that ships with Windows; its three SDK libraries are fetched by install.ps1).
+// Being its own window it is shown without activation, so pointing at the strip never
+// moves the keyboard focus; a click inside the panel gives it the keyboard as usual.
+// (A separate Edge app window was tried first: Edge puts a new window in front
+// whatever it is told, and a program in the background cannot hand the focus back.)
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -31,8 +36,10 @@ using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Web.Script.Serialization;
 using System.Windows.Forms;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 
 static class Native
@@ -41,12 +48,13 @@ static class Native
     [DllImport("user32.dll")] public static extern bool DestroyIcon(IntPtr handle);
     [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr window, int command);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window);
-    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
     [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
-    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Bounds bounds);
-    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
+    [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr window);
+    [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr window);
     [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW")] public static extern IntPtr GetStyle(IntPtr window, int index);
     [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW")] public static extern IntPtr SetStyle(IntPtr window, int index, IntPtr value);
+    [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr window, out Bounds bounds);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr window, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindow(string className, string title);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr window, StringBuilder name, int size);
     [DllImport("user32.dll")] public static extern IntPtr GetDC(IntPtr window);
@@ -55,6 +63,7 @@ static class Native
     [DllImport("gdi32.dll")] public static extern bool DeleteDC(IntPtr dc);
     [DllImport("gdi32.dll")] public static extern IntPtr SelectObject(IntPtr dc, IntPtr item);
     [DllImport("gdi32.dll")] public static extern bool DeleteObject(IntPtr item);
+    [DllImport("dwmapi.dll")] public static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
     [DllImport("user32.dll")] public static extern bool UpdateLayeredWindow(IntPtr window, IntPtr screen, ref Point position, ref Size size, IntPtr source, ref Point origin, int key, ref Blend blend, int flags);
     [StructLayout(LayoutKind.Sequential)] public struct Bounds { public int Left, Top, Right, Bottom; }
     [StructLayout(LayoutKind.Sequential, Pack = 1)] public struct Blend { public byte Op, Flags, Alpha, Format; }
@@ -67,12 +76,18 @@ static class Program
     static void Main(string[] args)
     {
         Native.SetProcessDPIAware();   // real pixels: everything is placed against the taskbar
+        // --render <folder> <file.png> [light]: draw the strip for the data in that folder and exit; for checks.
+        if (args.Length >= 3 && args[0] == "--render")
+        {
+            using (var once = new StatusContext(false, args[1])) once.RenderTo(args[2], args.Length > 3 && args[3] == "light");
+            return;
+        }
         bool first;
         using (new Mutex(true, "Local\\dev.bb.status", out first))
         {
             if (!first) return;
             Application.EnableVisualStyles();
-            // --self-test: show the strip and the panel once, write what happened to self-test.log, exit.
+            // --self-test: show the strip, open and hide the panel, write what happened to self-test.log, exit.
             Application.Run(new StatusContext(args.Length > 0 && (args[0] == "--self-test" || args[0] == "--panel-test")));
         }
     }
@@ -81,8 +96,8 @@ static class Program
 /** One account's limits as the plugin wrote them. */
 sealed class Account
 {
-    public string Provider = "";
-    public int FiveHour = -1, Week = -1;
+    public string Provider = "", Machines = "";
+    public int FiveHour = -1, Week = -1, Resets;
     public DateTime? FiveHourReset, WeekReset;
 }
 
@@ -138,14 +153,73 @@ sealed class Strip : Form
     }
 }
 
+/** The panel: a borderless window of this program around the web view that shows panel.html. */
+sealed class PanelForm : Form
+{
+    public readonly Microsoft.Web.WebView2.WinForms.WebView2 View = new Microsoft.Web.WebView2.WinForms.WebView2();
+
+    public PanelForm()
+    {
+        Text = "bb Status panel";   // not shown (no title bar); names the window for tools and tests
+        FormBorderStyle = FormBorderStyle.None;
+        ShowInTaskbar = false;
+        StartPosition = FormStartPosition.Manual;
+        TopMost = true;
+        BackColor = Color.FromArgb(241, 243, 248);
+        View.Dock = DockStyle.Fill;
+        Controls.Add(View);
+    }
+
+    /** Shown by pointing, it must not take the keyboard. */
+    protected override bool ShowWithoutActivation { get { return true; } }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            CreateParams p = base.CreateParams;
+            p.ExStyle |= 0x80 | 0x8 | 0x08000000;   // tool window (no taskbar button, not in Alt+Tab), topmost, not activated
+            p.ClassStyle |= 0x00020000;             // a drop shadow, as popups have
+            return p;
+        }
+    }
+
+    /**
+     * The window cannot be activated until the user takes it up: Windows hands the keyboard to
+     * the first window of a program that has just started, and loading the web view asks for it.
+     * A click inside (or on the strip) lifts that, so a reply can be typed; hiding restores it.
+     */
+    public void AllowActivation(bool allow)
+    {
+        long style = Native.GetStyle(Handle, -20).ToInt64();
+        long wanted = allow ? style & ~0x08000000L : style | 0x08000000L;
+        if (wanted != style) Native.SetStyle(Handle, -20, new IntPtr(wanted));
+    }
+
+    public bool Activatable { get { return (Native.GetStyle(Handle, -20).ToInt64() & 0x08000000L) == 0; } }
+
+    protected override void WndProc(ref Message m)
+    {
+        if (m.Msg == 0x0021) AllowActivation(true);   // WM_MOUSEACTIVATE: a click in the window or in the page
+        base.WndProc(ref m);
+    }
+
+    protected override void OnHandleCreated(EventArgs e)
+    {
+        base.OnHandleCreated(e);
+        int round = 2;   // Windows 11: rounded corners for a borderless window; ignored on Windows 10
+        Native.DwmSetWindowAttribute(Handle, 33, ref round, 4);
+    }
+}
+
 sealed class StatusContext : ApplicationContext
 {
     const int StaleSeconds = 180;
     const int PanelWidth = 860, PanelHeight = 700;
+    const int OpenDelayMs = 180;             // a pointer only passing over the taskbar opens nothing
     const int LeaveDelayMs = 450;            // the pointer may cross the gap between strip and panel
-    const int PanelIdleMinutes = 5;          // a hidden panel is closed after this to free memory
-    static readonly Color Orange = Color.FromArgb(245, 158, 11), Red = Color.FromArgb(239, 68, 68),
-        Blue = Color.FromArgb(59, 130, 246), Green = Color.FromArgb(34, 197, 94), Grey = Color.FromArgb(120, 120, 120);
+        static readonly Color Orange = Color.FromArgb(245, 158, 11), Red = Color.FromArgb(239, 68, 68),
+        Blue = Color.FromArgb(96, 165, 250), Green = Color.FromArgb(52, 211, 153), Grey = Color.FromArgb(148, 156, 170);
 
     readonly string dir = Path.GetDirectoryName(Application.ExecutablePath);
     readonly string port = Environment.GetEnvironmentVariable("BB_MENUBAR_PORT") ?? "47615";
@@ -155,38 +229,43 @@ sealed class StatusContext : ApplicationContext
     readonly System.Windows.Forms.Timer timer = new System.Windows.Forms.Timer();
     readonly System.Windows.Forms.Timer pointer = new System.Windows.Forms.Timer();
     readonly JavaScriptSerializer json = new JavaScriptSerializer();
+    readonly Dictionary<string, Image> marks = new Dictionary<string, Image>();
+    readonly List<string> testLog = new List<string>();
+    readonly PanelForm panelForm = new PanelForm();
     readonly bool test;
+    readonly string readFrom;                // --render: the folder with status.json and usage.json instead of this program's own
     readonly bool useStrip, useTray;
     Model model = new Model { Stale = true };
     Process helper;
-    Process panel;
-    IntPtr styled = IntPtr.Zero;
     bool wanted, pinned, hovered, stripShown;
+    bool viewStarted, viewReady, loaded;     // the web view exists; the page has come
+    IntPtr lastOther = IntPtr.Zero;          // the window that had the keyboard last, other than this program's own
+    string viewError;
     Rectangle anchor;                        // what the panel hangs over: the strip or the tray icon
-    DateTime outsideSince = DateTime.MinValue, hiddenSince = DateTime.MinValue, testStarted;
+    DateTime insideSince = DateTime.MinValue, outsideSince = DateTime.MinValue, hiddenAt = DateTime.MinValue, retryAt = DateTime.MinValue, testStarted, testWait;
     string trayDrawn = "", stripDrawn = "";
     IntPtr iconHandle = IntPtr.Zero;
-    int ticks;
+    int ticks, spin, testStep;
 
-    public StatusContext(bool test)
+    public StatusContext(bool test, string readFrom = null)
     {
         this.test = test;
+        this.readFrom = readFrom;
         testStarted = DateTime.UtcNow;
+        if (readFrom != null) return;   // --render: no windows, no timers
+        lastOther = Native.GetForegroundWindow();
         string ui = "strip";
         try { ui = File.ReadAllText(Path.Combine(dir, "ui")).Trim().ToLowerInvariant(); } catch (Exception) { }
         useStrip = ui != "tray";
         useTray = ui == "tray" || ui == "both";
 
-        menu.Items.Add("Панель агентов", null, delegate { pinned = true; ShowPanel(); });
+        menu.Items.Add("Панель агентов", null, delegate { pinned = true; OpenPanel(true); });
         menu.Items.Add("Открыть bb", null, delegate { OpenBb(); });
         menu.Items.Add(new ToolStripSeparator());
         menu.Items.Add("Скрыть до следующего входа", null, delegate { ExitThread(); });
         tray.ContextMenuStrip = menu;
-        // Pointing opens, like the menu bar item; a click pins the panel or, when pinned, hides it.
-        tray.MouseMove += delegate { Point p = Cursor.Position; anchor = new Rectangle(p.X - 20, p.Y - 20, 40, 40); Pointed(); };
+        tray.MouseMove += delegate { Point p = Cursor.Position; anchor = new Rectangle(p.X - 20, p.Y - 20, 40, 40); if (!wanted) OpenPanel(false); };
         tray.MouseClick += delegate(object sender, MouseEventArgs e) { if (e.Button == MouseButtons.Left) Clicked(); };
-        strip.MouseMove += delegate { anchor = strip.Bounds; if (!hovered) { hovered = true; stripDrawn = ""; DrawStrip(); } Pointed(); };
-        strip.MouseLeave += delegate { hovered = false; stripDrawn = ""; DrawStrip(); };
         strip.MouseClick += delegate(object sender, MouseEventArgs e)
         {
             if (e.Button == MouseButtons.Left) Clicked();
@@ -195,16 +274,18 @@ sealed class StatusContext : ApplicationContext
         timer.Interval = 2000;
         timer.Tick += delegate { Refresh(); };
         timer.Start();
-        pointer.Interval = 150;
-        pointer.Tick += delegate { TrackPointer(); if (++ticks % 7 == 0) KeepStripOnTop(); };
+        pointer.Interval = 100;
+        pointer.Tick += delegate { Tick(); };
         pointer.Start();
         Refresh();
-        if (test) { pinned = true; if (anchor.IsEmpty) { Rectangle area = Screen.PrimaryScreen.WorkingArea; anchor = new Rectangle(area.Right - 60, area.Bottom, 40, 40); } ShowPanel(); }
     }
 
-    void Pointed() { outsideSince = DateTime.MinValue; if (!wanted) ShowPanel(); }
-
-    void Clicked() { pinned = !pinned; if (pinned) ShowPanel(); else HidePanel(); }
+    void Clicked()
+    {
+        if (pinned) { HidePanel(); return; }
+        pinned = true;
+        OpenPanel(true);
+    }
 
     protected override void ExitThreadCore()
     {
@@ -215,6 +296,7 @@ sealed class StatusContext : ApplicationContext
         strip.Hide();
         strip.Dispose();
         ClosePanel();
+        try { panelForm.Dispose(); } catch (Exception) { }
         try { if (helper != null && !helper.HasExited) helper.Kill(); } catch (Exception) { }
         base.ExitThreadCore();
     }
@@ -223,14 +305,14 @@ sealed class StatusContext : ApplicationContext
 
     Dictionary<string, object> Read(string name)
     {
-        try { return json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(dir, name))); }
+        try { return json.Deserialize<Dictionary<string, object>>(File.ReadAllText(Path.Combine(readFrom ?? dir, name))); }
         catch (Exception) { return null; }
     }
 
     static int Number(IDictionary<string, object> map, string key)
     {
         object value;
-        return map != null && map.TryGetValue(key, out value) && value != null ? Convert.ToInt32(Convert.ToDouble(value)) : 0;
+        return map != null && map.TryGetValue(key, out value) && value != null ? Convert.ToInt32(Convert.ToDouble(value, CultureInfo.InvariantCulture)) : 0;
     }
 
     static string Text(IDictionary<string, object> map, string key)
@@ -245,7 +327,7 @@ sealed class StatusContext : ApplicationContext
         var feed = Read("status.json");
         object raw;
         var counts = feed != null && feed.TryGetValue("counts", out raw) ? raw as Dictionary<string, object> : null;
-        double generated = feed != null && feed.ContainsKey("generatedAt") ? Convert.ToDouble(feed["generatedAt"]) : 0;
+        double generated = feed != null && feed.ContainsKey("generatedAt") ? Convert.ToDouble(feed["generatedAt"], CultureInfo.InvariantCulture) : 0;
         result.Stale = feed == null || (DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds - generated > StaleSeconds * 1000;
         result.Needs = Number(counts, "needs"); result.Working = Number(counts, "running");
         result.Errors = Number(counts, "error"); result.Unread = Number(counts, "unread");
@@ -253,25 +335,43 @@ sealed class StatusContext : ApplicationContext
         var usage = Read("usage.json");
         object accounts;
         if (usage == null || !usage.TryGetValue("accounts", out accounts) || !(accounts is IEnumerable)) return result;
+        // Limits older than a quarter of an hour are not shown as if they were current, as in the menu bar item.
+        double written = usage.ContainsKey("at") && usage["at"] != null ? Convert.ToDouble(usage["at"], CultureInfo.InvariantCulture) : 0;
+        if ((DateTime.UtcNow - new DateTime(1970, 1, 1)).TotalMilliseconds - written > 15 * 60 * 1000) return result;
         foreach (object item in (IEnumerable)accounts)
         {
             var row = item as Dictionary<string, object>;
-            object windows;
+            object windows, hosts;
             if (row == null || !row.TryGetValue("windows", out windows) || !(windows is IEnumerable)) continue;
-            var account = new Account { Provider = Text(row, "provider") ?? "" };
+            var account = new Account { Provider = Text(row, "provider") ?? "", Resets = Number(row, "resets") };
+            // A machine's initial, one per machine, as in the menu bar: "server" -> S.
+            if (row.TryGetValue("hosts", out hosts) && hosts is IEnumerable)
+                foreach (object host in (IEnumerable)hosts)
+                {
+                    string name = (host as string ?? "").Trim();
+                    if (name.Length > 0 && account.Machines.IndexOf(char.ToUpperInvariant(name[0])) < 0) account.Machines += char.ToUpperInvariant(name[0]);
+                }
             foreach (object window in (IEnumerable)windows)
             {
                 var entry = window as Dictionary<string, object>;
                 string kind = Text(entry, "kind");
                 DateTime parsed;
                 DateTime? reset = DateTime.TryParse(Text(entry, "resetsAt"), CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out parsed) ? parsed.ToUniversalTime() : (DateTime?)null;
-                if (kind == "five-hour" && Number(entry, "usedPercent") >= account.FiveHour) { account.FiveHour = Number(entry, "usedPercent"); account.FiveHourReset = reset; }
-                if (kind == "weekly" && Number(entry, "usedPercent") >= account.Week) { account.Week = Number(entry, "usedPercent"); account.WeekReset = reset; }
+                int used = Math.Max(0, Number(entry, "usedPercent"));
+                if (kind == "five-hour") { account.FiveHour = used; account.FiveHourReset = reset; }
+                if (kind == "weekly") { account.Week = used; account.WeekReset = reset; }
             }
             if (account.FiveHour >= 0 || account.Week >= 0) result.Accounts.Add(account);
         }
+        result.Accounts.Sort(delegate(Account a, Account b)
+        {
+            int byAgent = Order(a.Provider).CompareTo(Order(b.Provider));
+            return byAgent != 0 ? byAgent : string.CompareOrdinal(a.Machines, b.Machines);
+        });
         return result;
     }
+
+    static int Order(string provider) { return provider.StartsWith("claude") ? 0 : provider.StartsWith("codex") ? 1 : 9; }
 
     void Refresh()
     {
@@ -282,9 +382,8 @@ sealed class StatusContext : ApplicationContext
         model = Load();
         bool taskbar = useStrip && DrawStrip();
         if (useTray || !taskbar) DrawTray(); else tray.Visible = false;   // no taskbar to sit on: fall back to the icon
-
-        if (panel != null && !wanted && hiddenSince != DateTime.MinValue && (DateTime.UtcNow - hiddenSince).TotalMinutes > PanelIdleMinutes) ClosePanel();
-        if (test && (DateTime.UtcNow - testStarted).TotalSeconds > 20) { ReportTest(); ExitThread(); }
+        // Have the page loaded before the strip is pointed at.
+        StartView();
     }
 
     // --- notification-area icon --------------------------------------------
@@ -348,16 +447,19 @@ sealed class StatusContext : ApplicationContext
 
     static void FillRound(Graphics g, Brush brush, RectangleF r, float radius)
     {
-        using (var path = new GraphicsPath())
-        {
-            float d = radius * 2;
-            path.AddArc(r.X, r.Y, d, d, 180, 90);
-            path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
-            path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
-            path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
-            path.CloseFigure();
-            g.FillPath(brush, path);
-        }
+        using (GraphicsPath path = Round(r, radius)) g.FillPath(brush, path);
+    }
+
+    static GraphicsPath Round(RectangleF r, float radius)
+    {
+        var path = new GraphicsPath();
+        float d = Math.Min(radius * 2, Math.Min(r.Width, r.Height));
+        path.AddArc(r.X, r.Y, d, d, 180, 90);
+        path.AddArc(r.Right - d, r.Y, d, d, 270, 90);
+        path.AddArc(r.Right - d, r.Bottom - d, d, d, 0, 90);
+        path.AddArc(r.X, r.Bottom - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
     }
 
     // --- taskbar strip ------------------------------------------------------
@@ -397,19 +499,25 @@ sealed class StatusContext : ApplicationContext
     {
         if (moment == null) return "";
         TimeSpan left = moment.Value - DateTime.UtcNow;
-        if (left.TotalMinutes < 1) return "";
+        if (left.TotalSeconds <= 0) return "";
+        if (left.TotalMinutes < 1) return "<1м";
         if (left.TotalHours >= 24) return (int)left.TotalDays + "д " + left.Hours + "ч";
         return left.TotalHours >= 1 ? (int)left.TotalHours + "ч " + left.Minutes + "м" : left.Minutes + "м";
     }
 
-    static string Name(string provider)
-    {
-        if (provider.StartsWith("claude")) return "Claude";
-        if (provider.StartsWith("codex")) return "Codex";
-        return provider.Length > 0 ? char.ToUpperInvariant(provider[0]) + provider.Substring(1) : "Аккаунт";
-    }
-
     static Color Level(int percent, Color normal) { return percent >= 100 ? Red : percent >= 90 ? Orange : normal; }
+
+    /** The agent's own mark (icons\claude-dark.png and the like), or null when the file is missing. */
+    Image Mark(string provider, bool light)
+    {
+        string name = (provider.StartsWith("claude") ? "claude" : provider.StartsWith("codex") ? "codex" : provider) + (light ? "-light" : "-dark");
+        Image image;
+        if (marks.TryGetValue(name, out image)) return image;
+        try { using (var file = Image.FromFile(Path.Combine(dir, "icons", name + ".png"))) image = new Bitmap(file); }
+        catch (Exception) { image = null; }
+        marks[name] = image;
+        return image;
+    }
 
     void HideStrip() { if (stripShown) { strip.Hide(); stripShown = false; stripDrawn = ""; } }
 
@@ -421,6 +529,88 @@ sealed class StatusContext : ApplicationContext
         Native.SetWindowPos(strip.Handle, Native.Topmost, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
     }
 
+    // The symbols of the menu bar item, drawn here: Windows has no SF Symbols.
+
+    static void SymbolNeeds(Graphics g, RectangleF r)   // exclamationmark.bubble.fill
+    {
+        using (var brush = new SolidBrush(Orange))
+        {
+            var body = new RectangleF(r.X, r.Y + r.Height * 0.06f, r.Width, r.Height * 0.72f);
+            FillRound(g, brush, body, r.Width * 0.24f);
+            g.FillPolygon(brush, new[] { new PointF(r.X + r.Width * 0.22f, body.Bottom - 1), new PointF(r.X + r.Width * 0.52f, body.Bottom - 1), new PointF(r.X + r.Width * 0.24f, r.Bottom) });
+        }
+        using (var ink = new SolidBrush(Color.FromArgb(40, 26, 0)))
+        {
+            g.FillRectangle(ink, r.X + r.Width * 0.44f, r.Y + r.Height * 0.20f, r.Width * 0.13f, r.Height * 0.30f);
+            g.FillEllipse(ink, r.X + r.Width * 0.43f, r.Y + r.Height * 0.56f, r.Width * 0.15f, r.Width * 0.15f);
+        }
+    }
+
+    static void SymbolError(Graphics g, RectangleF r)   // xmark.octagon.fill
+    {
+        float c = r.Width * 0.29f;
+        using (var brush = new SolidBrush(Red))
+            g.FillPolygon(brush, new[] { new PointF(r.X + c, r.Y), new PointF(r.Right - c, r.Y), new PointF(r.Right, r.Y + c), new PointF(r.Right, r.Bottom - c),
+                new PointF(r.Right - c, r.Bottom), new PointF(r.X + c, r.Bottom), new PointF(r.X, r.Bottom - c), new PointF(r.X, r.Y + c) });
+        using (var pen = new Pen(Color.White, r.Width * 0.13f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+        {
+            float m = r.Width * 0.31f;
+            g.DrawLine(pen, r.X + m, r.Y + m, r.Right - m, r.Bottom - m);
+            g.DrawLine(pen, r.Right - m, r.Y + m, r.X + m, r.Bottom - m);
+        }
+    }
+
+    static void SymbolRunning(Graphics g, RectangleF r, int turn)   // arrow.triangle.2.circlepath, turning
+    {
+        GraphicsState saved = g.Save();
+        g.TranslateTransform(r.X + r.Width / 2, r.Y + r.Height / 2);
+        g.RotateTransform(turn);
+        float radius = r.Width * 0.37f;
+        // Two arcs chasing each other, each ending in an arrow head that follows the curve.
+        using (var head = new AdjustableArrowCap(2.4f, 2.2f, true))
+        using (var pen = new Pen(Blue, r.Width * 0.115f) { StartCap = LineCap.Round, CustomEndCap = head })
+            for (int half = 0; half < 2; half++)
+            {
+                g.DrawArc(pen, -radius, -radius, radius * 2, radius * 2, -70, 118);
+                g.RotateTransform(180);
+            }
+        g.Restore(saved);
+    }
+
+    static void SymbolQuiet(Graphics g, RectangleF r, Color color, bool check)   // checkmark.circle, or a plain dot for "new"
+    {
+        if (!check) { using (var brush = new SolidBrush(color)) g.FillEllipse(brush, r.X + r.Width * 0.2f, r.Y + r.Height * 0.2f, r.Width * 0.6f, r.Height * 0.6f); return; }
+        using (var pen = new Pen(color, r.Width * 0.1f) { StartCap = LineCap.Round, EndCap = LineCap.Round, LineJoin = LineJoin.Round })
+        {
+            g.DrawEllipse(pen, r.X + r.Width * 0.08f, r.Y + r.Height * 0.08f, r.Width * 0.84f, r.Height * 0.84f);
+            g.DrawLines(pen, new[] { new PointF(r.X + r.Width * 0.30f, r.Y + r.Height * 0.52f), new PointF(r.X + r.Width * 0.45f, r.Y + r.Height * 0.67f), new PointF(r.X + r.Width * 0.71f, r.Y + r.Height * 0.36f) });
+        }
+    }
+
+    static void SymbolOffline(Graphics g, RectangleF r)   // wifi.slash
+    {
+        using (var pen = new Pen(Grey, r.Width * 0.11f) { StartCap = LineCap.Round, EndCap = LineCap.Round })
+        {
+            float cx = r.X + r.Width / 2, by = r.Bottom - r.Height * 0.16f;
+            for (int ring = 1; ring <= 3; ring++) { float q = r.Width * 0.2f * ring; g.DrawArc(pen, cx - q, by - q, q * 2, q * 2, 225, 90); }
+            g.DrawLine(pen, r.X + r.Width * 0.12f, r.Y + r.Height * 0.10f, r.Right - r.Width * 0.12f, r.Bottom - r.Height * 0.06f);
+        }
+        using (var brush = new SolidBrush(Grey)) g.FillEllipse(brush, r.X + r.Width * 0.43f, r.Bottom - r.Height * 0.24f, r.Width * 0.14f, r.Width * 0.14f);
+    }
+
+    /** One limit as a bar that fills from the bottom as it is used, like the menu bar item. */
+    static void Bar(Graphics g, float x, float top, float width, float height, int used, Color ink)
+    {
+        var track = new RectangleF(x, top, width, height);
+        using (var brush = new SolidBrush(Color.FromArgb(72, ink))) FillRound(g, brush, track, width / 2);
+        if (used <= 0) return;
+        float filled = Math.Max(width, height * Math.Min(100, used) / 100f);
+        GraphicsState saved = g.Save();
+        using (GraphicsPath shape = Round(track, width / 2)) g.SetClip(shape, CombineMode.Intersect);
+        using (var brush = new SolidBrush(Level(used, ink))) g.FillRectangle(brush, x, top + height - filled, width, filled);
+        g.Restore(saved);
+    }
+
     /** Draws the strip when what it shows has changed; false when there is no taskbar to put it on. */
     bool DrawStrip()
     {
@@ -430,112 +620,171 @@ sealed class StatusContext : ApplicationContext
         float s;
         using (var probe = Graphics.FromHwnd(IntPtr.Zero)) s = probe.DpiX / 96f;
         bool light = LightTaskbar();
-        Color ink = light ? Color.FromArgb(235, 0, 0, 0) : Color.White;
-        Color dim = Color.FromArgb(light ? 150 : 165, ink);
 
         var signature = new StringBuilder();
         signature.Append(bar).Append(light).Append(hovered).Append(pinned).Append(model.Stale).Append(model.Needs).Append('/').Append(model.Working)
-            .Append('/').Append(model.Errors).Append('/').Append(model.Unread);
-        foreach (Account a in model.Accounts) signature.Append('|').Append(a.Provider).Append(a.FiveHour).Append('/').Append(a.Week).Append(Until(a.FiveHourReset)).Append(Until(a.WeekReset));
+            .Append('/').Append(model.Errors).Append('/').Append(model.Unread).Append(model.Working > 0 && !model.Stale ? spin : 0);
+        foreach (Account a in model.Accounts) signature.Append('|').Append(a.Provider).Append(a.Machines).Append(a.Resets).Append(a.FiveHour).Append('/').Append(a.Week).Append(Until(a.FiveHourReset)).Append(Until(a.WeekReset));
         string wantedPicture = signature.ToString();
         if (wantedPicture == stripDrawn && stripShown) return true;
 
-        int height = bar.Height;
-        using (var small = new Font("Segoe UI", 10.5f * s, FontStyle.Regular, GraphicsUnit.Pixel))
-        using (var strong = new Font("Segoe UI", 12.5f * s, FontStyle.Bold, GraphicsUnit.Pixel))
-        using (var canvas = new Bitmap(Math.Max(64, bar.Width / 2), height, PixelFormat.Format32bppArgb))
+        using (Bitmap picture = Picture(Math.Max(64, bar.Width / 2), bar.Height, s, light, hovered || pinned))
         {
-            float x;
-            using (var g = Graphics.FromImage(canvas))
-            {
-                g.SmoothingMode = SmoothingMode.AntiAlias;
-                g.TextRenderingHint = TextRenderingHint.AntiAlias;   // grey antialiasing: ClearType needs an opaque background
-                float top = height / 2f - 15 * s, bottom = height / 2f + 1 * s, gap = 14 * s;
-                x = 10 * s;
-
-                // The logo with the most urgent state as a dot, as in the notification area.
-                float box = 26 * s, logoTop = (height - box) / 2f;
-                using (var back = new SolidBrush(light ? Color.FromArgb(31, 41, 55) : Color.FromArgb(70, 82, 104))) FillRound(g, back, new RectangleF(x, logoTop, box, box), 6 * s);
-                using (var font = new Font("Segoe UI", 13f * s, FontStyle.Bold, GraphicsUnit.Pixel)) g.DrawString("bb", font, Brushes.White, new RectangleF(x, logoTop - 1 * s, box, box), Centered());
-                x += box + 10 * s;
-
-                // Agents: one coloured count per state that has any.
-                x = Pair(g, small, strong, dim, x, top, bottom, "Агенты", delegate(float at)
-                {
-                    if (model.Stale) return Word(g, strong, dim, at, bottom, "нет данных");
-                    float start = at;
-                    at = Count(g, strong, ink, Orange, at, bottom, s, model.Needs, "ждут");
-                    at = Count(g, strong, ink, Red, at, bottom, s, model.Errors, "ошибки");
-                    at = Count(g, strong, ink, Blue, at, bottom, s, model.Working, "в работе");
-                    at = Count(g, strong, ink, Green, at, bottom, s, model.Unread, "новые");
-                    return at == start ? Word(g, strong, dim, at, bottom, "тихо") : at - 8 * s;
-                }) + gap;
-
-                // Every account: its limits as a bar and a percent, then when the tighter one resets.
-                foreach (Account account in model.Accounts)
-                {
-                    using (var line = new Pen(Color.FromArgb(light ? 40 : 55, ink), 1)) g.DrawLine(line, x - gap / 2, height * 0.26f, x - gap / 2, height * 0.74f);
-                    Account current = account;
-                    x = Pair(g, small, strong, dim, x, top, bottom, Name(current.Provider), delegate(float at)
-                    {
-                        if (current.FiveHour >= 0) at = Limit(g, small, strong, ink, dim, at, bottom, s, "5ч", current.FiveHour) + 10 * s;
-                        if (current.Week >= 0) at = Limit(g, small, strong, ink, dim, at, bottom, s, "нед", current.Week) + 10 * s;
-                        string reset = Until(current.FiveHour >= 0 && (current.FiveHour >= current.Week || current.Week < 100) ? current.FiveHourReset : current.WeekReset);
-                        return reset.Length > 0 ? Word(g, small, dim, at, bottom + 2 * s, "↻ " + reset) : at - 10 * s;
-                    }) + gap;
-                }
-                x = x - gap + 12 * s;
-            }
-
-            int width = Math.Min(canvas.Width, (int)Math.Ceiling(x));
-            using (var picture = new Bitmap(width, height, PixelFormat.Format32bppArgb))
-            {
-                using (var g = Graphics.FromImage(picture))
-                {
-                    g.SmoothingMode = SmoothingMode.AntiAlias;
-                    // Almost invisible everywhere, so the whole strip takes the pointer; a soft plate when pointed at or pinned.
-                    using (var plate = new SolidBrush(Color.FromArgb(hovered || pinned ? (light ? 26 : 34) : 1, ink))) FillRound(g, plate, new RectangleF(2 * s, 4 * s, width - 4 * s, height - 8 * s), 6 * s);
-                    g.DrawImageUnscaled(canvas, 0, 0);
-                }
-                var at = new Point(bar.Left + (int)(6 * s), bar.Top);
-                strip.Bounds = new Rectangle(at, picture.Size);
-                if (!stripShown) { strip.Show(); stripShown = true; }
-                strip.Present(picture, at);
-            }
+            var at = new Point(bar.Left + (int)(4 * s), bar.Top);
+            strip.Bounds = new Rectangle(at, picture.Size);
+            if (!stripShown) { strip.Show(); stripShown = true; }
+            strip.Present(picture, at);
         }
         stripDrawn = wantedPicture;
         return true;
     }
 
-    /** A small caption above, content drawn by `below` under it; returns where the wider of the two ends. */
-    static float Pair(Graphics g, Font small, Font strong, Color dim, float x, float top, float bottom, string caption, Func<float, float> below)
+    /** The strip as a picture with its own transparency, at most `room` wide: what DrawStrip shows and --render saves. */
+    Bitmap Picture(int room, int height, float s, bool light, bool plate)
     {
-        using (var brush = new SolidBrush(dim)) g.DrawString(caption, small, brush, x - 2, top);
-        float captionEnd = x + g.MeasureString(caption, small).Width;
-        return Math.Max(captionEnd, below(x));
+        Color ink = light ? Color.FromArgb(236, 0, 0, 0) : Color.White;
+        Color soft = Color.FromArgb(light ? 170 : 190, ink);
+        float middle = height / 2f;
+        using (var logo = new Font("Segoe UI", 16f * s, FontStyle.Bold, GraphicsUnit.Pixel))
+        using (var digits = new Font("Segoe UI", 13.5f * s, FontStyle.Bold, GraphicsUnit.Pixel))
+        using (var small = new Font("Segoe UI", 12f * s, FontStyle.Regular, GraphicsUnit.Pixel))
+        using (var tiny = new Font("Segoe UI", 10f * s, FontStyle.Bold, GraphicsUnit.Pixel))
+        using (var canvas = new Bitmap(room, height, PixelFormat.Format32bppArgb))
+        {
+            float x;
+            using (var g = Graphics.FromImage(canvas))
+            using (var inkBrush = new SolidBrush(ink))
+            using (var softBrush = new SolidBrush(soft))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;   // grey antialiasing: ClearType needs an opaque background
+                var left = new StringFormat(StringFormat.GenericTypographic) { LineAlignment = StringAlignment.Center, FormatFlags = StringFormatFlags.NoWrap | StringFormatFlags.MeasureTrailingSpaces };
+                Func<string, Font, float> wide = delegate(string text, Font font) { return g.MeasureString(text, font, 1000, left).Width; };
+                Action<string, Font, Brush, float> write = delegate(string text, Font font, Brush brush, float at) { g.DrawString(text, font, brush, new RectangleF(at, 0, 1000, height - 1 * s), left); };
+
+                x = 11 * s;
+                write("bb", logo, inkBrush, x);
+                x += wide("bb", logo) + 3 * s;
+
+                // A symbol and a count per state that has agents; one quiet symbol otherwise.
+                float side = 17 * s;
+                var states = new List<KeyValuePair<int, int>>();   // kind, count
+                if (model.Stale) states.Add(new KeyValuePair<int, int>(5, 0));
+                else
+                {
+                    if (model.Needs > 0) states.Add(new KeyValuePair<int, int>(0, model.Needs));
+                    if (model.Errors > 0) states.Add(new KeyValuePair<int, int>(1, model.Errors));
+                    if (model.Working > 0) states.Add(new KeyValuePair<int, int>(2, model.Working));
+                    if (states.Count == 0) states.Add(model.Unread > 0 ? new KeyValuePair<int, int>(3, model.Unread) : new KeyValuePair<int, int>(4, 0));
+                }
+                foreach (var state in states)
+                {
+                    x += 6 * s;
+                    var box = new RectangleF(x, middle - side / 2, side, side);
+                    if (state.Key == 0) SymbolNeeds(g, box);
+                    else if (state.Key == 1) SymbolError(g, box);
+                    else if (state.Key == 2) SymbolRunning(g, box, spin);
+                    else if (state.Key == 3) SymbolQuiet(g, box, Green, false);
+                    else if (state.Key == 4) SymbolQuiet(g, box, Grey, true);
+                    else SymbolOffline(g, box);
+                    x += side;
+                    if (state.Value > 0) { x += 3 * s; string count = state.Value.ToString(); write(count, digits, inkBrush, x); x += wide(count, digits); }
+                }
+
+                // Limits, the usage block of the menu bar item at taskbar scale: per agent its mark, per
+                // account a thick bar (5 hours) and a thin one (week), both filling upwards, with the
+                // machines' initials underneath and "+N" for limit resets on hand; a line between agents.
+                // A limit bb has no figure for gets no bar: nothing is drawn in its place.
+                float barHeight = 21 * s, barTop = middle - 15 * s, thick = 6 * s, thin = 3 * s, between = 3 * s, labelTop = barTop + barHeight + 1 * s;
+                string previous = "";
+                Account tightest = null;
+                if (model.Accounts.Count > 0) x += 12 * s;
+                foreach (Account account in model.Accounts)
+                {
+                    if (account.Provider != previous)
+                    {
+                        if (previous.Length > 0)
+                        {
+                            x += 7 * s;
+                            using (var line = new Pen(Color.FromArgb(light ? 70 : 90, ink), 1)) g.DrawLine(line, x, height * 0.24f, x, height * 0.76f);
+                            x += 8 * s;
+                        }
+                        Image mark = Mark(account.Provider, light);
+                        float markSide = 18 * s;
+                        if (mark != null) { g.DrawImage(mark, new RectangleF(x, middle - markSide / 2, markSide, markSide)); x += markSide + 6 * s; }
+                        previous = account.Provider;
+                    }
+                    else x += 7 * s;
+
+                    string plus = account.Resets > 0 ? "+" + account.Resets : "";
+                    float lettersWidth = wide(account.Machines, tiny), labelWidth = lettersWidth + (plus.Length > 0 ? wide(plus, tiny) : 0);
+                    float barsWidth = (account.FiveHour >= 0 ? thick + between : 0) + thin;
+                    float column = Math.Max(barsWidth, labelWidth), bx = x + (column - barsWidth) / 2;
+                    if (account.FiveHour >= 0) { Bar(g, bx, barTop, thick, barHeight, account.FiveHour, ink); bx += thick + between; }
+                    if (account.Week >= 0) Bar(g, bx, barTop, thin, barHeight, account.Week, ink);
+                    float lx = x + (column - labelWidth) / 2;
+                    g.DrawString(account.Machines, tiny, softBrush, lx, labelTop, StringFormat.GenericTypographic);
+                    if (plus.Length > 0) using (var green = new SolidBrush(Green)) g.DrawString(plus, tiny, green, lx + lettersWidth, labelTop, StringFormat.GenericTypographic);
+                    x += column;
+                    // The reset that matters, as in the menu bar: the most used 5-hour limit, or the
+                    // week of that account when it is used up too; without 5-hour limits the most used week.
+                    if (account.FiveHour >= 0 && (tightest == null || tightest.FiveHour < account.FiveHour)) tightest = account;
+                }
+                if (tightest == null) foreach (Account account in model.Accounts) if (tightest == null || tightest.Week < account.Week) tightest = account;
+                if (tightest != null)
+                {
+                    bool byWeek = tightest.FiveHour < 0 || tightest.Week >= 100;
+                    int used = byWeek ? tightest.Week : tightest.FiveHour;
+                    string time = Until(byWeek ? tightest.WeekReset : tightest.FiveHourReset);
+                    if (time.Length > 0)
+                    {
+                        x += 10 * s;
+                        float width = wide(time, small);
+                        if (used >= 90)
+                        {
+                            // An alert is white text on a coloured pill: coloured text on the taskbar reads badly.
+                            var pill = new RectangleF(x, middle - 10 * s, width + 12 * s, 20 * s);
+                            using (var brush = new SolidBrush(used >= 100 ? Red : Orange)) FillRound(g, brush, pill, 10 * s);
+                            write(time, small, Brushes.White, x + 6 * s);
+                            x = pill.Right;
+                        }
+                        else { write(time, small, softBrush, x); x += width; }
+                    }
+                }
+                x += 12 * s;
+            }
+
+            int widthPixels = Math.Min(canvas.Width, (int)Math.Ceiling(x));
+            var picture = new Bitmap(widthPixels, height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(picture))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                // Almost invisible everywhere, so the whole strip takes the pointer; a soft plate when pointed at or pinned.
+                using (var ground = new SolidBrush(Color.FromArgb(plate ? (light ? 28 : 38) : 1, ink))) FillRound(g, ground, new RectangleF(2 * s, 4 * s, widthPixels - 4 * s, height - 8 * s), 6 * s);
+                g.DrawImageUnscaled(canvas, 0, 0);
+            }
+            return picture;
+        }
     }
 
-    static float Word(Graphics g, Font font, Color color, float x, float y, string text)
+    /** --render: the strip for the status.json and usage.json of the given folder, on a taskbar-coloured ground. */
+    public void RenderTo(string output, bool light)
     {
-        using (var brush = new SolidBrush(color)) g.DrawString(text, font, brush, x - 2, y - 1);
-        return x + g.MeasureString(text, font).Width - 3;
-    }
-
-    static float Count(Graphics g, Font font, Color ink, Color dot, float x, float y, float s, int count, string word)
-    {
-        if (count <= 0) return x;
-        using (var brush = new SolidBrush(dot)) g.FillEllipse(brush, x, y + 5 * s, 8 * s, 8 * s);
-        return Word(g, font, ink, x + 12 * s, y, count + " " + word) + 8 * s;
-    }
-
-    static float Limit(Graphics g, Font small, Font strong, Color ink, Color dim, float x, float y, float s, string label, int percent)
-    {
-        x = Word(g, small, dim, x, y + 2 * s, label) + 3 * s;
-        float width = 30 * s, thick = 5 * s, barTop = y + 7 * s;
-        using (var track = new SolidBrush(Color.FromArgb(60, ink))) FillRound(g, track, new RectangleF(x, barTop, width, thick), thick / 2);
-        float filled = Math.Max(thick, width * Math.Min(100, Math.Max(0, percent)) / 100f);
-        if (percent > 0) using (var fill = new SolidBrush(Level(percent, ink))) FillRound(g, fill, new RectangleF(x, barTop, filled, thick), thick / 2);
-        return Word(g, strong, Level(percent, ink), x + width + 5 * s, y, percent + "%");
+        model = Load();
+        float s;
+        using (var probe = Graphics.FromHwnd(IntPtr.Zero)) s = probe.DpiX / 96f;
+        using (Bitmap picture = Picture(1200, (int)(48 * s), s, light, false))
+        using (var ground = new Bitmap(picture.Width + (int)(8 * s), picture.Height, PixelFormat.Format32bppArgb))
+        {
+            using (var g = Graphics.FromImage(ground))
+            {
+                g.Clear(light ? Color.FromArgb(238, 241, 246) : Color.FromArgb(28, 36, 45));
+                g.DrawImageUnscaled(picture, (int)(4 * s), 0);
+            }
+            ground.Save(output, ImageFormat.Png);
+        }
     }
 
     // --- helper -----------------------------------------------------------
@@ -560,86 +809,108 @@ sealed class StatusContext : ApplicationContext
 
     // --- panel ------------------------------------------------------------
 
-    static string Edge()
+    /** Loads the WebView2 that shows panel.html, once; the window stays hidden until it is pointed at. */
+    void StartView()
     {
-        foreach (string root in new[] { Environment.GetEnvironmentVariable("ProgramFiles(x86)"), Environment.GetEnvironmentVariable("ProgramFiles") })
+        if (viewStarted) return;
+        viewStarted = true;
+        try
         {
-            string candidate = root == null ? null : Path.Combine(root, "Microsoft\\Edge\\Application\\msedge.exe");
-            if (candidate != null && File.Exists(candidate)) return candidate;
+            IntPtr created = panelForm.Handle;   // the control needs its window before the web view can be put in it
+            created = panelForm.View.Handle;
+            KeepKeyboardWithTheUser(Cursor.Position);
+            var ui = TaskScheduler.FromCurrentSynchronizationContext();
+            // Its own data folder: nothing is shared with the user's browser.
+            CoreWebView2Environment.CreateAsync(null, Path.Combine(dir, "webview"), null).ContinueWith(delegate(Task<CoreWebView2Environment> environment)
+            {
+                if (environment.IsFaulted) { viewError = Reason(environment.Exception); Trace("web view environment: " + viewError); return; }
+                panelForm.View.EnsureCoreWebView2Async(environment.Result).ContinueWith(delegate(Task ready)
+                {
+                    if (ready.IsFaulted) { viewError = Reason(ready.Exception); Trace("web view: " + viewError); return; }
+                    CoreWebView2 core = panelForm.View.CoreWebView2;
+                    core.Settings.AreDefaultContextMenusEnabled = false;
+                    core.Settings.AreDevToolsEnabled = false;
+                    core.Settings.IsStatusBarEnabled = false;
+                    core.Settings.IsZoomControlEnabled = false;
+                    core.NavigationCompleted += delegate(object sender, CoreWebView2NavigationCompletedEventArgs e) { loaded = e.IsSuccess; retryAt = DateTime.UtcNow.AddSeconds(2); };
+                    // A link in a reply opens in the user's browser, not inside the panel.
+                    core.NewWindowRequested += delegate(object sender, CoreWebView2NewWindowRequestedEventArgs e) { e.Handled = true; try { Process.Start(e.Uri); } catch (Exception) { } };
+                    // The page reports a click or a key press in it ("pin") and Esc or its close button ("close"),
+                    // as it does to the macOS app.
+                    core.WebMessageReceived += delegate(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+                    {
+                        string message = e.WebMessageAsJson ?? "";
+                        if (message.Contains("\"close\"")) HidePanel();
+                        else if (message.Contains("\"pin\"") && panelForm.Visible) TakeUp();
+                    };
+                    viewReady = true;
+                    KeepKeyboardWithTheUser(Cursor.Position);
+                    Navigate();
+                }, ui);
+            }, ui);
         }
-        return null;
+        catch (Exception error) { viewError = error.Message; Trace("web view start: " + viewError); }
+    }
+
+    static string Reason(AggregateException error) { return error == null ? "unknown" : error.GetBaseException().Message; }
+
+    void Navigate()
+    {
+        try
+        {
+            retryAt = DateTime.UtcNow.AddSeconds(4);
+            panelForm.View.CoreWebView2.Navigate("http://127.0.0.1:" + port + "/?ui=windows&t=" + File.ReadAllText(Path.Combine(dir, "token")).Trim());
+        }
+        catch (Exception error) { Trace("navigate: " + error.Message); }
     }
 
     /** Where the panel goes: above the taskbar, over what was pointed at, inside the screen. */
     Rectangle Place()
     {
-        Rectangle area = Screen.FromRectangle(anchor).WorkingArea;
+        Rectangle over = anchor.IsEmpty ? (stripShown ? strip.Bounds : new Rectangle(Screen.PrimaryScreen.WorkingArea.Left, Screen.PrimaryScreen.WorkingArea.Bottom, 40, 40)) : anchor;
+        Rectangle area = Screen.FromRectangle(over).WorkingArea;
         float scale;
         using (var g = Graphics.FromHwnd(IntPtr.Zero)) scale = g.DpiX / 96f;
         int width = Math.Min((int)(PanelWidth * scale), area.Width - 16), height = Math.Min((int)(PanelHeight * scale), area.Height - 16);
-        int centre = anchor.Left + anchor.Width / 2;
-        int x = Math.Max(area.Left + 8, Math.Min(centre - width / 2, area.Right - width - 8));
+        int x = Math.Max(area.Left + 8, Math.Min(over.Left, area.Right - width - 8));
         return new Rectangle(x, area.Bottom - height - 8, width, height);
     }
 
-    IntPtr PanelWindow()
-    {
-        try
-        {
-            if (panel == null || panel.HasExited) { panel = null; return IntPtr.Zero; }
-            panel.Refresh();
-            return panel.MainWindowHandle;
-        }
-        catch (Exception) { return IntPtr.Zero; }
-    }
-
-    void ShowPanel()
+    /** Shows the panel in place. Pointing never gives it the keyboard; a click on the strip or the icon does. */
+    void OpenPanel(bool activate)
     {
         wanted = true;
-        hiddenSince = DateTime.MinValue;
-        try
-        {
-            if (PanelWindow() == IntPtr.Zero && panel == null)
-            {
-                string url = "http://127.0.0.1:" + port + "/?t=" + File.ReadAllText(Path.Combine(dir, "token")).Trim();
-                string edge = Edge();
-                if (edge == null) { Process.Start(url); wanted = false; return; }   // no Edge: the default browser, on demand only
-                Rectangle at = Place();
-                var start = new ProcessStartInfo(edge, "--app=" + url + " --user-data-dir=\"" + Path.Combine(dir, "edge-profile") + "\"" +
-                    " --no-first-run --no-default-browser-check --window-size=" + at.Width + "," + at.Height + " --window-position=" + at.X + "," + at.Y);
-                start.UseShellExecute = false;
-                panel = Process.Start(start);
-                styled = IntPtr.Zero;
-            }
-            Arrange();
-        }
-        catch (Exception error) { wanted = false; tray.ShowBalloonTip(5000, "bb Status", "Панель не открылась: " + error.Message, ToolTipIcon.Warning); }
+        outsideSince = DateTime.MinValue;
+        StartView();
+        Rectangle at = Place();
+        if (viewReady) { try { panelForm.View.CoreWebView2.Resume(); } catch (Exception) { } }
+        // Shown without activation (ShowWithoutActivation) and raised; the window is this program's own.
+        panelForm.Bounds = at;
+        if (!panelForm.Visible) panelForm.Show();
+        Native.SetWindowPos(panelForm.Handle, Native.Topmost, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+        if (activate) { panelForm.AllowActivation(true); panelForm.Activate(); panelForm.View.Focus(); }
+        stripDrawn = "";
+        DrawStrip();
     }
 
-    /** Puts the panel window in place once it exists; called again from the pointer timer until it does. */
-    void Arrange()
+    /** The user clicked or typed in the panel: now it may have the keyboard, so a reply can be written. */
+    void TakeUp()
     {
-        IntPtr window = PanelWindow();
-        if (window == IntPtr.Zero || !wanted) return;
-        if (styled != window)
-        {
-            // A tool window: no taskbar button and no Alt+Tab entry for a popup.
-            Native.ShowWindow(window, 0);
-            Native.SetStyle(window, -20, new IntPtr(Native.GetStyle(window, -20).ToInt64() | 0x80));
-            styled = window;
-        }
-        Rectangle at = Place();
-        Native.SetWindowPos(window, Native.Topmost, at.X, at.Y, at.Width, at.Height, 0x0040 | (pinned ? 0u : 0x0010u));   // show; do not take focus when only pointed at
-        if (pinned) Native.SetForegroundWindow(window);
+        if (panelForm.Activatable && Native.GetForegroundWindow() == panelForm.Handle) return;
+        panelForm.AllowActivation(true);
+        panelForm.Activate();
+        panelForm.View.Focus();
+        Trace("panel taken up by a click in it; has the keyboard=" + (Native.GetForegroundWindow() == panelForm.Handle));
     }
 
     void HidePanel()
     {
         wanted = false;
         pinned = false;
-        hiddenSince = DateTime.UtcNow;
-        IntPtr window = PanelWindow();
-        if (window != IntPtr.Zero) Native.ShowWindow(window, 0);
+        insideSince = DateTime.MinValue;
+        hiddenAt = DateTime.UtcNow;
+        if (panelForm.Visible) panelForm.Hide();
+        panelForm.AllowActivation(false);
         stripDrawn = "";
         DrawStrip();
     }
@@ -648,22 +919,68 @@ sealed class StatusContext : ApplicationContext
     {
         wanted = false;
         pinned = false;
-        try { if (panel != null && !panel.HasExited) { panel.CloseMainWindow(); if (!panel.WaitForExit(1500)) panel.Kill(); } } catch (Exception) { }
-        panel = null;
+        if (panelForm.Visible) panelForm.Hide();
     }
 
-    /** Hides a panel that was only pointed at, soon after the pointer has left both it and its anchor. */
-    void TrackPointer()
+    /**
+     * The panel may have the keyboard only once the user has clicked it. Should Windows give it
+     * the keyboard anyway (it does to a program that has just started), it goes straight back
+     * to the window that had it: this program holds the foreground then, so it may pass it on.
+     */
+    void KeepKeyboardWithTheUser(Point p)
     {
-        if (!wanted) return;
-        IntPtr window = PanelWindow();
-        if (window == IntPtr.Zero) { if (panel == null) wanted = false; return; }   // closed by the user, or still starting
-        if (styled != window || !Native.IsWindowVisible(window)) { Arrange(); return; }
-        if (pinned) return;
-        Native.Bounds b;
-        if (!Native.GetWindowRect(window, out b)) return;
+        IntPtr front = Native.GetForegroundWindow();
+        bool mine = front == panelForm.Handle || front == strip.Handle;
+        if (!mine) { if (front != IntPtr.Zero) lastOther = front; return; }
+        if (panelForm.Visible && panelForm.Activatable) return;
+        bool back = lastOther != IntPtr.Zero && Native.IsWindow(lastOther) && Native.SetForegroundWindow(lastOther);
+        Trace("the keyboard came to a panel nobody clicked; handed back=" + back);
+    }
+
+    /** Diagnostics, only while a file named "debug" lies next to the program: window handles and outcomes, never page content. */
+    void Trace(string line)
+    {
+        try { if (File.Exists(Path.Combine(dir, "debug"))) File.AppendAllText(Path.Combine(dir, "debug.log"), DateTime.Now.ToString("HH:mm:ss.fff ") + line + "\r\n"); }
+        catch (Exception) { }
+    }
+
+    /** Every 100 ms: where the pointer is decides, whoever has the keyboard focus. */
+    void Tick()
+    {
+        ticks++;
+        if (ticks % 10 == 0) KeepStripOnTop();
+        int turn = (Environment.TickCount & 0x7FFFFFFF) / 100 * 12 % 360;
+        if (model.Working > 0 && !model.Stale && stripShown && turn != spin) { spin = turn; DrawStrip(); }
+        KeepKeyboardWithTheUser(Cursor.Position);
+        if (test) { TestStep(); return; }
+
+        // The helper may start after the web view: load the page again until it has come.
+        if (viewReady && !loaded && DateTime.UtcNow > retryAt) Navigate();
+        // A page nobody looks at does not need to run: its timers stop until it is shown again.
+        if (viewReady && loaded && !wanted && hiddenAt != DateTime.MinValue && (DateTime.UtcNow - hiddenAt).TotalSeconds > 30)
+        {
+            hiddenAt = DateTime.MinValue;
+            try { panelForm.View.CoreWebView2.TrySuspendAsync(); } catch (Exception) { }
+        }
+
         Point p = Cursor.Position;
-        var over = Rectangle.FromLTRB(b.Left - 8, b.Top - 8, b.Right + 8, b.Bottom + 8);
+        bool onStrip = stripShown && strip.Bounds.Contains(p);
+        if (onStrip != hovered) { hovered = onStrip; stripDrawn = ""; DrawStrip(); }
+        if (onStrip)
+        {
+            anchor = strip.Bounds;
+            outsideSince = DateTime.MinValue;
+            if (insideSince == DateTime.MinValue) insideSince = DateTime.UtcNow;
+            if (!wanted && (DateTime.UtcNow - insideSince).TotalMilliseconds >= OpenDelayMs) OpenPanel(false);
+        }
+        else insideSince = DateTime.MinValue;
+
+        if (!wanted || !panelForm.Visible) return;
+        if (pinned || onStrip) return;
+        // Clicked into, the panel has the keyboard: typing a reply keeps it, as in the menu bar item.
+        if (panelForm.Activatable && Native.GetForegroundWindow() == panelForm.Handle) { outsideSince = DateTime.MinValue; return; }
+        Rectangle b = panelForm.Bounds;
+        var over = Rectangle.Inflate(b, 8, 8);
         var near = Rectangle.Inflate(anchor, 8, 8);
         // The way between the panel's lower edge and what was pointed at counts as inside.
         var bridge = Rectangle.FromLTRB(Math.Min(b.Left, near.Left), b.Bottom - 8, Math.Max(b.Right, near.Right), Math.Max(b.Bottom, near.Bottom));
@@ -672,23 +989,49 @@ sealed class StatusContext : ApplicationContext
         if ((DateTime.UtcNow - outsideSince).TotalMilliseconds > LeaveDelayMs) HidePanel();
     }
 
-    void ReportTest()
+    // --- self-test ----------------------------------------------------------
+
+    /** Opens and hides the panel three times without the pointer and records what the window did. */
+    void TestStep()
     {
-        IntPtr window = PanelWindow();
-        var b = new Native.Bounds();
-        bool rect = window != IntPtr.Zero && Native.GetWindowRect(window, out b);
-        Rectangle at = Place();
-        Rectangle bar;
-        bool taskbar = Taskbar(out bar);
-        File.WriteAllText(Path.Combine(dir, "self-test.log"),
-            "ui=" + (useStrip ? "strip" : "") + (useTray ? "+tray" : "") +
-            " taskbar=" + taskbar + " strip=" + stripShown + " stripRect=" + strip.Left + "," + strip.Top + "," + strip.Right + "," + strip.Bottom +
-            " accounts=" + model.Accounts.Count + " stale=" + model.Stale +
-            " panel=" + (window != IntPtr.Zero) + " visible=" + (window != IntPtr.Zero && Native.IsWindowVisible(window)) +
-            " toolWindow=" + (window != IntPtr.Zero && (Native.GetStyle(window, -20).ToInt64() & 0x80) != 0) +
-            " rect=" + (rect ? b.Left + "," + b.Top + "," + b.Right + "," + b.Bottom : "none") +
-            " expected=" + at.Left + "," + at.Top + "," + at.Right + "," + at.Bottom +
-            " helper=" + (helper != null && !helper.HasExited) + "\r\n");
+        double seconds = (DateTime.UtcNow - testStarted).TotalSeconds;
+        if (viewReady && !loaded && DateTime.UtcNow > retryAt) Navigate();
+        if (testStep == 0)
+        {
+            testLog.Add("focusBefore=" + Native.GetForegroundWindow());
+            StartView();
+            if (!loaded && viewError == null && seconds < 45) return;   // the page first
+            testLog.Add("webView ready=" + viewReady + " pageLoaded=" + loaded + (viewError != null ? " error=" + viewError : "") + " after=" + seconds.ToString("0.0", CultureInfo.InvariantCulture) + "s");
+            anchor = stripShown ? strip.Bounds : anchor;
+            OpenPanel(false);
+            testStep = 1;
+            testWait = DateTime.UtcNow;
+            return;
+        }
+        if ((DateTime.UtcNow - testWait).TotalMilliseconds < 700) return;   // let each state settle
+        testWait = DateTime.UtcNow;
+        if (testStep % 2 == 1)
+        {
+            Rectangle at = Place(), b = panelForm.Bounds;
+            testLog.Add("cycle" + (testStep + 1) / 2 + ": shown=" + panelForm.Visible + " rect=" + b.Left + "," + b.Top + "," + b.Right + "," + b.Bottom +
+                " expected=" + at.Left + "," + at.Top + "," + at.Right + "," + at.Bottom + " hasKeyboard=" + (Native.GetForegroundWindow() == panelForm.Handle));
+            HidePanel();
+            testStep++;
+            return;
+        }
+        testLog[testLog.Count - 1] += " hidden=" + !panelForm.Visible;
+        if (testStep >= 6 || seconds > 70)
+        {
+            Rectangle bar;
+            bool taskbar = Taskbar(out bar);
+            testLog.Add("ui=" + (useStrip ? "strip" : "") + (useTray ? "+tray" : "") + " taskbar=" + taskbar + " strip=" + stripShown + " stripRect=" + strip.Left + "," + strip.Top + "," + strip.Right + "," + strip.Bottom +
+                " accounts=" + model.Accounts.Count + " stale=" + model.Stale + " helper=" + (helper != null && !helper.HasExited) + " focusAfter=" + Native.GetForegroundWindow());
+            File.WriteAllLines(Path.Combine(dir, "self-test.log"), testLog.ToArray());
+            ExitThread();
+            return;
+        }
+        OpenPanel(false);
+        testStep++;
     }
 
     static void OpenBb()

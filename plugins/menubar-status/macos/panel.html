@@ -163,6 +163,8 @@ if (new URLSearchParams(location.search).get("ui") === "windows") { document.doc
   }
   .chat-empty svg { width: 34px; height: 34px; opacity: .5; }
   body.selected .chat-empty { display: none; }
+  /* Under the hint nothing of the conversation pane is there to be focused or announced. */
+  body:not(.selected) .chat-head, body:not(.selected) #messages, body:not(.selected) .chat-foot { visibility: hidden; }
   .chat-head { display: flex; align-items: center; gap: 10px; padding: 12px 12px 10px 16px; border-bottom: 1px solid var(--line); }
   .chat-head .body { flex: 1; }
   .chat-head .title { padding-right: 0; font-size: 14px; }
@@ -207,6 +209,8 @@ if (new URLSearchParams(location.search).get("ui") === "windows") { document.doc
   html.windows .title { font-size: 15px; }
   html.windows .meta, html.windows .live { font-size: 12px; }
   html.windows { --faint: #697386; }
+  /* A smooth pulse redraws the WebView2 sixty times a second (about 15 % of a core, measured); in steps it costs next to nothing. */
+  html.windows .running .dot, html.windows .dot.running { animation-timing-function: steps(4, jump-none); }
   @media (prefers-color-scheme: dark) { html.windows { --faint: #b4bed1; --muted: #c0c8d7; } }
 </style>
 </head>
@@ -652,6 +656,9 @@ document.getElementById("main").addEventListener("mouseleave", () => clearTimeou
 /* ---------- native hooks ---------- */
 window.bbShown = () => { loadFeed(); loadUsage(); if (chat.id) { loadChat(); pollChat(); } };
 window.bbHidden = () => { clearTimeout(chat.timer); document.activeElement?.blur?.(); };
+// Windows: the panel got the keyboard after a click in it. The browser then puts the focus on
+// the first button and shows its tooltip as if it had been reached with Tab; drop that focus.
+window.bbTaken = () => setTimeout(() => { const at = document.activeElement; if (at?.tagName === "BUTTON" && !at.matches(":hover")) at.blur(); }, 60);
 window.bbEscape = () => post({ type: "close" });
 document.addEventListener("keydown", (event) => { if (event.key === "Escape" && !native) window.bbEscape(); });
 

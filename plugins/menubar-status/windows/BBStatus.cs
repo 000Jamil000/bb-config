@@ -237,6 +237,7 @@ sealed class StatusContext : ApplicationContext
     readonly bool useStrip, useTray;
     Model model = new Model { Stale = true };
     Process helper;
+    bool awaitLeave;   // hidden by a click on the strip: pointing opens it again only after the pointer has left
     bool wanted, pinned, hovered, stripShown;
     bool viewStarted, viewReady, loaded;     // the web view exists; the page has come
     IntPtr lastOther = IntPtr.Zero;          // the window that had the keyboard last, other than this program's own
@@ -282,7 +283,9 @@ sealed class StatusContext : ApplicationContext
 
     void Clicked()
     {
-        if (pinned) { HidePanel(); return; }
+        // A panel the user has clicked into counts as pinned: the click puts it away. (Activatable says
+        // so; the foreground window does not, the click has just made the strip the foreground.)
+        if (pinned || (panelForm.Visible && panelForm.Activatable)) { HidePanel(); awaitLeave = true; return; }
         pinned = true;
         OpenPanel(true);
     }
@@ -726,7 +729,7 @@ sealed class StatusContext : ApplicationContext
                     if (account.Week >= 0) Bar(g, bx, barTop, thin, barHeight, account.Week, ink);
                     float lx = x + (column - labelWidth) / 2;
                     g.DrawString(account.Machines, tiny, softBrush, lx, labelTop, StringFormat.GenericTypographic);
-                    if (plus.Length > 0) using (var green = new SolidBrush(Green)) g.DrawString(plus, tiny, green, lx + lettersWidth, labelTop, StringFormat.GenericTypographic);
+                    if (plus.Length > 0) using (var green = new SolidBrush(light ? Color.FromArgb(4, 120, 87) : Green)) g.DrawString(plus, tiny, green, lx + lettersWidth, labelTop, StringFormat.GenericTypographic);
                     x += column;
                     // The reset that matters, as in the menu bar: the most used 5-hour limit, or the
                     // week of that account when it is used up too; without 5-hour limits the most used week.
@@ -789,7 +792,11 @@ sealed class StatusContext : ApplicationContext
 
     // --- helper -----------------------------------------------------------
 
-    /** The helper serves the panel on loopback; it is started here and restarted if it stops. */
+    /**
+     * The helper serves the panel on loopback; it is started here and restarted if it stops.
+     * It is told this program's process ID and leaves when the program is gone, also when the
+     * program was stopped rather than closed: otherwise every restart would leave one behind.
+     */
     void KeepHelper()
     {
         try
@@ -798,7 +805,7 @@ sealed class StatusContext : ApplicationContext
             string python = "python";
             string named = Path.Combine(dir, "python");
             if (File.Exists(named)) python = File.ReadAllText(named).Trim();
-            var start = new ProcessStartInfo(python, "-X utf8 \"" + Path.Combine(dir, "server.py") + "\" " + port);
+            var start = new ProcessStartInfo(python, "-X utf8 \"" + Path.Combine(dir, "server.py") + "\" " + port + " " + Process.GetCurrentProcess().Id);
             start.UseShellExecute = false;
             start.CreateNoWindow = true;
             start.WorkingDirectory = dir;
@@ -889,8 +896,16 @@ sealed class StatusContext : ApplicationContext
         if (!panelForm.Visible) panelForm.Show();
         Native.SetWindowPos(panelForm.Handle, Native.Topmost, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
         if (activate) { panelForm.AllowActivation(true); panelForm.Activate(); panelForm.View.Focus(); }
+        Tell("bbShown");
         stripDrawn = "";
         DrawStrip();
+    }
+
+    /** Calls one of the page's hooks (bbShown: load fresh data now; bbHidden: stop polling, drop the focus), as the macOS app does. */
+    void Tell(string hook)
+    {
+        if (!viewReady || !loaded) return;
+        try { panelForm.View.CoreWebView2.ExecuteScriptAsync("window." + hook + " && window." + hook + "()"); } catch (Exception) { }
     }
 
     /** The user clicked or typed in the panel: now it may have the keyboard, so a reply can be written. */
@@ -900,6 +915,7 @@ sealed class StatusContext : ApplicationContext
         panelForm.AllowActivation(true);
         panelForm.Activate();
         panelForm.View.Focus();
+        Tell("bbTaken");
         Trace("panel taken up by a click in it; has the keyboard=" + (Native.GetForegroundWindow() == panelForm.Handle));
     }
 
@@ -909,6 +925,7 @@ sealed class StatusContext : ApplicationContext
         pinned = false;
         insideSince = DateTime.MinValue;
         hiddenAt = DateTime.UtcNow;
+        Tell("bbHidden");
         if (panelForm.Visible) panelForm.Hide();
         panelForm.AllowActivation(false);
         stripDrawn = "";
@@ -971,9 +988,9 @@ sealed class StatusContext : ApplicationContext
             anchor = strip.Bounds;
             outsideSince = DateTime.MinValue;
             if (insideSince == DateTime.MinValue) insideSince = DateTime.UtcNow;
-            if (!wanted && (DateTime.UtcNow - insideSince).TotalMilliseconds >= OpenDelayMs) OpenPanel(false);
+            if (!wanted && !awaitLeave && (DateTime.UtcNow - insideSince).TotalMilliseconds >= OpenDelayMs) OpenPanel(false);
         }
-        else insideSince = DateTime.MinValue;
+        else { insideSince = DateTime.MinValue; awaitLeave = false; }
 
         if (!wanted || !panelForm.Visible) return;
         if (pinned || onStrip) return;

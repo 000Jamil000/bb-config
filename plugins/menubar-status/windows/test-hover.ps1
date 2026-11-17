@@ -2,8 +2,10 @@
 # about a minute, clicks inside the panel and on the strip, and puts the pointer back.
 #   1. three times: point at the strip -> the panel shows; move away -> it hides;
 #   2. cold start: restart the client and point at once -> the panel shows when loaded;
-#   3. a click inside the panel gives it the keyboard (a reply can be typed); two clicks
-#      on the strip pin and hide it.
+#   3. a click inside the panel gives it the keyboard (a reply can be typed) and a click on
+#      the strip then puts it away; a click on the strip pins the panel, the next hides it;
+#   4. speed and cost: how soon the panel shows and hides, what the program uses while
+#      nobody points at it, and that no helper of an earlier run is left behind.
 # While the pointer only points, the keyboard focus is sampled every 50 ms: neither the
 # panel nor the strip may have it at any moment. There must be exactly one panel window.
 # Each line ends in OK or FAIL; the exit code is the number of failures.
@@ -43,6 +45,11 @@ public static class HoverCheck {
       if (r.Right - r.Left > 60 && r.Bottom - r.Top <= 120) { best = r; any = true; } }
     strip = best; return any; }
   public static bool OwnsForeground(int process) { uint owner; GetWindowThreadProcessId(GetForegroundWindow(), out owner); return owner == process; }
+  // ms until the window is shown (or hidden), looked at every 5 ms; -1 when it did not happen in time.
+  public static long Wait(IntPtr window, bool shown, int limit) {
+    var watch = System.Diagnostics.Stopwatch.StartNew();
+    while (watch.ElapsedMilliseconds < limit) { if (IsWindowVisible(window) == shown) return watch.ElapsedMilliseconds; System.Threading.Thread.Sleep(5); }
+    return -1; }
   public static void Click() { mouse_event(0x0002, 0, 0, 0, UIntPtr.Zero); mouse_event(0x0004, 0, 0, 0, UIntPtr.Zero); }
 }
 '@
@@ -128,12 +135,37 @@ try {
     Report 'click inside: the panel has the keyboard' ([HoverCheck]::OwnsForeground((Client).Id))
     [void][HoverCheck]::SetCursorPos($away[0], $away[1]); Start-Sleep -Milliseconds 1500
     Report 'click inside: it stays while it has the keyboard' ((Shown).Count -eq 1)
-    # Two clicks on the strip: pin, then hide; the keyboard goes back to an ordinary window.
+    # A panel in use is put away by one click on the strip.
     [void][HoverCheck]::SetCursorPos($inside[0], $inside[1]); Start-Sleep -Milliseconds 300
-    [HoverCheck]::Click(); Start-Sleep -Milliseconds 500; [HoverCheck]::Click(); Start-Sleep -Milliseconds 300
+    [HoverCheck]::Click(); Start-Sleep -Milliseconds 400
     [void][HoverCheck]::SetCursorPos($away[0], $away[1]); Start-Sleep -Milliseconds 1200
-    Report 'strip clicks: the panel is hidden again' ((Shown).Count -eq 0)
+    Report 'strip click: a panel in use is put away' ((Shown).Count -eq 0)
+    # A click on the strip pins the panel: it stays when the pointer leaves; the next click hides it.
+    [void][HoverCheck]::SetCursorPos($inside[0], $inside[1]); Start-Sleep -Milliseconds 300
+    [HoverCheck]::Click(); Start-Sleep -Milliseconds 500
+    [void][HoverCheck]::SetCursorPos($away[0], $away[1]); Start-Sleep -Milliseconds 1500
+    Report 'strip click: the panel is pinned and stays' ((Shown).Count -eq 1)
+    [void][HoverCheck]::SetCursorPos($inside[0], $inside[1]); Start-Sleep -Milliseconds 300
+    [HoverCheck]::Click(); Start-Sleep -Milliseconds 400
+    [void][HoverCheck]::SetCursorPos($away[0], $away[1]); Start-Sleep -Milliseconds 1200
+    Report 'strip click: the next one hides it' ((Shown).Count -eq 0)
     Report 'end: the client does not hold the keyboard' (-not [HoverCheck]::OwnsForeground((Client).Id))
+    # Speed. The program waits 180 ms before showing and 450 ms before hiding, on purpose.
+    $window = (Panels)[0]
+    [void][HoverCheck]::SetCursorPos($inside[0], $inside[1]); $shows = [HoverCheck]::Wait($window, $true, 3000)
+    Start-Sleep -Milliseconds 500
+    [void][HoverCheck]::SetCursorPos($away[0], $away[1]); $hides = [HoverCheck]::Wait($window, $false, 3000)
+    Report 'speed: the panel shows within 0.6 s of pointing' ($shows -ge 0 -and $shows -le 600) "(${shows} ms)"
+    Report 'speed: it hides within 1 s of leaving' ($hides -ge 0 -and $hides -le 1000) "(${hides} ms)"
+    $client = Client; $used = $client.TotalProcessorTime.TotalMilliseconds; Start-Sleep -Seconds 5; $client.Refresh()
+    $load = [Math]::Round(($client.TotalProcessorTime.TotalMilliseconds - $used) / 50, 1)
+    Report 'cost: the program uses under 5 % of one core while idle' ($load -lt 5) "(${load} %)"
+    # Helpers: only those started by the running program (a Python launcher and the interpreter it starts count as one).
+    $helpers = @(Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains('bb-menubar\server.py') })
+    $ids = @($helpers | ForEach-Object { $_.ProcessId })
+    $stale = @($helpers | Where-Object { $_.ParentProcessId -ne $client.Id -and $ids -notcontains $_.ParentProcessId })
+    $mine = @($helpers | Where-Object { $_.ParentProcessId -eq $client.Id })
+    Report 'cost: one helper, none left from earlier runs' ($mine.Count -eq 1 -and $stale.Count -eq 0) ("started by the program=" + $mine.Count + ", left behind=" + $stale.Count)
 } finally {
     [void][HoverCheck]::SetCursorPos($cursor.X, $cursor.Y)
 }

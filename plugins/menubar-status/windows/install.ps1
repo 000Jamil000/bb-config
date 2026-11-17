@@ -27,6 +27,10 @@ $sdkUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/$sdkVer
 Get-Process -Name 'bb Status' -ErrorAction SilentlyContinue | Where-Object { $_.Path -eq $exe } | ForEach-Object {
     $_.Kill(); $_.WaitForExit(5000) | Out-Null
 }
+# Its helpers: one stayed behind whenever an earlier build of the program was stopped rather than closed.
+$served = Join-Path $dir 'server.py'
+Get-CimInstance Win32_Process -Filter "Name LIKE 'python%'" | Where-Object { $_.CommandLine -and $_.CommandLine.Contains($served) } |
+    ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 if ($Remove) {
     Remove-Item -LiteralPath $shortcut -ErrorAction SilentlyContinue
     Remove-Item -LiteralPath $exe -ErrorAction SilentlyContinue

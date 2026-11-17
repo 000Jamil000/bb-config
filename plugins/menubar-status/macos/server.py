@@ -120,7 +120,34 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(400, "{}")
 
 
+class Server(ThreadingHTTPServer):
+    # Windows gives a port taken with SO_REUSEADDR to a second process as well and
+    # splits the connections between the two: there, one helper per port.
+    allow_reuse_address = os.name != "nt"
+
+
+def leave_with(owner):
+    """Windows: ends this helper once the program that started it is gone, however it ended."""
+    import ctypes
+    import threading
+
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel.OpenProcess(0x00100000, False, owner)  # SYNCHRONIZE
+    if not handle:
+        os._exit(0)
+
+    def wait():
+        kernel.WaitForSingleObject(ctypes.c_void_p(handle), 0xFFFFFFFF)
+        os._exit(0)
+
+    threading.Thread(target=wait, daemon=True).start()
+
+
 if __name__ == "__main__":
+    # server.py [port [process ID of the Windows program that started it]]
     if len(sys.argv) > 1:
         PORT = int(sys.argv[1])
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    if len(sys.argv) > 2 and os.name == "nt":
+        leave_with(int(sys.argv[2]))
+    Server(("127.0.0.1", PORT), Handler).serve_forever()

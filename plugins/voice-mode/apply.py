@@ -12,6 +12,23 @@ HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
 
 
+def verify_fork(plugin):
+    policy_file = HERE / 'fork.json'
+    if not policy_file.exists():
+        return False
+    policy = json.loads(policy_file.read_text())
+    prefix = 'git:' + policy['repository'] + '@'
+    if not plugin['source'].startswith(prefix):
+        return False
+    if policy['commit'] not in plugin['source'] or plugin['version'] != policy['version']:
+        raise RuntimeError('Voice Mode fork differs from the reviewed pin; update fork.json after review.')
+    root = Path(plugin['rootDir'])
+    for name, expected in policy['files'].items():
+        if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
+            raise RuntimeError('Voice Mode fork source verification failed: ' + name)
+    return True
+
+
 def prepare(root, spec):
     if json.loads((root / 'package.json').read_text())['version'] != spec['version']:
         raise RuntimeError('Unsupported Voice Mode version; review changes.json before applying.')
@@ -51,15 +68,21 @@ def restore_speech_settings():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--apply', action='store_true', help='Patch, build and reload the installed plugin')
+    parser.add_argument('--check', action='store_true', help='Fail if the reviewed patch is not fully installed')
     args = parser.parse_args()
     inventory = json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json']))['plugins']
     plugin = next(p for p in inventory if p['id'] == 'voice-mode')
+    if verify_fork(plugin):
+        print('Reviewed Voice Mode fork is installed; source patches are already included.')
+        return
     if not plugin['source'].startswith('git:https://github.com/steveafrost/bb-plugin-voice-mode.git@'):
         raise RuntimeError('Expected the original managed catalog installation.')
     root = Path(plugin['rootDir'])
     spec = json.loads((HERE / 'changes.json').read_text())
     changed = prepare(root, spec)
     print('Files needing changes:', ', '.join(changed) or 'none (already applied)', flush=True)
+    if args.check:
+        raise SystemExit(1 if changed else 0)
     if not args.apply:
         return
     if not changed:

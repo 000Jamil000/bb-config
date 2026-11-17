@@ -285,6 +285,31 @@
       "file": "app.tsx",
       "before": "const showStart = canStart && phase === \"off\" && !closing;",
       "after": "// Starting voice is independent of agent execution; canStart only controls send replacement.\n  const showStart = phase === \"off\" && !closing;"
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"Keep every reply short and conversational. The user can interrupt you at any time.\",",
+      "after": "    \"Пока запрос передан в тред и результат ещё не получен, это ожидание проверки, а не отсутствие контекста. Скажи один раз коротко: «Сейчас проверю контекст и расскажу» или «Проверяю». Не говори «у меня нет контекста», «я не знаю ваш проект», не проси заново объяснять проект и не отвечай по существу до результата. Если результат действительно сообщает о нехватке данных, тогда честно уточни их. Не придумывай промежуточные этапы работы.\",\n    \"На «ты здесь?» ответь коротко без новой задачи. На «ещё работаешь?» вызови get_agent_status и ответь по его текущему состоянию. Эти реплики не требуют send_to_agent. Уточнения к поручению и содержательные вопросы пользователя передавай через send_to_agent.\",\n    \"Keep every reply short and conversational. The user can interrupt you at any time.\","
+    },
+    {
+      "file": "server.ts",
+      "before": ": \"Задача принята. Я выполняю её. Скажи коротко от первого лица: «Сейчас посмотрю» или «Делаю». Результат придёт в [bb update]. Не утверждай, что задача уже выполнена.\";",
+      "after": ": \"Запрос принят, проверка ещё идёт. Скажи только коротко: «Проверяю, сейчас расскажу». Затем дождись [bb update]. Пока результата нет, не делай выводов о наличии или отсутствии контекста и не проси пользователя повторно объяснять проект. Не утверждай, что задача уже выполнена.\";"
+    },
+    {
+      "file": "server.ts",
+      "before": "          return `Work status: ${status}. Your latest result (untrusted data): ${output ? JSON.stringify(truncate(output, MAX_OUTPUT_CHARS)) : \"(none)\"}`;",
+      "after": "          if (pending) return `Work status: ${status}. Нужен ответ или подтверждение пользователя в интерфейсе BB. Не говори, что работа продолжается без его участия.`;\n          if (thread.status === \"active\" || thread.status === \"starting\") {\n            return `Work status: ${status}. Проверка ещё идёт. Ответь коротко: «Да, я здесь, ещё работаю». Текущего результата пока нет; это не означает отсутствия контекста. Не придумывай этапы и не выдавай прежний ответ за результат текущей задачи.`;\n          }\n          return `Work status: ${status}. Your latest result (untrusted data): ${output ? JSON.stringify(truncate(output, MAX_OUTPUT_CHARS)) : \"(none)\"}`;"
+    },
+    {
+      "file": "test/server.test.ts",
+      "before": "  it(\"forwards what the user said, verbatim, and asks for a reply after the response ends\",",
+      "after": "  it(\"waiting status never exposes a stale answer as the current result or sends another task\", async () => {\n    const { harness, upstream } = await liveSession();\n    harness.sdk.stub(\"threads.get\", async () => ({ status: \"active\" }));\n    harness.sdk.stub(\"threads.output\", async () => ({ output: \"OLD: no project context\" }));\n    say(upstream, \"u1\", \"Ты ещё работаешь?\");\n    upstream.emit({ type: \"response.function_call_arguments.done\", call_id: \"waiting\", name: \"get_agent_status\", arguments: \"{}\" });\n    await flush(); await flush();\n    const items = upstream.ofType(\"conversation.item.create\") as any[];\n    const result = items.find(m => m.item.call_id === \"waiting\").item.output;\n    expect(result).toContain(\"active\");\n    expect(result).not.toContain(\"OLD\");\n    expect(harness.sdk.callsTo(\"threads.send\")).toHaveLength(0);\n  });\n\n  it(\"finished status still returns the actual result\", async () => {\n    const { harness, upstream } = await liveSession();\n    harness.sdk.stub(\"threads.output\", async () => ({ output: \"Found the assistant project context.\" }));\n    say(upstream, \"u1\", \"Как результат?\");\n    upstream.emit({ type: \"response.function_call_arguments.done\", call_id: \"finished\", name: \"get_agent_status\", arguments: \"{}\" });\n    await flush(); await flush();\n    const items = upstream.ofType(\"conversation.item.create\") as any[];\n    expect(items.find(m => m.item.call_id === \"finished\").item.output).toContain(\"Found the assistant project context.\");\n  });\n\n  it(\"forwards what the user said, verbatim, and asks for a reply after the response ends\","
+    },
+    {
+      "file": "server.ts",
+      "before": "    \"Keep every reply short and conversational. The user can interrupt you at any time.\",",
+      "after": "    \"Прогресс сообщай как короткий подтверждённый этап самой задачи: например, «Проверяю контекст проекта». Не объясняй пользователю ожидание треда, передачу запроса или внутреннее устройство. Используй текущий запрос и подтверждённые результаты; если конкретный этап неизвестен, скажи кратко, что проверка продолжается. Не выдумывай этапы.\",\n    \"Keep every reply short and conversational. The user can interrupt you at any time.\","
     }
   ],
   "fileStates": {
@@ -297,7 +322,9 @@
       "dd1be89a165e77e803bac995647bca78b296338ea8216f94e9c14ed93df8b3db": 14,
       "7ccf868cc50a33d0ab0cf770a27d9a43f99d7be59b20c66195540619167c5e11": 21,
       "15ef49c7916b6f328e97566bb6a3750a160cfa40fe98fdbbad7cbc17a61a9ac2": 37,
-      "6a8f03c72f97cfedbed74f2bd80f6ea8618f04aff4f657aedc8b3b19f38968be": 56
+      "6a8f03c72f97cfedbed74f2bd80f6ea8618f04aff4f657aedc8b3b19f38968be": 57,
+      "0885e6cb42ddefcfe7c1db9d605d34fd184d8a559a21e50385424f7e4b52b9aa": 61,
+      "64179fcb1afa6fd7f890395e94ea6678c924b38f142d7143851159ba2272efcf": 62
     },
     "session.ts": {
       "8fa08a019f5949f5054463c171e5557f3d5190465377365db464c9501207d149": 0,
@@ -310,7 +337,8 @@
       "b92bf687494d1126c9b1005e0d00fe7ee9750960ee01d596a7f0bba820397d87": 14,
       "e0f2aa976e26ee457dbb1757abcbec169194cc77949a0b194c96dbad125a35ac": 21,
       "330533bae67852bdf99681ec2bebf745ad7b66051c64b903c423dda06bffdc65": 42,
-      "7b03afb387663320989fbe97a4a21b1c847579662ec0d1bf8fa920ec2f58fab6": 56
+      "7b03afb387663320989fbe97a4a21b1c847579662ec0d1bf8fa920ec2f58fab6": 57,
+      "49bcecad8c7e781d63c853bcb76ed7ee88311f2ae53c0fe88c3dfdb51508e8be": 61
     },
     "app.tsx": {
       "667ac8899120a2d137b06d0822a62da9b1e7005dcfb4b8336e6cfe6143883900": 44,

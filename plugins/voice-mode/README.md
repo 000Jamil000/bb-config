@@ -93,3 +93,32 @@ The thread Voice Mode start action is available while the coding agent runs,
 and while a text draft is present. The voice session starts separately; the
 native send/stop replacement still requires the original empty-and-idle
 condition, so starting voice never hides an active task's Stop control.
+
+Waiting behavior: after a successful request the voice acknowledges briefly and
+waits for the thread result; it must not equate a pending result with missing
+project context. Presence questions stay local, status questions use the existing
+status tool. Active/starting status no longer includes the previous task's output,
+which could incorrectly sound like the answer to the current question. A pending
+UI interaction is reported separately. Finished results still retain uncertainty.
+This changes existing instructions/status replies, not routing or transcript storage.
+Verify installation with `python3 plugins/voice-mode/apply.py --check`.
+Backend tests cover stale output exclusion and finished result delivery; actual
+spoken phrasing remains model-dependent and requires a live voice acceptance check.
+
+## Reviewed fork
+
+The personal edition is now published at
+https://github.com/ainurminibaev/bb-plugin-voice-mode/tree/personal-assistant.
+`fork.json` pins its reviewed commit, version and source hashes. The shared fix
+is proposed upstream in https://github.com/steveafrost/bb-plugin-voice-mode/pull/7.
+The legacy patch remains for catalog recovery; it is not applied to the fork.
+`auto_update.py` verifies the pinned fork without editing it; unexpected fork
+commits or modified source require a review and a new policy.
+
+Migration: `python3 plugins/voice-mode/switch_to_fork.py --apply`, then `--check`.
+BB cannot replace one managed Git source with another in place, so the migration
+uses remove/install only after verifying that no Voice Mode secret is configured.
+It preserves nonsecret preferences and enabled state, does not touch connection
+plugins or their credentials, and records a private recovery journal. If a secret
+is configured it refuses before removal. This is intentionally not a universal
+credential migration. Reloading/reinstalling ends any live voice session.

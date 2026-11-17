@@ -1458,3 +1458,51 @@ The current `scripts/restore.py` restores only `automatic`/`off` AI selections.
 For a saved explicit service, after restoring the corresponding installed provider,
 repeat the `set voice` command above and verify readiness. Do not assume the
 private JSON alone reapplies it. No plugin source or credential changes are needed.
+
+## Voice Mode: waiting for thread context
+
+Keeper 0.2.1 carries a narrow Voice Mode instruction/status fix. While a task is
+pending, the voice acknowledges the check and waits instead of claiming missing
+context. Active/starting status excludes the previous task's answer; UI questions
+and completed results remain distinct. No new plugin, storage or transcript UI.
+Sources: `plugins/voice-mode/changes.json`; usage and constraints are in that
+folder's README and the keeper skill. Apply through `auto_update.py`, which tests
+and builds in staging before reloading Voice Mode. A reload ends an active voice
+session. Verify with `python3 plugins/voice-mode/apply.py --check`; snapshot settings
+with `--settings-only`. Restore by reinstalling the keeper and applying the reviewed
+patch; automatic catalog-update compatibility checks stay in place. Backend
+regressions verify stale-result exclusion and completed-result delivery. A live
+conversation is still required to validate model phrasing. To revert, restore the
+previous patch specification and its matching source backup using the existing
+patch recovery process, or disable the keeper and reinstall catalog Voice Mode.
+
+## Voice Mode personal fork and upstream contribution
+
+Personal source: https://github.com/ainurminibaev/bb-plugin-voice-mode,
+branch `personal-assistant`, version `0.2.0-personal.1`, reviewed commit
+`7ca6eba900ad372c94ffa1468b30998b79d39522`. This contains the existing Russian
+speech, mobile launch, readiness greetings, noise controls and waiting/status
+edits. No extra transcript storage or UI was added. Generic waiting/status behavior
+is submitted separately in https://github.com/steveafrost/bb-plugin-voice-mode/pull/7.
+The PR's 47 tests and the fork's 53 tests, type checks and builds passed.
+
+`config/plugins.json` now selects the pinned fork for restoration. Keeper 0.2.2
+verifies the pin and file hashes in `plugins/voice-mode/fork.json`, without applying
+catalog patches again; its protection of other plugins remains enabled. Source
+edits remain reproducible in `changes.json`; full source is in the fork. Updates
+require reviewing a new fork commit and updating the pin/hashes together.
+
+Existing installation migration: `python3 plugins/voice-mode/switch_to_fork.py
+--apply`, then `--check`. BB's managed-source replacement requires remove/install.
+The script refuses before removal if a Voice Mode secret is configured, retains
+nonsecret settings and enabled state, and leaves authentication in connection
+plugins untouched. Recovery data are ignored under `.local/plugin-patches/voice-mode`.
+If installation fails before registration, it reinstalls the original source;
+if a new plugin was registered before another failure, inspect it and the journal
+rather than removing it blindly. Restore preferences through `bb plugin config`.
+Rollback uses the same credential check, removes the fork, installs the original
+catalog source, restores preferences, and lets Keeper reapply the legacy patch.
+Never silently discard configured credentials. Both paths end active voice sessions.
+
+No stable release was published by this change. Pending release steps distinguish
+keeper verification, fork migration and waiting-policy verification.

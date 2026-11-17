@@ -6,6 +6,7 @@ import unittest
 from unittest.mock import patch
 
 import auto_update as updater
+import switch_to_fork as migration
 
 
 class UpdateTests(unittest.TestCase):
@@ -40,6 +41,32 @@ class UpdateTests(unittest.TestCase):
             dist = Path(command[3]) / 'dist'
             dist.mkdir()
             (dist / 'server.js').write_text('validated bundle')
+
+    def test_fork_migration_refuses_configured_secrets_before_removal(self):
+        settings = {'schema': {'openaiApiKey': {'secret': True}},
+                    'values': {'openaiApiKey': {'set': True}}}
+        with patch.object(migration, 'installed', return_value=self.plugin), \
+             patch.object(migration.patcher, 'verify_fork', return_value=False), \
+             patch.object(migration, 'cli', return_value=settings), \
+             patch.object(migration.subprocess, 'run') as run, \
+             patch('sys.argv', ['switch_to_fork.py', '--apply']):
+            with self.assertRaises(SystemExit):
+                migration.main()
+            run.assert_not_called()
+
+    def test_reviewed_fork_is_verified_without_applying_catalog_edits(self):
+        policy = {'repository': 'https://github.com/example/voice.git', 'commit': 'abc123',
+                  'version': '0.1.16', 'files': {'server.ts': hashlib.sha256(b'original\n').hexdigest()}}
+        (updater.patcher.HERE / 'fork.json').write_text(json.dumps(policy))
+        fork = {**self.plugin, 'source': 'git:' + policy['repository'] + '@abc123'}
+        with patch.object(updater, 'inventory', return_value=fork), patch.object(updater, 'run') as run:
+            self.assertEqual(updater.sync()['state'], 'ready')
+            run.assert_not_called()
+            self.assertEqual((self.root / 'server.ts').read_text(), 'original\n')
+            (self.root / 'server.ts').write_text('modified')
+            with self.assertRaises(RuntimeError):
+                updater.sync()
+            run.assert_not_called()
 
     def test_compatible_update_is_staged_and_next_check_is_a_no_op(self):
         with patch.object(updater, 'inventory', return_value=self.plugin), patch.object(updater, 'run', side_effect=self.validate) as run:

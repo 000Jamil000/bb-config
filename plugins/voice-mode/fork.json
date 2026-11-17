@@ -1,0 +1,17 @@
+{
+  "repository": "https://github.com/ainurminibaev/bb-plugin-voice-mode.git",
+  "commit": "7ca6eba900ad372c94ffa1468b30998b79d39522",
+  "version": "0.2.0-personal.1",
+  "upstreamPullRequest": "https://github.com/steveafrost/bb-plugin-voice-mode/pull/7",
+  "files": {
+    "app.css": "1f36416a09cd7b967b4b165cf0dd15bda269267d615858d023b4950f0e89d90c",
+    "server.ts": "64179fcb1afa6fd7f890395e94ea6678c924b38f142d7143851159ba2272efcf",
+    "session.ts": "0c4de57fe38c3b21650cbbe1b1e04d925a2959cc473b80e51b0dd71035f778ad",
+    "test/server.test.ts": "49bcecad8c7e781d63c853bcb76ed7ee88311f2ae53c0fe88c3dfdb51508e8be",
+    "app.tsx": "b5a64e94476e453835cf279f55ca6efb12259979a51b23a83c0df3ae08cf38fc",
+    "compact-hosts.ts": "382c22e19cac1b563b4187d668c0447e54ef4599ad088856458390b53824d3da",
+    "test/compact-hosts.test.ts": "0b752d8a5feafda131796c537ca9083fee116163e0f56a67fa308bbf19c64b59",
+    "package.json": "a14b3dfb9907acbb71005bb73123106148f8b977f3402ad95ace43e2213ca3da",
+    "skills/voice-mode/SKILL.md": "09ab1cd1dd0051b9184c959f99cb72184c5ce86ea993d6266f18edf30cd503d2"
+  }
+}

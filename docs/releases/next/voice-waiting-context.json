@@ -1,0 +1,27 @@
+{
+  "id": "voice-waiting-context",
+  "title": "Voice Mode: корректное ожидание контекста треда",
+  "component": "voice-mode",
+  "where": "server",
+  "kind": "command",
+  "applies": [
+    "{python}",
+    "scripts/updates.py",
+    "require-plugin",
+    "voice-mode"
+  ],
+  "apply": [
+    "{python}",
+    "plugins/voice-mode/auto_update.py"
+  ],
+  "verify": [
+    "{python}",
+    "plugins/voice-mode/apply.py",
+    "--check"
+  ],
+  "rerun": "Повтор проверяет уже применённые правки; повторная отправка задач не выполняется.",
+  "rollback": "Вернуть прежние changes.json и резервную копию исходников через механизм восстановления патча; либо выключить keeper и переустановить каталоговый Voice Mode.",
+  "after": [
+    "next/voice-mode-personal-fork"
+  ]
+}

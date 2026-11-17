@@ -118,6 +118,8 @@ def sync():
     plugin = inventory()
     if not plugin or not plugin['enabled']:
         return {'state': 'idle', 'message': 'Voice Mode выключен или не установлен.', 'version': ''}
+    if patcher.verify_fork(plugin):
+        return {'state': 'ready', 'message': 'Проверенный форк Voice Mode: правки встроены, повторный патч не нужен.', 'version': plugin['version']}
     if not plugin['source'].startswith('git:https://github.com/steveafrost/bb-plugin-voice-mode.git@'):
         raise ValueError('Voice Mode no longer uses the original catalog source')
     root = Path(plugin['rootDir'])

@@ -1,0 +1,28 @@
+{
+  "name": "bb-plugin-browser-page",
+  "version": "0.1.0",
+  "type": "module",
+  "engines": {
+    "bb": ">=0.49",
+    "bbPluginSdk": ">=0.6.132"
+  },
+  "bb": {
+    "name": "Browser Page",
+    "description": "A skill and a small helper that let agents open, read, click and screenshot a tab of bb's built-in browser on hosts where Browser Automation has no runtime (Windows).",
+    "branding": {
+      "icon": "Globe"
+    },
+    "server": "./server.ts",
+    "skills": [
+      "skills"
+    ]
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "0.6.132",
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  }
+}

@@ -118,6 +118,19 @@ class RestoreTests(unittest.TestCase):
             commands = restore.plan()
         self.assertIn(['bb', 'settings', 'general', 'managedBranchPrefix', dangerous_text], commands)
 
+    def test_voice_fork_survives_stale_catalog_metadata(self):
+        policy = json.loads((restore.ROOT / 'plugins/voice-mode/fork.json').read_text())
+        target = 'git:' + policy['repository'] + '@' + policy['range']
+        public = json.loads((restore.ROOT / 'config/plugins.json').read_text())
+        voice = next(p for p in public if p['id'] == 'voice-mode')
+        self.assertEqual(restore.install_source(voice), target)
+        stale = dict(voice, installSource='voice-mode@bb-community')
+        self.assertEqual(restore.install_source(stale), target)
+        metadata = dict(voice, catalogEntryId='voice-mode', catalogMarketplaceName='bb-community')
+        self.assertNotIn('installSource', snapshot.plugin_record(metadata))
+        metadata['source'] = 'git:https://example.org/upstream.git@^1.0'
+        self.assertEqual(snapshot.plugin_record(metadata)['installSource'], stale['installSource'])
+
     def test_internal_semver_source_is_converted_for_cli(self):
         self.assertEqual(restore.install_source({'source': 'git:https://example.org/p.git@semver:^1.0'}),
                          'git:https://example.org/p.git@^1.0')

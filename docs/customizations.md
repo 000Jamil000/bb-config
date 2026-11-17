@@ -1521,6 +1521,11 @@ Keeper 0.2.3 skips source patching for the fork release channel without checking
 fixed commit/file hashes, and continues protecting the other catalog plugins.
 `fork.json` retains the old pin solely as an allowed migration origin.
 
+A fresh restore installs the fork directly from its Git release channel.
+Older private snapshots can contain both the fork source and a catalog alias.
+Restore uses the recorded fork in that case. An update checks existing Voice
+Mode installations and skips installations where Voice Mode is absent.
+
 Migration from the original catalog or the old fork pin:
 `python3 plugins/voice-mode/switch_to_fork.py --apply`, then `--check`.
 BB's managed-source replacement requires remove/install. The script refuses before

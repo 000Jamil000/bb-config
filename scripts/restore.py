@@ -2,6 +2,7 @@
 """Preview restoration; --plugins --apply installs plugins and restores preferences."""
 import argparse
 import json
+from voice_source import is_voice_fork
 from pathlib import Path
 import shlex
 import subprocess
@@ -36,7 +37,7 @@ def value(data):
 def install_source(plugin):
     if plugin['source'].startswith(('builtin:', 'path:')):
         return plugin['source']
-    if plugin.get('installSource'):
+    if plugin.get('installSource') and not is_voice_fork(plugin):
         return plugin['installSource']
     # BB records a normalized internal range; the install CLI takes @<range>.
     return plugin['source'].replace('@semver:', '@')

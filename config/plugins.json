@@ -433,8 +433,7 @@
     "version": "0.2.0",
     "enabled": true,
     "name": "Voice Mode",
-    "source": "git:https://github.com/ainurminibaev/bb-plugin-voice-mode.git@semver:^0.2.0",
-    "installSource": "voice-mode@bb-community"
+    "source": "git:https://github.com/ainurminibaev/bb-plugin-voice-mode.git@semver:^0.2.0"
   },
   {
     "id": "voice-mode-keeper",

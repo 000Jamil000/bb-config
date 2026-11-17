@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { delimiter, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { setTimeout as delay } from "node:timers/promises";
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
@@ -19,6 +19,33 @@ const KEPT_PLUGINS = ["inbox", "tokenomics", "kodaforge"];
 /** Recheck kept fixes this often even without an update (cheap when in place). */
 const KEPT_RECHECK_MS = 10 * 60_000;
 
+const WINDOWS = process.platform === "win32";
+/** Set from the plugin setting before each run; empty means the default interpreter name. */
+const runtime = { python: "" };
+
+/**
+ * Starts a Python worker with the bb CLI first on PATH. Elsewhere it leads its
+ * own process group. Windows has no `python3` unless one was put on PATH, reads
+ * files in the ANSI code page without UTF-8 mode, and gives every child of a
+ * console-less process its own window, so there the worker gets one hidden
+ * console that its children share.
+ */
+function startWorker(args: string[], cliPath: string, env: NodeJS.ProcessEnv) {
+  return spawn(runtime.python || (WINDOWS ? "python" : "python3"), [...(WINDOWS ? ["-X", "utf8"] : []), ...args], {
+    detached: !WINDOWS, windowsHide: true, stdio: ["ignore", "pipe", "ignore"],
+    env: { ...process.env, ...env, BB_CLI: cliPath, PATH: `${dirname(cliPath)}${delimiter}${process.env.PATH ?? ""}` },
+  });
+}
+
+/** Stops the worker with everything it started: its process group, or its process tree on Windows. */
+function stopWorker(pid: number | undefined, signal: NodeJS.Signals) {
+  if (!pid) return;
+  try {
+    if (WINDOWS) spawn("taskkill", ["/pid", String(pid), "/T", "/F"], { windowsHide: true, stdio: "ignore" });
+    else process.kill(-pid, signal);
+  } catch { /* already exited */ }
+}
+
 function workerPath() {
   const directory = dirname(fileURLToPath(import.meta.url));
   const paths = [resolve(directory, "../voice-mode/auto_update.py"), resolve(directory, "../../voice-mode/auto_update.py")];
@@ -32,12 +59,9 @@ async function runPatchKeeper(cliPath: string, serverUrl: string, signal: AbortS
   const script = resolve(dirname(fileURLToPath(import.meta.url)), "../patch_keeper.py");
   const path = existsSync(script) ? script : resolve(dirname(fileURLToPath(import.meta.url)), "patch_keeper.py");
   return new Promise((resolveResult, reject) => {
-    const child = spawn("python3", [path], {
-      detached: true, stdio: ["ignore", "pipe", "ignore"],
-      env: { ...process.env, BB_CLI: cliPath, BB_SERVER_URL: serverUrl, PATH: `${dirname(cliPath)}:${process.env.PATH ?? ""}` },
-    });
+    const child = startWorker([path], cliPath, { BB_SERVER_URL: serverUrl });
     let output = "";
-    const stop = () => { try { if (child.pid) process.kill(-child.pid, "SIGTERM"); } catch { /* exited */ } };
+    const stop = () => stopWorker(child.pid, "SIGTERM");
     const timeout = setTimeout(stop, 300_000);
     signal.addEventListener("abort", stop, { once: true });
     child.stdout.on("data", (chunk: Buffer) => { output = (output + chunk.toString()).slice(-65_536); });
@@ -56,19 +80,16 @@ async function runPatchKeeper(cliPath: string, serverUrl: string, signal: AbortS
 
 async function runWorker(script: string, cliPath: string, serverUrl: string, signal: AbortSignal, snapshot = false): Promise<KeeperStatus> {
   return new Promise((resolveResult, reject) => {
-    const child = spawn("python3", [script, ...(snapshot ? ["--snapshot"] : [])], {
-      detached: true, stdio: ["ignore", "pipe", "ignore"],
-      // The CLI otherwise targets the default port, which on a machine with a
-      // second BB (or one on another port) is a different server.
-      env: { ...process.env, BB_CLI: cliPath, BB_SERVER_URL: serverUrl, VOICE_KEEPER_NODE: process.execPath,
-        PATH: `${dirname(cliPath)}:${process.env.PATH ?? ""}` },
-    });
+    // The CLI otherwise targets the default port, which on a machine with a
+    // second BB (or one on another port) is a different server.
+    const child = startWorker([script, ...(snapshot ? ["--snapshot"] : [])], cliPath,
+      { BB_SERVER_URL: serverUrl, VOICE_KEEPER_NODE: process.execPath });
     let output = "";
     let killTimer: ReturnType<typeof setTimeout> | undefined;
     const terminate = () => {
       if (!child.pid) return;
-      try { process.kill(-child.pid, "SIGTERM"); } catch { /* already exited */ }
-      killTimer = setTimeout(() => { try { process.kill(-child.pid!, "SIGKILL"); } catch { /* exited */ } }, 2000);
+      stopWorker(child.pid, "SIGTERM");
+      killTimer = setTimeout(() => stopWorker(child.pid, "SIGKILL"), 2000);
     };
     const timeout = setTimeout(terminate, 180_000);
     signal.addEventListener("abort", terminate, { once: true });
@@ -90,6 +111,8 @@ export default async function keeper(bb: BbPluginApi) {
   const settings = bb.settings.define({
     cliPath: { type: "string", label: "BB CLI executable", default: process.env.BB_CLI ?? "",
       description: "Absolute path to the official bb CLI on this server; set during installation." },
+    pythonPath: { type: "string", label: "Python interpreter (3.11+)", default: "",
+      description: "Runs the keeper scripts. Empty: python3 from the server's PATH (python on Windows). On Windows give the full path when python on PATH is the Microsoft Store stub." },
   });
   let status = (await bb.storage.kv.get<KeeperStatus>("status")) ?? INITIAL;
   let observed = "";
@@ -121,7 +144,8 @@ export default async function keeper(bb: BbPluginApi) {
             const jobs = await bb.sdk.plugins.experimental_updateJobs.list();
             const busy = jobs.some((job) => job.pluginId === "voice-mode" && (job.state === "queued" || job.state === "running"));
             if (!busy) {
-              const { cliPath } = await settings.get();
+              const { cliPath, pythonPath } = await settings.get();
+              runtime.python = pythonPath.trim();
               if (!cliPath || !existsSync(cliPath)) throw new Error("BB CLI executable unavailable");
               const signature = `${plugin.rootDir}|${plugin.version}|${plugin.app?.bundle?.hash ?? ""}|${policy}|${cliPath}`;
               if (signature !== observed) {
@@ -167,7 +191,8 @@ export default async function keeper(bb: BbPluginApi) {
           const busy = jobs.some((job) => KEPT_PLUGINS.includes(job.pluginId) && (job.state === "queued" || job.state === "running"));
           const signature = plugins.filter((p) => KEPT_PLUGINS.includes(p.id))
             .map((p) => `${p.id}|${p.enabled}|${p.rootDir}|${p.version}|${p.app?.bundle?.hash ?? ""}`).join(";");
-          const { cliPath } = await settings.get();
+          const { cliPath, pythonPath } = await settings.get();
+          runtime.python = pythonPath.trim();
           if (!busy && cliPath && existsSync(cliPath)
             && (signature !== keptObserved || Date.now() - keptCheckedAt > KEPT_RECHECK_MS)) {
             const rows = await runPatchKeeper(cliPath, bb.server.loopbackBaseUrl, signal);

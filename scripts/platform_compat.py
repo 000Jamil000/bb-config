@@ -11,6 +11,7 @@ Three things differ on Windows and each broke a script that was written on Linux
 import functools
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
@@ -52,10 +53,24 @@ def _bb_command():
     """argv prefix that runs the bb CLI on Windows, and extra environment for it."""
     script = os.environ.get('BB_CLI')
     if not script or not Path(script).is_file():
-        launcher = shutil.which('bb')
-        if not launcher:
+        script = shutil.which('bb')
+        if not script:
             raise FileNotFoundError('bb was not found on PATH and BB_CLI is not set')
-        script = str(Path(launcher).with_suffix('')) if launcher.lower().endswith(('.cmd', '.bat')) else launcher
+    if script.lower().endswith(('.cmd', '.bat')):
+        text = Path(script).read_text(encoding='utf-8', errors='replace')
+        entry = re.search(r'^"[^"\r\n]+\.exe"\s+"([^"\r\n]+)"\s+%\*', text, re.MULTILINE)
+        if 'Written by bb:' in text and entry:
+            # The desktop app's own launcher (<data dir>\bin\bb.cmd, which is
+            # what an automation gets): `"<bb.exe>" "<app>\dist\bb.js" %*`.
+            script = entry.group(1)
+        else:
+            # The host daemon's launcher only runs `node <the script next to it>`.
+            script = str(Path(script).with_suffix(''))
+    # <app>/dist/bb.js is an Electron launcher; the Node CLI is in
+    # host-daemon/dist (the same choice server_backup.Cli makes).
+    native = Path(script).resolve().parent.parent / 'host-daemon/dist/bb'
+    if native.is_file():
+        script = str(native)
     if script.lower().endswith('.exe'):
         return (script,), {}
     node = shutil.which('node')

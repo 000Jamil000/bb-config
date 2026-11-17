@@ -73,11 +73,13 @@ export const runtime = { python: "" };
 
 /**
  * scripts/updates.py under Python. Windows has no `python3` unless one was put
- * on PATH, so the interpreter can be named in the settings. UTF-8 mode: the
- * repository files are UTF-8, the Windows default is the ANSI code page.
+ * on PATH, so the interpreter can be named in the settings. UTF-8 mode there:
+ * the repository files are UTF-8, the Windows default is the ANSI code page.
+ * The console window of the child stays hidden.
  */
 function updates(root: string, args: string[], options: { timeout: number; env?: NodeJS.ProcessEnv }) {
-  return run(runtime.python || (WINDOWS ? "python" : "python3"), ["-X", "utf8", resolve(root, "scripts/updates.py"), ...args], options);
+  return run(runtime.python || (WINDOWS ? "python" : "python3"), [...(WINDOWS ? ["-X", "utf8"] : []), resolve(root, "scripts/updates.py"), ...args],
+    { ...options, windowsHide: true });
 }
 
 /** Same directory however it is written: Windows ignores case and accepts both slashes. */
@@ -107,7 +109,7 @@ async function github(path: string, accept: string): Promise<Response> {
 export const io = {
   root: findRoot,
   async origin(root: string): Promise<string> {
-    return (await run("git", ["-C", root, "remote", "get-url", "origin"])).stdout;
+    return (await run("git", ["-C", root, "remote", "get-url", "origin"], { windowsHide: true })).stdout;
   },
   async local(root: string): Promise<LocalStatus> {
     const { stdout } = await updates(root, ["status"], { timeout: 30_000 });

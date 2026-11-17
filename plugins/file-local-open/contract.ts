@@ -7,5 +7,6 @@ export const hostContract = defineRpcContract({
   info: { input: z.null(), output: z.object({ platform: z.string() }) },
   read: { input: z.object({ path: z.string() }), output: bundleSchema },
   open: { input: z.object({ bundle: bundleSchema, action: z.enum(['open', 'save']) }), output: z.object({ path: z.string(), application: z.string() }) },
+  launch: { input: z.object({ path: z.string() }), output: z.object({ path: z.string(), application: z.string() }) },
 });
 export const rpcContract = defineRpcContract({ open: { input: targetSchema, output: z.object({ path: z.string(), application: z.string() }) } });

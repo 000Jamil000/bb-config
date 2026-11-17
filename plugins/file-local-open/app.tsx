@@ -12,7 +12,7 @@ function ThreadBridge() {
     if (!threadId) return;
     const open = async (path: string, action: 'open' | 'save') => {
       const result = await rpc.call('open', { path, action, source: { kind: 'host', threadId, environmentId: null, projectId: null } });
-      toast.success(action === 'save' ? 'Сохранено в Загрузки на Mac' : `Открыто на Mac: ${result.application}`, { description: result.path });
+      toast.success(action === 'save' ? 'Сохранено в Загрузки' : `Открыто: ${result.application}`, { description: result.path });
     };
     bridges.set(threadId, open);
     return () => { if (bridges.get(threadId) === open) bridges.delete(threadId); };
@@ -23,7 +23,8 @@ export function localPath(href: string): string | null {
   try {
     const url = new URL(href);
     if (url.protocol !== 'file:' || url.hostname) return null;
-    const path = decodeURIComponent(url.pathname);
+    // file:///C:/dir/file is the Windows path C:/dir/file, not /C:/dir/file.
+    const path = decodeURIComponent(url.pathname).replace(/^\/(?=[a-z]:\/)/i, '');
     return /\.(pdf|html?|md|txt|csv|json|png|jpe?g|gif|webp|svg|docx?|xlsx?|pptx?|odt|ods|odp|rtf|mp3|mp4|wav|m4a|mov|zip)$/i.test(path) ? path : null;
   } catch { return null; }
 }
@@ -64,12 +65,12 @@ function PdfPreview({ path, source, Original }: PluginFileOpenerProps) {
     <div className="flex flex-wrap items-center gap-2 border-b p-2 text-sm">
       <button className="inline-flex items-center gap-1 rounded border px-3 py-1 hover:bg-state-hover disabled:opacity-50" disabled={busy} onClick={() => {
         setBusy(true);
-        void rpc.call('open', { path, source, action: 'open' }).then(result => { if (active.current) toast.success('Открыто на Mac', { description: result.path }); })
+        void rpc.call('open', { path, source, action: 'open' }).then(result => { if (active.current) toast.success(`Открыто: ${result.application}`, { description: result.path }); })
           .catch(e => { if (active.current) toast.error(String(e.message ?? e)); }).finally(() => { if (active.current) setBusy(false); });
-      }}><Icon name="ExternalLink" className="size-4" />{busy ? 'Скачиваю…' : 'Открыть на Mac'}</button>
+      }}><Icon name="ExternalLink" className="size-4" />{busy ? 'Открываю…' : 'Открыть на компьютере'}</button>
       <button className="rounded border px-3 py-1 hover:bg-state-hover disabled:opacity-50" disabled={busy} onClick={() => {
         setBusy(true);
-        void rpc.call('open', { path, source, action: 'save' }).then(result => { if (active.current) toast.success('Сохранено в Загрузки на Mac', { description: result.path }); })
+        void rpc.call('open', { path, source, action: 'save' }).then(result => { if (active.current) toast.success('Сохранено в Загрузки', { description: result.path }); })
           .catch(e => { if (active.current) toast.error(String(e.message ?? e)); }).finally(() => { if (active.current) setBusy(false); });
       }}>↓ В Загрузки</button>
       <select aria-label="Масштаб PDF" className="rounded border bg-background px-2 py-1" value={zoom} onChange={event => setZoom(event.target.value)}>
@@ -82,7 +83,7 @@ function PdfPreview({ path, source, Original }: PluginFileOpenerProps) {
 }
 export default definePluginApp(app => {
   app.composer.customize({ id: 'local-open-bridge', scopes: ['thread'], banners: [{ id: 'bridge', chrome: 'bare', component: ThreadBridge }] });
-  app.slots.fileOpener({ id: 'pdf', title: 'PDF — по ширине / на Mac', extensions: ['pdf'], component: PdfPreview });
+  app.slots.fileOpener({ id: 'pdf', title: 'PDF — по ширине / на компьютере', extensions: ['pdf'], component: PdfPreview });
   app.contentScripts.register({ id: 'file-buttons', mount({ signal }) {
     const nodes = new Map<HTMLAnchorElement, { button: HTMLSpanElement; href: string }>();
     let frame = 0;
@@ -99,7 +100,7 @@ export default definePluginApp(app => {
         group.className = 'ml-0.5 inline-flex items-center gap-0.5 whitespace-nowrap align-middle';
         for (const action of ['open', 'save'] as const) {
         const button = document.createElement('button');
-        button.type = 'button'; button.textContent = action === 'save' ? '↓' : /\.html?$/i.test(path) ? '↗ Chrome' : '↗ На Mac';
+        button.type = 'button'; button.textContent = action === 'save' ? '↓' : '↗';
         button.className = 'inline-flex size-5 items-center justify-center rounded text-subtle-foreground opacity-60 hover:bg-state-hover hover:opacity-100 focus-visible:opacity-100 disabled:opacity-30';
         const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         for (const [key, value] of Object.entries({ width: '13', height: '13', viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.6', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true' })) svg.setAttribute(key, value);
@@ -107,7 +108,7 @@ export default definePluginApp(app => {
         glyph.setAttribute('d', action === 'save' ? 'M12 3v12m-5-5 5 5 5-5M4 16v4h16v-4' : 'M4 3h16v13H4zM2 20h20');
         svg.append(glyph); button.replaceChildren(svg);
         button.dataset.fileLocalOpen = '';
-        button.title = `${action === 'save' ? 'Сохранить в Загрузки на Mac' : 'Скачать на Mac и открыть'}: ${path.split('/').pop()}`;
+        button.title = `${action === 'save' ? 'Сохранить в Загрузки на компьютере' : 'Открыть на компьютере'}: ${path.split('/').pop()}`;
         button.setAttribute('aria-label', button.title);
         button.addEventListener('click', event => {
           event.preventDefault(); event.stopPropagation();

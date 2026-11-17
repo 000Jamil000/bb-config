@@ -1,9 +1,9 @@
 ---
 name: file-local-open
-description: Open generated server files on an enrolled Mac or save them to its Downloads; HTML opens in Chrome.
+description: Open generated server files on an enrolled Mac or Windows PC, or save them to its Downloads.
 ---
 
-# Open on Mac
+# Open on Desktop
 
 ID: `file-local-open`. Small laptop and download icons appear beside supported
 file links in thread messages. Laptop downloads to `~/Downloads/BB Files/open-*/`
@@ -11,9 +11,13 @@ and opens the system app; HTML uses Google Chrome. Download saves without launch
 PDF links also offer “PDF — по ширине / на Mac”: page-width preview without thumbnails,
 zoom selector, Open on Mac and Save to Downloads.
 
-The Mac must be connected. `bb plugin config file-local-open set macHostId <host-id>`
-selects it; an empty setting automatically selects the single connected macOS host.
-Do not silently choose another Mac when several are connected.
+The target computer must be connected. `bb plugin config file-local-open set macHostId <host-id>`
+selects it (macOS or Windows; the key keeps its first name). An empty setting selects the
+single connected macOS host, or without a Mac the single connected Windows host.
+Do not silently choose another computer when several are connected.
+On Windows the file opens through the shell's default application for its type, HTML in the
+default browser. When the file already is on the target computer, "open" starts the original
+file and makes no copy; "save" still copies it to Downloads.
 
 RPC `open` accepts `{path, source:{kind,threadId,environmentId,projectId,
 experimental_hostId?}, action:"open"|"save"}`. Source follows the SDK file opener.

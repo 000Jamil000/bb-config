@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { open, realpath, mkdir, mkdtemp, writeFile } from 'node:fs/promises';
-import { basename, dirname, extname, isAbsolute, join, relative, resolve } from 'node:path';
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { homedir } from 'node:os';
 export const MAX_BYTES = 20 * 1024 * 1024;
 const allowed = new Set('pdf html htm md txt csv json png jpg jpeg gif webp svg doc docx xls xlsx ppt pptx odt ods odp rtf mp3 mp4 wav m4a mov zip'.split(' '));
 const assetTypes = new Set('css js mjs png jpg jpeg gif webp svg ico woff woff2 ttf otf mp3 mp4 wav m4a json'.split(' '));
 export type Bundle = { main: string; entries: { path: string; content: string; sha256: string }[] };
+export const supported = (path: string) => allowed.has(extname(path).slice(1).toLowerCase());
 export const sha = (data: Buffer) => createHash('sha256').update(data).digest('hex');
 export function safeRelative(path: string) {
   return path.length > 0 && !isAbsolute(path) && !path.includes('\\') && !path.split('/').some(p => p === '..' || p === '.' || p === '') && !path.includes('\0');
@@ -21,7 +22,8 @@ export async function collectBundle(path: string): Promise<Bundle> {
   const root = dirname(path), entries: Bundle['entries'] = [], seen = new Set<string>();
   let total = 0;
   const visit = async (candidate: string) => {
-    const actual = await realpath(candidate), rel = relative(root, actual);
+    // Bundle paths use forward slashes on every system; Windows reports backslashes.
+    const actual = await realpath(candidate), rel = relative(root, actual).split(sep).join('/');
     if (!safeRelative(rel)) throw new Error('Ресурс HTML находится за пределами папки презентации.');
     if (seen.has(actual)) return;
     seen.add(actual);

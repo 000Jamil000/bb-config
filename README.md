@@ -8,13 +8,15 @@
 | --- | --- | --- |
 | [Machine Tabs](plugins/machine-tabs) | Вкладки машин над списком тредов, двухуровневая группировка (проект, машина, день), поиск без учёта раскладки, блок «Last 5», значки проектов | Не требуется. Значок проекта — файл `.bb/icon.svg` или `.bb/icon.png` в корне проекта, затем `bb machine-tabs icons` |
 | [Project Logo](plugins/project-logo) | Подбирает общий значок проекта по названию и первому сообщению; сохраняет существующие значки | Дополнительных настроек нет; для показа нужен Machine Tabs. Подбор выполняет агент при следующем создании сессии провайдера |
-| [Menubar Status](plugins/menubar-status) | Значок bb в строке меню macOS: статусы агентов и кольцо usage; по наведению — панель с usage аккаунтов, агентами (с текущим шагом) и чатом сбоку, где можно ответить агенту | Задайте `hostId` и `filePath` в настройках плагина; на Mac (нужен `xcode-select --install`): `zsh install.sh` из `plugins/menubar-status/macos` |
+| [Menubar Status](plugins/menubar-status) | Значок bb в строке меню macOS или в области уведомлений Windows: статусы агентов и расход лимитов; панель с usage аккаунтов, агентами (с текущим шагом) и чатом сбоку, где можно ответить агенту | Задайте `hostId` и `filePath` в настройках плагина; на Mac (нужен `xcode-select --install`): `zsh install.sh` из `plugins/menubar-status/macos`; на Windows: `install.ps1` из `plugins/menubar-status/windows` |
 | [Proxy Manager](plugins/proxy-manager) | Управление прокси, проверку соединений и маршрутов провайдеров | Добавьте собственные прокси |
 | [Project Open](plugins/project-open) | Кнопки у треда: открыть папку проекта в Finder и терминал BB | Для Finder — локальный обработчик на Mac (см. README плагина) |
 | [Push Button](plugins/push-button) | Кнопку «попросить агента запушить» в строке ветки; сам Git не запускает | Не требуется |
 | [Thread Account Usage](plugins/thread-account-usage) | Окна квот аккаунта у текущего треда, отдельно от расхода токенов | Не требуется |
 | [Handoff Button](plugins/handoff-button) | Кнопку открытия оригинальной панели Handoff в composer | Установите оригинальный Handoff из каталога BB |
 | [Web BB Button](plugins/web-bb-button) | Глобус в левой панели, открывающий BB в браузере | Укажите публичный URL своего BB в настройках |
+| [Open on Desktop](plugins/file-local-open) | Значки у ссылок на файлы: открыть файл на своём Mac или Windows-компьютере либо сохранить в Загрузки; просмотр PDF по ширине | Не требуется при одном настольном компьютере; иначе `macHostId` |
+| [Browser Page](plugins/browser-page) | Навык для агентов на Windows, где Browser Automation не запускается: открыть страницу во встроенном браузере BB, прочитать, нажать, снять снимок | Не требуется |
 | [Config Updates](plugins/config-updates) | Сообщает о новых стабильных релизах этого репозитория и запускает их применение агентом по кнопке «Обновить с ИИ» | Checkout репозитория должен быть проектом BB на машине сервера |
 | [Plugin Keeper](plugins/voice-mode-keeper) | Сохраняет ваши правки каталожных плагинов при их обновлениях: Voice Mode ([список правок](plugins/voice-mode)), исправления Needs You и Tokenomics. После обновления сам накладывает правки на новую версию (с допуском на сдвиги и переформатирование), проверяет тестами и сборкой, откатывает при несовместимости | Установите Voice Mode, Needs You и Tokenomics из каталога BB. Правки Voice Mode русскоязычные: голос говорит по-русски от первого лица |
 
@@ -24,7 +26,9 @@
 
 ## Установка одного плагина
 
-Нужны BB 0.49+, Node.js 22+ и npm на машине сервера BB.
+Нужны BB 0.49+, Node.js 22+ и npm на машине сервера BB. На Windows — Node.js 24.22.1+,
+Git for Windows и Python 3.11+; подробности — раздел «Windows» в
+[docs/customizations.md](docs/customizations.md).
 Локальный путь установки должен быть доступен самому серверу BB.
 
 ```sh

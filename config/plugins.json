@@ -120,6 +120,13 @@
     "installSource": "browser-automation@bb-official"
   },
   {
+    "id": "browser-page",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Browser Page",
+    "source": "path:plugins/browser-page"
+  },
+  {
     "id": "code-open",
     "version": "0.4.0",
     "enabled": true,
@@ -143,7 +150,7 @@
   },
   {
     "id": "config-updates",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "enabled": true,
     "name": "Config Updates",
     "source": "path:plugins/config-updates"
@@ -192,9 +199,9 @@
   },
   {
     "id": "file-local-open",
-    "version": "0.1.0",
+    "version": "0.2.0",
     "enabled": true,
-    "name": "Open on Mac",
+    "name": "Open on Desktop",
     "source": "path:plugins/file-local-open"
   },
   {
@@ -259,7 +266,7 @@
   },
   {
     "id": "menubar-status",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "enabled": true,
     "name": "Menubar Status",
     "source": "path:plugins/menubar-status"
@@ -438,7 +445,7 @@
   },
   {
     "id": "voice-mode-keeper",
-    "version": "0.2.3",
+    "version": "0.2.4",
     "enabled": true,
     "name": "Plugin Keeper",
     "source": "path:plugins/voice-mode-keeper"

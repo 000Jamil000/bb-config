@@ -1533,3 +1533,82 @@ release range use BB's normal update/rollback path, not this migration script.
 
 The fork's v0.2.0 release is published. The pending bb-config steps cover the
 one-time migration and keeper change; no new bb-config stable release is implied.
+
+## Windows: сервер BB и рабочий компьютер
+
+Скрипты и плагины писались на Linux и macOS. Ниже — что нужно и что проверено, когда
+сервер BB работает на Windows (в том числе BB на одном ПК без других машин).
+
+Требования на машине сервера:
+
+- Node.js 24.22.1 или новее в ветке 24. Версии от 23.0 примерно до 24.19 на Windows
+  аварийно завершаются при выходе из команд, которые добавляют плагины (`bb thread-list …`,
+  `bb config-updates …`): результат печатается, затем
+  `Assertion failed: !(handle->flags & UV_HANDLE_CLOSING), src\win\async.c`, и код выхода
+  ненулевой. Это ошибка Node (nodejs/node#56645, исправление nodejs/node#61999). Проверено:
+  24.13.0 падает в каждом запуске, 24.22.1 — ни в одном.
+- Python 3.11+ как настоящий `python` в PATH. `python.exe` из
+  `%LOCALAPPDATA%\Microsoft\WindowsApps` — заглушка Microsoft Store. Плагинам, которые сами
+  запускают Python (`config-updates`, `voice-mode-keeper`), путь можно задать настройкой
+  `pythonPath`.
+- Git for Windows и `git config --global core.longpaths true`: без этого каталожные плагины
+  с длинными путями (Tokenomics) не клонируются.
+- Процесс сервера BB получает PATH при запуске приложения: после установки Git или Python
+  перезапустите BB.
+
+`scripts/platform_compat.py` собирает отличия Windows в одном месте; на других системах его
+функции ничего не меняют. Он запускает `bb`, `npm` и `patch` (на Windows это `.cmd` и
+`patch.exe` из поставки Git; понимает и лаунчер `<каталог данных>\bin\bb.cmd`, который
+получают автоматизации), перезапускает скрипт в режиме UTF-8, заменяет `fcntl` и симлинки
+каталогов. При Node с описанной ошибкой CLI запускается через Node из поставки BB.
+
+Работают на Windows: `updates.py`, `snapshot.py`, `restore.py`, `codex_defaults.py`,
+`patch_keeper.py`; плагины `config-updates`, `voice-mode-keeper` (сопровождение Needs You,
+Tokenomics и KodaForge; часть для Voice Mode не проверялась), `file-local-open`,
+`menubar-status` с клиентом в области уведомлений и все плагины без системных зависимостей.
+Не перенесены: резервные копии (`daily_backup.py`, `server_backup.py`, `private_backup.py`,
+`backup_keys.py` — `fcntl` и macOS Keychain), `setup_tracking.py`, службы macOS и systemd,
+обработчик Finder у Project Open, `apply_*_compat.py` (их заменяет `patch_keeper.py`).
+
+Особенности:
+
+- Git for Windows по умолчанию выдаёт исходники с CRLF. Этот checkout держите с LF
+  (`git config core.autocrlf false`, `git config core.eol lf` до первого checkout).
+  Исходники каталожных плагинов BB клонирует сам, с CRLF: `patch_keeper.py` накладывает
+  патч на LF-копию и возвращает прежние окончания строк.
+- `.bb/AGENTS.md` — симлинк; без режима разработчика Windows получает вместо него текстовый
+  файл с путём. Codex и Claude Code читают корневые `AGENTS.md` и `CLAUDE.md` напрямую.
+- В NTFS нет POSIX-битов доступа: проверки прав `0600` в тестах на Windows пропускаются,
+  доступ к `.local/` определяют права каталога.
+- Browser Automation на Windows-хосте не запускается (у DevBrowser нет сборки). Для
+  агентов есть `plugins/browser-page`: навык и скрипт `bb-page.mjs` поверх штатных команд
+  `bb browser`.
+
+### Значок статуса в области уведомлений
+
+`plugins/menubar-status/windows/` — клиент для Windows к тому же серверному плагину:
+`bb Status.exe` показывает в области уведомлений самое срочное состояние агентов и их
+число (ждут вас, ошибки, работают, новые ответы), в подсказке — счётчики и расход лимитов;
+клик открывает ту же панель `panel.html` в окне Edge, правый клик — меню. Значок виден,
+только пока запущен BB Desktop. Данные он читает из файлов рядом с собой, bb не вызывает;
+помощник `server.py` (127.0.0.1:47615, токен) запускается и перезапускается значком.
+
+Установка на нужном ПК: `powershell -ExecutionPolicy Bypass -File
+plugins/menubar-status/windows/install.ps1` (нужен Python; приложение собирается
+компилятором C# из состава Windows), затем `hostId` и `filePath` по подсказке установщика.
+Файлы лежат в `%LOCALAPPDATA%\bb-menubar`, автозапуск — ярлык в папке «Автозагрузка».
+Удаление: тот же скрипт с `-Remove`. Проверено: файлы статуса и переписок пишутся,
+помощник отвечает с токеном и отклоняет чужой (403), панель показывает агентов и лимиты.
+Наведение на значок панель не открывает: в Windows у значка только подсказка.
+
+### Открытие файлов на Windows-компьютере
+
+`file-local-open` 0.2.0 открывает файл приложением по умолчанию и на Windows. Если файл уже
+лежит на компьютере, который его открывает (BB на одном ПК), копия не создаётся; «сохранить»
+по-прежнему кладёт копию в `Загрузки\BB Files`. При пустом `macHostId` выбирается
+единственный подключённый Mac, без Mac — единственный Windows-компьютер.
+
+Проверки на Windows: `python -X utf8 -m unittest test_updates test_customizations
+test_codex_defaults test_private_config` в `scripts/`; `test_patch_keeper.py`; тесты
+плагинов (`node --test`, `vitest`). Один тест `proxy-manager` (`tests/native.test.ts`)
+проверяет права `0600` и на Windows не проходит.

@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.5",
+  "title": "Machine Tabs: закреплённые и дочерние треды в группах своих проектов",
+  "steps": [
+    {
+      "id": "plugin-machine-tabs",
+      "title": "Machine Tabs 0.1.3: закреплённые и дочерние треды в группах своих проектов",
+      "component": "machine-tabs",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "machine-tabs",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/machine-tabs к коммиту v1.0.4 (git checkout v1.0.4 -- plugins/machine-tabs), затем npm ci --include=dev, bb plugin build и bb plugin reload machine-tabs."
+    }
+  ]
+}

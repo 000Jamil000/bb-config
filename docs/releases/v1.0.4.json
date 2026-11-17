@@ -1,0 +1,72 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.0.4",
+  "title": "Voice Mode: личный форк и штатные обновления",
+  "steps": [
+    {
+      "id": "plugin-voice-mode-keeper",
+      "title": "Plugin Keeper 0.2.3: штатные обновления форка Voice Mode",
+      "component": "voice-mode-keeper",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "voice-mode-keeper",
+      "rerun": "Совпавшая установленная версия проверяется без повторной установки.",
+      "rollback": "Вернуть предыдущую версию keeper, выполнить npm ci, bb plugin build и bb plugin reload voice-mode-keeper."
+    },
+    {
+      "id": "voice-mode-personal-fork",
+      "title": "Voice Mode: стабильные релизы форка через BB",
+      "component": "voice-mode",
+      "where": "server",
+      "kind": "command",
+      "applies": [
+        "{python}",
+        "scripts/updates.py",
+        "require-plugin",
+        "voice-mode"
+      ],
+      "apply": [
+        "{python}",
+        "plugins/voice-mode/switch_to_fork.py",
+        "--apply"
+      ],
+      "verify": [
+        "{python}",
+        "plugins/voice-mode/switch_to_fork.py",
+        "--check"
+      ],
+      "rerun": "Настроенный канал релизов повторно не устанавливается; неизвестный источник не заменяется.",
+      "rollback": "Проверить отсутствие настроенных секретов Voice Mode, сохранить несекретные настройки, удалить форк и установить прежний источник из приватного журнала, восстановить настройки и проверить Keeper.",
+      "after": [
+        "plugin-voice-mode-keeper"
+      ]
+    },
+    {
+      "id": "voice-waiting-context",
+      "title": "Voice Mode: корректное ожидание контекста треда",
+      "component": "voice-mode",
+      "where": "server",
+      "kind": "command",
+      "applies": [
+        "{python}",
+        "scripts/updates.py",
+        "require-plugin",
+        "voice-mode"
+      ],
+      "apply": [
+        "{python}",
+        "plugins/voice-mode/auto_update.py"
+      ],
+      "verify": [
+        "{python}",
+        "plugins/voice-mode/apply.py",
+        "--check"
+      ],
+      "rerun": "Повтор проверяет уже применённые правки; повторная отправка задач не выполняется.",
+      "rollback": "Вернуть прежние changes.json и резервную копию исходников через механизм восстановления патча; либо выключить keeper и переустановить каталоговый Voice Mode.",
+      "after": [
+        "voice-mode-personal-fork"
+      ]
+    }
+  ]
+}

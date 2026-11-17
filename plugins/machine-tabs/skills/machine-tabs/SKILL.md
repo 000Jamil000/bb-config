@@ -56,3 +56,18 @@ the project's own image when its root holds one of `.bb/icon.png`,
 `.bb/icon.svg`, `favicon.png`, `favicon.svg`, `favicon.ico` (first found, up
 to 256 KB). Images are drawn grey. They are re-read every five minutes;
 `bb machine-tabs icons` re-reads them now and lists the projects that have one.
+
+
+### Cross-project child views
+
+In project grouping, a child owned by another project also appears in its own
+project section. The original parent tree remains intact. Both occurrences use
+the same thread ID, native row actions, navigation and collapse state. No
+threads are copied or reparented. Supplemental rows are non-sortable to avoid
+ambiguous drag operations; drag the original tree occurrence when needed.
+A pinned thread and its children are shown the same way: under Pinned and
+also in the thread's own project section, so a project whose only threads are
+pinned is not treated as empty.
+The adapter matches semantic native renderer props and must be verified after
+BB updates. Verified with Show empty projects enabled (the current default);
+when disabled, BB can omit a section before this renderer is reached.

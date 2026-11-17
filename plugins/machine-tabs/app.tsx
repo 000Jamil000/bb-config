@@ -29,6 +29,7 @@ import type { rpcContract, TabsState } from "./server";
 import { cn } from "@/lib/utils";
 import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
+import { withProjectAliases } from "./lib/project-alias-view";
 import { installSidebarView } from "./lib/sidebar-view";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
@@ -529,7 +530,12 @@ async function loadNativeList(
   // read-only, swap the whole runtime for a copy that inherits from it.
   const globals = globalThis as AnyRecord;
   const realJsx = runtime.jsxRuntime as AnyRecord;
-  const pagedJsx = withGroupPaging(realJsx);
+  const aliasesJsx = kind === "main" ? withProjectAliases(realJsx, () => {
+    const data = useThreads();
+    const view = useContext(MachineFilter);
+    return useMemo(() => applyFilters(data, view).threads, [data, view]);
+  }) : realJsx;
+  const pagedJsx = withGroupPaging(aliasesJsx);
   // The native list captures its JSX helpers during evaluation, just like SDK.
   // Use an inheriting copy so other plugins keep their original runtime.
   const pagingRuntime = Object.create(runtime) as AnyRecord;
@@ -1299,12 +1305,8 @@ function MachineThreadList(props: PluginThreadListProps) {
 
   const emptyCss = useMemo(() => {
     if (hideEmpty) return "";
-    // A pinned thread is listed under Pinned, not under its project.
-    const used = new Set(
-      shown
-        .filter((thread) => thread.pinnedAt == null)
-        .map((thread) => thread.projectId),
-    );
+    // Pinned threads count: they are listed under their project as well.
+    const used = new Set(shown.map((thread) => thread.projectId));
     return emptyProjectsCss(
       projects
         .filter((project) => !project.isPersonal && !used.has(project.id))

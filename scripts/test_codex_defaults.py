@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import stat
 import tempfile
 import unittest
@@ -35,7 +36,8 @@ class CodexDefaultsTests(unittest.TestCase):
             path.chmod(0o640)
             updated, _ = defaults.update_text(path.read_text(), 65536)
             defaults.apply(path, updated)
-            self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
+            if os.name != 'nt':  # NTFS has no POSIX mode bits
+                self.assertEqual(stat.S_IMODE(path.stat().st_mode), 0o640)
             self.assertEqual(path.read_text(), updated)
             self.assertEqual(defaults.update_text(updated, 65536)[0], updated)
 

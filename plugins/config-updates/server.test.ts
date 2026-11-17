@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createFakePluginHost } from "@get-bb/plugin-sdk/testing";
-import plugin, { io, type UpdateStatus } from "./server.ts";
+import plugin, { io, samePath, type UpdateStatus } from "./server.ts";
 import { buildPrompt, newerThan, parseRepository, stableReleases, type LocalStatus } from "./releases.ts";
 
 const SHA = "a".repeat(40);
@@ -193,4 +193,11 @@ test("an open run is never auto-accepted over", async () => {
   await s.rpc("check");
   assert.deepEqual(s.state.acceptCalls, []);
   await s.harness.lifecycle.dispose();
+});
+
+test("the checkout matches its project source however the path is written", () => {
+  assert.equal(samePath("/srv/config/", "/srv/config"), true);
+  assert.equal(samePath("/srv/config", "/srv/other"), false);
+  // Windows: bb may store forward slashes or another case than realpath returns.
+  assert.equal(samePath("d:/Work/BB-Config/", "D:\\Work\\bb-config"), process.platform === "win32");
 });

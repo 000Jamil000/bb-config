@@ -7,7 +7,9 @@ description: Open generated server files on an enrolled Mac or save them to its 
 
 ID: `file-local-open`. Small laptop and download icons appear beside supported
 file links in thread messages. Laptop downloads to `~/Downloads/BB Files/open-*/`
-and opens the system app; HTML uses Google Chrome. Download saves without launching.
+and opens the system app; HTML uses Google Chrome. Download saves without launching
+straight into `~/Downloads/` (Finder-style `name (2).ext` on collision; HTML with
+assets goes into its own `~/Downloads/<name>/` folder) and reveals the file in Finder.
 PDF links also offer “PDF — по ширине / на Mac”: page-width preview without thumbnails,
 zoom selector, Open on Mac and Save to Downloads.
 

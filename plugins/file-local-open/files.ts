@@ -48,8 +48,8 @@ export async function collectBundle(path: string): Promise<Bundle> {
   await visit(path);
   return { main: basename(path), entries };
 }
-export async function saveBundle(bundle: Bundle, downloadRoot = join(homedir(), 'Downloads', 'BB Files')) {
-  if (!safeRelative(bundle.main) || !allowed.has(extname(bundle.main).slice(1).toLowerCase())) throw new Error('Недопустимое имя файла.');
+function decodeBundle(bundle: Bundle) {
+  if (!safeRelative(bundle.main) || bundle.main.includes('/') || !allowed.has(extname(bundle.main).slice(1).toLowerCase())) throw new Error('Недопустимое имя файла.');
   let total = 0;
   const paths = new Set<string>();
   const decoded = bundle.entries.map(entry => {
@@ -60,12 +60,42 @@ export async function saveBundle(bundle: Bundle, downloadRoot = join(homedir(), 
     return { path: entry.path, data };
   });
   if (!paths.has(bundle.main)) throw new Error('Главный файл отсутствует.');
-  await mkdir(downloadRoot, { recursive: true, mode: 0o700 });
-  const directory = await mkdtemp(join(downloadRoot, 'open-'));
+  return decoded;
+}
+async function writeEntries(directory: string, decoded: { path: string; data: Buffer }[]) {
   for (const entry of decoded) {
     const dest = join(directory, entry.path);
     await mkdir(dirname(dest), { recursive: true, mode: 0o700 });
     await writeFile(dest, entry.data, { flag: 'wx', mode: 0o600 });
   }
+}
+const isExists = (error: unknown) => (error as NodeJS.ErrnoException)?.code === 'EEXIST';
+// Temporary copy for "open": a fresh hidden-ish directory per launch.
+export async function saveBundle(bundle: Bundle, downloadRoot = join(homedir(), 'Downloads', 'BB Files')) {
+  const decoded = decodeBundle(bundle);
+  await mkdir(downloadRoot, { recursive: true, mode: 0o700 });
+  const directory = await mkdtemp(join(downloadRoot, 'open-'));
+  await writeEntries(directory, decoded);
   return join(directory, bundle.main);
+}
+// "Save": put the file directly into Downloads, Finder-style "name (2).ext" on collision.
+// HTML with assets goes into its own "name" folder so relative links keep working.
+export async function saveToDownloads(bundle: Bundle, downloads = join(homedir(), 'Downloads')) {
+  const decoded = decodeBundle(bundle);
+  await mkdir(downloads, { recursive: true });
+  const ext = extname(bundle.main), stem = bundle.main.slice(0, bundle.main.length - ext.length) || 'file';
+  for (let n = 1; n <= 999; n++) {
+    const suffix = n === 1 ? '' : ` (${n})`;
+    if (decoded.length === 1) {
+      const dest = join(downloads, `${stem}${suffix}${ext}`);
+      try { await writeFile(dest, decoded[0]!.data, { flag: 'wx', mode: 0o644 }); return dest; }
+      catch (error) { if (isExists(error)) continue; throw error; }
+    }
+    const directory = join(downloads, `${stem}${suffix}`);
+    try { await mkdir(directory, { mode: 0o755 }); }
+    catch (error) { if (isExists(error)) continue; throw error; }
+    await writeEntries(directory, decoded);
+    return join(directory, bundle.main);
+  }
+  throw new Error('Не удалось подобрать свободное имя в Загрузках.');
 }

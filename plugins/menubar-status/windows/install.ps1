@@ -1,6 +1,6 @@
 # Installs bb Status for the current Windows user:
 #  - "bb Status.exe", a notification-area icon (state and count of the agents,
-#    panel on click), started at sign-in from the Startup folder and visible
+#    panel on hover, click to pin), started at sign-in from the Startup folder and visible
 #    only while BB Desktop is running;
 #  - the local helper (127.0.0.1:47615) that serves the panel from the files the
 #    menubar-status plugin keeps in this folder; the icon starts and restarts it.
@@ -49,6 +49,18 @@ $link.WorkingDirectory = $dir
 $link.Description = 'bb agent status in the notification area'
 $link.Save()
 Start-Process -FilePath $exe -WorkingDirectory $dir
+
+# Windows 11 puts a new icon into the overflow behind "^". Hovering is the point of
+# this one, so show it on the taskbar itself: the same switch as Settings >
+# Personalization > Taskbar > Other system tray icons. Explorer creates the entry
+# once the icon has appeared; when it has not yet, the user can flip the switch.
+Start-Sleep -Seconds 4
+Get-ChildItem 'HKCU:\Control Panel\NotifyIconSettings' -ErrorAction SilentlyContinue | ForEach-Object {
+    if ((Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue).ExecutablePath -like '*\bb-menubar\bb Status.exe') {
+        Set-ItemProperty -Path $_.PSPath -Name IsPromoted -Value 1 -Type DWord
+        Write-Output 'the icon is set to stay visible on the taskbar'
+    }
+}
 
 $status = (Join-Path $dir 'status.json') -replace '\\', '/'
 Write-Output "installed: bb Status in the notification area, helper on 127.0.0.1:47615"

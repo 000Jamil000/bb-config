@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Menubar Status",
-    "description": "Keeps a small agent status file on one machine for a macOS menu bar or Windows notification-area widget.",
+    "description": "Keeps a small agent status file on one machine for a macOS menu bar or Windows taskbar widget.",
     "branding": {
       "icon": "Activity"
     },

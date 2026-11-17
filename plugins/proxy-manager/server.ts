@@ -4,12 +4,58 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
-import { hostContract, rpcContract, storedProxy, bindingSchema, redact, parseProxyFile, type ClaudeRoute, type Check, type StoredProxy, type RouteContext, type RouteState } from './contract';
+import { hostContract, rpcContract, storedProxy, bindingSchema, modelRouteInput, modelRouteState, redact, parseProxyFile, type ClaudeRoute, type Check, type StoredProxy, type RouteContext, type RouteState, type ModelRouteState } from './contract';
 export type { rpcContract } from './contract';
 export default async function plugin(bb: BbPluginApi) {
   const secrets = bb.settings.define({ vault: { type: 'string', label: 'Хранилище учётных данных прокси', secret: true } });
-  const routing = createRouting(bb);
+  const routing = createRouting(bb, false);
   const host = bb.hosts.experimental_client({ contract: hostContract });
+  const modelKey = (hostId: string, providerId: string) => `model-route:${hostId}:${providerId}`;
+  async function modelRoutes(): Promise<ModelRouteState[]> {
+    const result: ModelRouteState[] = [];
+    for (const key of await bb.storage.kv.list('model-route:')) result.push(modelRouteState.parse(await bb.storage.kv.get(key)));
+    return result;
+  }
+  for (const providerId of ['codex', 'claude-code'] as const) {
+    bb.providers.experimental_contributeEnv(providerId, async ctx => {
+      const saved = await bb.storage.kv.get<ModelRouteState>(modelKey(ctx.hostId, providerId));
+      if (!saved) return [];
+      const prepared = await host.call('prepare_model_route', { providerId, mode: saved.mode }, { hostId: ctx.hostId });
+      return prepared.env;
+    });
+  }
+  // Environment resolvers are fail-open in the SDK; hold a message if preparation fails.
+  bb.experimental_hooks.on('message.dispatch', async ctx => {
+    const native = await routing.guard(ctx);
+    if (native.action === 'wait') return { action: 'wait', reason: native.reason! };
+    if (!ctx.host || !['codex', 'claude-code'].includes(ctx.thread.providerId)) return { action: 'proceed' };
+    const saved = await bb.storage.kv.get<ModelRouteState>(modelKey(ctx.host.id, ctx.thread.providerId));
+    if (!saved) return { action: 'proceed' };
+    try { await host.call('prepare_model_route', { providerId: saved.providerId, mode: saved.mode }, { hostId: ctx.host.id }); }
+    catch { return { action: 'wait', reason: 'Не удалось подготовить выбранный маршрут модели. Проверьте Подключения → Маршрут моделей BB' }; }
+    return { action: 'proceed' };
+  });
+  async function setModelRoute(input: z.infer<typeof modelRouteInput>) {
+    return serialize(async () => {
+      const machine = await bb.sdk.hosts.get({ hostId: input.hostId });
+      if (machine.status !== 'connected') throw new Error('Машина недоступна');
+      const prepared = await host.call('prepare_model_route', input, { hostId: input.hostId });
+      const state = { ...input, message: prepared.message, updatedAt: new Date().toISOString() };
+      await bb.storage.kv.set(modelKey(input.hostId, input.providerId), state);
+      // Release only this provider's idle BB runtimes. Active turns finish first.
+      for (let offset = 0; ; offset += 100) {
+        const rows = await bb.sdk.threads.list({ hostId: input.hostId, includeHidden: true, limit: 100, offset });
+        for (const thread of rows) if (thread.providerId === input.providerId) {
+          if (thread.status === 'idle' || thread.status === 'error') await bb.sdk.threads.stop({ threadId: thread.id });
+          else await bb.storage.kv.set(`model-restart:${thread.id}`, true);
+        }
+        if (rows.length < 100) break;
+      }
+      bb.realtime.publish('changed', {});
+      await bb.experimental_hooks.recheck('message.dispatch');
+      return state;
+    });
+  }
   async function read(): Promise<StoredProxy[]> { const { vault } = await secrets.get(); return z.array(storedProxy).parse(JSON.parse(vault || '[]')); }
   let queue: Promise<unknown> = Promise.resolve();
   function serialize<T>(fn: () => Promise<T>): Promise<T> { const next = queue.then(fn); queue = next.catch(() => {}); return next; }
@@ -141,6 +187,7 @@ export default async function plugin(bb: BbPluginApi) {
       }
       if (!hostId || !providerId) return null;
       const machine = await bb.sdk.hosts.get({ hostId });
+      const modelMode = (await bb.storage.kv.get<ModelRouteState>(modelKey(hostId, providerId)))?.mode ?? null;
       const binding = (await bindings()).find(b => b.hostId === hostId && b.providerId === providerId);
       const proxyId = binding?.proxyId ?? null;
       const proxy = proxyId ? (await read()).find(p => p.id === proxyId) : null;
@@ -149,13 +196,18 @@ export default async function plugin(bb: BbPluginApi) {
       const warning = route ? applied ? null : route.phase === 'ready' ? 'Файлы настроек изменены или машина недоступна' : route.message : binding?.proxyId ? 'Настройка ещё не применена' : null;
       const claudeRoute = providerId === 'claude-code' && machine.status === 'connected'
         ? await inspectClaude(hostId, path, input.threadId) : null;
-      return { claudeRoute, hostId, hostName: machine.name, providerId, proxyId, proxyName: proxyId ? proxy?.name ?? 'Прокси не найден' : null, connected: machine.status === 'connected', check: providerId === 'codex' ? (await bb.storage.kv.get<Check>(`check:${hostId}:${proxyId ?? 'direct'}`)) ?? null : null, applied, warning };
+      return { modelMode, claudeRoute, hostId, hostName: machine.name, providerId, proxyId, proxyName: proxyId ? proxy?.name ?? 'Прокси не найден' : null, connected: machine.status === 'connected', check: providerId === 'codex' ? (await bb.storage.kv.get<Check>(`check:${hostId}:${proxyId ?? 'direct'}`)) ?? null : null, applied, warning };
     },
+    model_routes: modelRoutes, set_model_route: setModelRoute,
     list, add, bind, remove: ({ id }) => remove(id), check: ({ hostId, proxyId }) => check(hostId, proxyId),
     machines: async () => (await bb.sdk.hosts.list()).map(h => ({ id: h.id, name: h.name, connected: h.status === 'connected' })),
     providers: ({ hostId, force }) => providers(hostId, force),
   });
   bb.events.on('thread.idle', async ({ thread }) => {
+    if (await bb.storage.kv.get(`model-restart:${thread.id}`)) {
+      await bb.storage.kv.delete(`model-restart:${thread.id}`);
+      await bb.sdk.threads.stop({ threadId: thread.id });
+    }
     const armed = await bb.storage.kv.get<z.infer<typeof bindingSchema> & { threadId: string }>('armed');
     if (!armed || armed.threadId !== thread.id) return;
     await bb.storage.kv.delete('armed');
@@ -164,6 +216,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.cli.register({
     name: 'proxy-manager', summary: 'Прокси: список, импорт и проверка с выбранной машины',
     commands: [
+      { name: 'model-route', summary: 'Маршрут моделей только в BB; системный VPN сохраняется', usage: 'bb proxy-manager model-route [<host-id> <codex|claude-code> <direct|opencodex>]' },
       { name: 'prepare', summary: 'Проверить возможность применения без изменений', usage: 'bb proxy-manager prepare <host-id> <proxy-id|direct>' },
       { name: 'apply', summary: 'Применить маршрут Codex и остановить его треды на машине', usage: 'bb proxy-manager apply <host-id> <proxy-id|direct>' },
       { name: 'arm', summary: 'Первое применение после завершения указанного треда', usage: 'bb proxy-manager arm <thread-id> <host-id> <proxy-id|direct>' },
@@ -176,7 +229,9 @@ export default async function plugin(bb: BbPluginApi) {
       const [command, ...args] = argv.filter(a => a !== '--json');
       try {
         let output: unknown;
-        if (command === 'prepare' && args.length === 2) {
+        if (command === 'model-route' && args.length === 0) output = await modelRoutes();
+        else if (command === 'model-route' && args.length === 3) output = await setModelRoute(modelRouteInput.parse({ hostId: args[0], providerId: args[1], mode: args[2] }));
+        else if (command === 'prepare' && args.length === 2) {
           const proxy = args[1] === 'direct' ? null : (await read()).find(p => p.id === args[1]);
           if (proxy === undefined) throw new Error('Прокси не найден');
           output = await routing.prepare(args[0]!, proxy);

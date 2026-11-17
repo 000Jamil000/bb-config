@@ -19,8 +19,9 @@ to observe launches, including when BB was not running at login. Workspace
 notifications update visibility immediately, with a two-second polling fallback.
 
 On a Windows PC the counterpart is `bb Status.exe` (`windows/install.ps1`): a
-notification-area icon with the most urgent state and its count, the limits in
-the tooltip, and the same panel above the taskbar on hover (click pins it). `filePath` is then a
+strip on the taskbar with the agents by state and each account's limits, always
+in view, and the same panel above the taskbar on hover (click pins it);
+`install.ps1 -Ui tray` gives a notification-area icon instead. `filePath` is then a
 Windows path such as `C:/Users/example/AppData/Local/bb-menubar/status.json`.
 
 - `bb menubar-status show` — print the feed the menu bar would get.

@@ -1635,3 +1635,12 @@ test_codex_defaults test_private_config` в `scripts/`; `test_patch_keeper.py`; 
 ## Proxy Manager: маршруты моделей только в BB (0.3.0)
 
 В Подключениях добавлен выбор напрямую / через OpenCodex для Codex и Claude Code на каждой машине. Системный VPN и обычные конфигурации CLI не меняются. Детали, ограничения авторизации MCP и команды восстановления: `plugins/proxy-manager/README.md`. Исходники и следующий шаг: `docs/releases/next/plugin-proxy-manager-model-routes.*`. Установка: `bb plugin build plugins/proxy-manager`, затем `bb plugin reload proxy-manager`. Режимы сохраняются в KV плагина; восстановление на другой машине — командой `bb proxy-manager model-route <host-id> <provider> <mode>` после проверки штатной авторизации. Не переносить приватный профиль Codex с токенами через Git.
+
+Проверка 0.3.0 на Windows: `npm run check` и 23 теста маршрутизации (включая
+`model-route.test.ts` и `model-route-server.test.ts`) проходят. Сборка и reload
+проверены на работающей установке. В BB подтверждено продолжение истории Codex
+через прямой профиль; Claude проверен отдельным нативным CLI, а не ответом внутри
+BB. Проверка UI включала возврат Codex direct → opencodex → direct. Ускорение
+не измерялось. Старый `native.test.ts` с POSIX-правами `0600` остаётся известным
+ограничением тестов на Windows. Шаг `plugin-proxy-manager-model-routes` проверен
+в режиме development; это не публикация релиза.

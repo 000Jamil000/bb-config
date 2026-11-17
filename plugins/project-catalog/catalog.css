@@ -1,0 +1,39 @@
+.catalog-card {
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.catalog-card:hover,
+.catalog-card:focus-within {
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+  background-color: color-mix(in srgb, currentColor 4%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 6px 16px -8px rgb(0 0 0 / 0.18);
+}
+/* The quick action stays reachable on touch screens, where there is no hover. */
+@media (hover: hover) {
+  .catalog-card-action { opacity: 0; transition: opacity 120ms ease; }
+  .catalog-card:hover .catalog-card-action,
+  .catalog-card:focus-within .catalog-card-action { opacity: 1; }
+}
+.catalog-chip,
+.catalog-stat { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
+
+@keyframes catalog-spin { to { transform: rotate(360deg); } }
+.catalog-spin { animation: catalog-spin 1s linear infinite; }
+@keyframes catalog-pulse { 50% { opacity: 0.45; } }
+.catalog-skeleton { animation: catalog-pulse 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog-card, .catalog-card-action, .catalog-chip, .catalog-stat { transition: none; }
+  .catalog-spin, .catalog-skeleton { animation: none; }
+}
+@media (max-width: 480px) {
+  .catalog-page { padding-inline: 12px; }
+}
+
+.catalog-row { transition: background-color 120ms ease; }
+.catalog-row:hover { background-color: color-mix(in srgb, currentColor 5%, transparent); }
+@media (hover: hover) {
+  .catalog-row-action { opacity: 0; transition: opacity 120ms ease; }
+  .catalog-row:hover .catalog-row-action, .catalog-row:focus-within .catalog-row-action { opacity: 1; }
+}
+.catalog-nav { transition: background-color 120ms ease, color 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .catalog-row, .catalog-row-action, .catalog-nav { transition: none; } }

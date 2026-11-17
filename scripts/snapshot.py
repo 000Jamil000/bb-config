@@ -7,6 +7,7 @@ from voice_source import is_voice_fork
 import shutil
 import subprocess
 from pathlib import Path
+from plugin_scope import externally_managed
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -36,7 +37,8 @@ def public_settings(config):
 
 def collect():
     """Finish all reads before modifying the repo. No transcripts or auth files."""
-    plugins = bb('plugin', 'list')['plugins']
+    excluded = externally_managed(ROOT)
+    plugins = [p for p in bb('plugin', 'list')['plugins'] if p['id'] not in excluded]
     calls = {
         'settings': ('settings', 'show'),
         'ui': ('settings', 'ui', 'list'),

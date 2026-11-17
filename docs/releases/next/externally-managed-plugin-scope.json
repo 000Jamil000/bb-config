@@ -1,0 +1,13 @@
+{
+  "id": "externally-managed-plugin-scope",
+  "title": "Исключение отдельно устанавливаемых плагинов из снимка и восстановления",
+  "component": "snapshot-restore",
+  "where": "server",
+  "kind": "manual",
+  "verify": [
+    "{python}",
+    "scripts/test_plugin_scope.py"
+  ],
+  "rerun": "Проверка выполняется на временных данных.",
+  "rollback": "Чтобы вернуться к прежней политике, используйте скрипты снимка и восстановления из предыдущей версии."
+}

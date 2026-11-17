@@ -300,11 +300,25 @@
     "source": "builtin:plugin-api-tester"
   },
   {
+    "id": "project-catalog",
+    "version": "0.2.0",
+    "enabled": true,
+    "name": "Project Catalog",
+    "source": "path:plugins/project-catalog"
+  },
+  {
     "id": "project-logo",
     "version": "0.2.1",
     "enabled": true,
     "name": "Project Logo",
     "source": "path:plugins/project-logo"
+  },
+  {
+    "id": "project-machine-setup",
+    "version": "0.1.0",
+    "enabled": true,
+    "name": "Project Machine Setup",
+    "source": "path:plugins/project-machine-setup"
   },
   {
     "id": "project-open",

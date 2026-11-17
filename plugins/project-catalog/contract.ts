@@ -1,0 +1,68 @@
+import { defineRpcContract } from '@get-bb/plugin-sdk';
+import { z } from 'zod';
+import { AUTO_FIELDS } from './core';
+
+const gitState = z.object({
+  branch: z.string().nullable(), head: z.string().nullable(), headTime: z.number().nullable(),
+  dirty: z.number(), untracked: z.number(), ahead: z.number(), behind: z.number(),
+  hasUpstream: z.boolean(), remote: z.string().nullable(), stash: z.number(),
+});
+const plainState = z.object({ files: z.number(), bytes: z.number(), latestMtime: z.number().nullable(), digest: z.string().nullable(), truncated: z.boolean() });
+export const scanSchema = z.object({
+  scannedAt: z.number(),
+  kind: z.enum(['git', 'plain', 'missing', 'error']),
+  error: z.string().optional(),
+  git: gitState.optional(),
+  plain: plainState.optional(),
+  parts: z.array(z.object({ path: z.string(), git: gitState })).optional(),
+  docHash: z.string().nullable(),
+});
+const manifestSchema = z.record(z.string(), z.tuple([z.string(), z.number()]));
+
+export const hostContract = defineRpcContract({
+  scan: {
+    input: z.object({ targets: z.array(z.object({ id: z.string(), path: z.string(), manifest: z.boolean() })).max(200) }),
+    output: z.object({ results: z.array(z.object({ id: z.string(), scan: scanSchema, manifest: manifestSchema.nullable() })) }),
+    experimental_retryable: true,
+  },
+});
+
+const autoField = z.enum(AUTO_FIELDS);
+const link = z.object({ label: z.string(), url: z.string() });
+export const entrySchema = z.object({
+  summary: z.string(), notes: z.string(), category: z.string(), tags: z.array(z.string()), aliases: z.array(z.string()),
+  links: z.array(link), status: z.enum(['active', 'paused', 'archive']), independent: z.boolean(), localPaths: z.array(z.string()), locked: z.array(autoField),
+  describedAt: z.number().nullable(), describedDocHash: z.string().nullable(), updatedAt: z.number(),
+});
+export const patchSchema = z.object({
+  summary: z.string().max(2000), notes: z.string().max(8000), category: z.string().max(200),
+  tags: z.array(z.string().max(200)).max(50), aliases: z.array(z.string().max(200)).max(50),
+  links: z.array(link).max(50), status: z.enum(['active', 'paused', 'archive']), independent: z.boolean(),
+  localPaths: z.array(z.string().max(300)).max(50),
+}).partial().strict();
+const diffSchema = z.object({
+  changed: z.number(), onlyA: z.number(), onlyB: z.number(), a: z.string(), b: z.string(),
+  sample: z.array(z.object({ path: z.string(), kind: z.enum(['changed', 'onlyA', 'onlyB']), newer: z.enum(['a', 'b']).nullable() })),
+});
+const projectView = z.object({
+  id: z.string(), name: z.string(), remote: z.string().nullable(), createdAt: z.number(), icon: z.string().nullable(),
+  entry: entrySchema, described: z.boolean(),
+  sources: z.array(z.object({ id: z.string(), hostId: z.string(), hostName: z.string(), path: z.string(), isDefault: z.boolean(), connected: z.boolean(), scan: scanSchema.nullable() })),
+  verdict: z.object({ level: z.enum(['ok', 'info', 'attention', 'risk', 'unknown']), label: z.string(), details: z.array(z.string()) }),
+  diff: diffSchema.nullable(),
+});
+export type ProjectView = z.infer<typeof projectView>;
+const catalogSchema = z.object({
+  projects: z.array(projectView),
+  hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() })),
+  scanning: z.boolean(), scannedAt: z.number().nullable(),
+});
+export type Catalog = z.infer<typeof catalogSchema>;
+
+export const rpcContract = defineRpcContract({
+  catalog: { input: z.null(), output: catalogSchema },
+  save: { input: z.object({ projectId: z.string(), patch: patchSchema }).strict(), output: projectView },
+  unlock: { input: z.object({ projectId: z.string(), fields: z.array(autoField) }).strict(), output: projectView },
+  refresh: { input: z.object({ projectId: z.string().nullable() }).strict(), output: z.object({ started: z.boolean() }) },
+  describe_with_agent: { input: z.object({ projectId: z.string() }).strict(), output: z.object({ threadId: z.string() }) },
+});

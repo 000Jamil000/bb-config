@@ -1,0 +1,11 @@
+{
+  "id": "plugin-project-catalog",
+  "title": "Project Catalog 0.2.0: вкладка «Проекты», bb catalog и состояние копий на машинах",
+  "component": "project-catalog",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "project-catalog",
+  "introduces": true,
+  "rerun": "Безопасно: при совпадении версии шаг только проверяется. Карточки проектов хранятся в BB и при переустановке не теряются.",
+  "rollback": "bb plugin uninstall project-catalog. Перед удалением сохраните резервную копию BB для восстановления карточек."
+}

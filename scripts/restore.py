@@ -4,6 +4,7 @@ import argparse
 import json
 from voice_source import is_voice_fork
 from pathlib import Path
+from plugin_scope import externally_managed
 import shlex
 import subprocess
 import sys
@@ -67,7 +68,8 @@ def plan(install_plugins=False, root=ROOT, installed=None):
     if (root / 'config/codex.json').is_file():
         commands.append([sys.executable, str(root / 'scripts/codex_defaults.py'),
                          '--defaults', str(root / 'config/codex.json'), '--apply'])
-    manifest = read('plugins', root)
+    excluded = externally_managed(root)
+    manifest = [p for p in read('plugins', root) if p['id'] not in excluded]
     if install_plugins:
         for plugin in manifest:
             source = install_source(plugin)
@@ -111,7 +113,7 @@ def plan(install_plugins=False, root=ROOT, installed=None):
     names = {p.stem for directory in ('config/plugins', '.local/config/plugins')
              for p in (root / directory).glob('*.json')}
     for name in sorted(names):
-        if name in MANUAL_SETTINGS:
+        if name in MANUAL_SETTINGS or name in excluded:
             continue
         for key, data in read('plugins/' + name, root).items():
             if key in MANUAL_PLUGIN_KEYS.get(name, set()):

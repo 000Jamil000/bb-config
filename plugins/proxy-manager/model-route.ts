@@ -1,3 +1,4 @@
+import { inspectGateway } from './opencodex';
 import { homedir } from 'node:os';
 import { resolve, join } from 'node:path';
 import { mkdir, readFile, writeFile, copyFile, lstat, symlink, realpath } from 'node:fs/promises';
@@ -9,7 +10,6 @@ import { parse, stringify } from 'smol-toml';
 export type ModelRoute = 'direct' | 'opencodex';
 export const DIRECT_CODEX = 'https://chatgpt.com/backend-api/codex';
 export const DIRECT_CLAUDE = 'https://api.anthropic.com';
-const LOCAL = 'http://127.0.0.1:10100';
 
 /** Only the BB-owned config is changed. Native login and session files stay put. */
 export function directConfig(text: string): string {
@@ -23,12 +23,13 @@ export function directConfig(text: string): string {
   return stringify(config);
 }
 
-export function routeEnv(provider: string, mode: ModelRoute, codexHome?: string) {
+export function routeEnv(provider: string, mode: ModelRoute, codexHome?: string, gateway?: string) {
   if (provider === 'codex') {
     if (!codexHome) throw new Error('Не подготовлена конфигурация Codex для BB');
     return [{ name: 'CODEX_HOME', value: codexHome, reason: `BB model route: ${mode}` }];
   }
-  if (provider === 'claude-code') return [{ name: 'ANTHROPIC_BASE_URL', value: mode === 'direct' ? DIRECT_CLAUDE : LOCAL, reason: `BB model route: ${mode}` }];
+  if (provider === 'claude-code' && mode === 'opencodex' && !gateway) throw new Error('OpenCodex не проверен');
+  if (provider === 'claude-code') return [{ name: 'ANTHROPIC_BASE_URL', value: mode === 'direct' ? DIRECT_CLAUDE : gateway!, reason: `BB model route: ${mode}` }];
   throw new Error('Маршрут этого провайдера пока не поддерживается');
 }
 
@@ -51,13 +52,13 @@ export function prepareModelRoute(provider: string, mode: ModelRoute, dataDir: s
   return next;
 }
 async function prepare(provider: string, mode: ModelRoute, dataDir: string, sourceHome: string) {
-  if (provider === 'claude-code') return { env: routeEnv(provider, mode), message: 'Адрес применяется только к Claude Code в BB' };
+  const gateway = mode === 'opencodex' && (provider === 'codex' || provider === 'claude-code') ? await inspectGateway(provider, false, undefined, sourceHome) : null;
+  if (gateway && gateway.state !== 'available') throw new Error(gateway.message);
+  if (provider === 'claude-code' && mode === 'opencodex' && !gateway) throw new Error('OpenCodex не проверен');
+  if (provider === 'claude-code') return { env: routeEnv(provider, mode, undefined, gateway?.endpoint), message: 'Адрес применяется только к Claude Code в BB' };
   if (provider !== 'codex') throw new Error('Провайдер не поддерживается');
   const sourceConfig = await optional(join(sourceHome, 'config.toml'));
   if (mode === 'opencodex') {
-    const config = parse(sourceConfig);
-    const endpoint = config.openai_base_url;
-    if (typeof endpoint !== 'string' || !/^http:\/\/(127\.0\.0\.1|localhost):\d+\//.test(endpoint)) throw new Error('В обычном профиле Codex не найден локальный OpenCodex. Настройте его в OpenCodex');
     return { env: routeEnv(provider, mode, sourceHome), message: 'BB использует обычный профиль Codex с локальным шлюзом' };
   }
   const home = resolve(dataDir, 'codex-direct');

@@ -1,0 +1,14 @@
+{
+  "id": "plugin-proxy-manager-gateway-availability",
+  "title": "Proxy Manager 0.3.1: проверка доступности OpenCodex",
+  "component": "proxy-manager",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "proxy-manager",
+  "introduces": false,
+  "after": [
+    "next/plugin-proxy-manager-model-routes"
+  ],
+  "rerun": "Повторяемая сборка и проверка версии; режимы маршрутов не изменяются.",
+  "rollback": "Вернуть предыдущие исходники и выполнить build/reload; предыдущая версия не проверяет доступность шлюза."
+}

@@ -12,7 +12,11 @@ test('BB route applies only to selected provider and defers active runtime stop 
       list: async () => [makeThreadResponse({ id: 'idle', providerId: 'codex', status: 'idle' }), makeThreadResponse({ id: 'active', providerId: 'codex', status: 'active' }), makeThreadResponse({ id: 'claude', providerId: 'claude-code', status: 'idle' })],
       stop: async ({ threadId }: any) => { stopped.push(threadId); return { ok: true }; },
     },
-  }, experimental_callHostRpc: async ({ method }: any) => {
+  }, experimental_callHostRpc: async ({ method, input }: any) => {
+    if (method === 'inspect_gateway') {
+      assert.equal(input.force, true);
+      return { state: broken ? 'unavailable' : 'available', message: 'gateway status' };
+    }
     assert.equal(method, 'prepare_model_route');
     if (broken) throw new Error('offline');
     return { env: [{ name: 'CODEX_HOME', value: '/bb/direct', reason: 'BB route' }], message: 'prepared' };
@@ -27,6 +31,8 @@ test('BB route applies only to selected provider and defers active runtime stop 
     await harness.behavior.emitThreadEvent('thread.idle', { thread: makeThreadResponse({ id: 'active', providerId: 'codex', status: 'idle' }), lastAssistantText: 'OK' });
     assert.deepEqual(stopped, ['idle', 'active']);
     broken = true;
+    await assert.rejects(harness.behavior.callRpc('set_model_route', { hostId: 'h', providerId: 'codex', mode: 'opencodex' }));
+    assert.equal((await harness.behavior.callRpc('model_routes', null))[0]?.mode, 'direct');
     const guard = harness.registrations.hooks['message.dispatch']!;
     assert.equal((await guard(makeMessageDispatchHookContext({ host: { id: 'h' }, thread: { providerId: 'codex' } }))).action, 'wait');
   } finally { await harness.lifecycle.dispose(); }

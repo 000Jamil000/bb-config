@@ -39,6 +39,10 @@ export default async function plugin(bb: BbPluginApi) {
     return serialize(async () => {
       const machine = await bb.sdk.hosts.get({ hostId: input.hostId });
       if (machine.status !== 'connected') throw new Error('Машина недоступна');
+      if (input.mode === 'opencodex') {
+        const check = await host.call('inspect_gateway', { providerId: input.providerId, force: true }, { hostId: input.hostId });
+        if (check.state !== 'available') throw new Error(check.message);
+      }
       const prepared = await host.call('prepare_model_route', input, { hostId: input.hostId });
       const state = { ...input, message: prepared.message, updatedAt: new Date().toISOString() };
       await bb.storage.kv.set(modelKey(input.hostId, input.providerId), state);
@@ -197,6 +201,12 @@ export default async function plugin(bb: BbPluginApi) {
       const claudeRoute = providerId === 'claude-code' && machine.status === 'connected'
         ? await inspectClaude(hostId, path, input.threadId) : null;
       return { modelMode, claudeRoute, hostId, hostName: machine.name, providerId, proxyId, proxyName: proxyId ? proxy?.name ?? 'Прокси не найден' : null, connected: machine.status === 'connected', check: providerId === 'codex' ? (await bb.storage.kv.get<Check>(`check:${hostId}:${proxyId ?? 'direct'}`)) ?? null : null, applied, warning };
+    },
+    gateway_status: async input => {
+      const machine = await bb.sdk.hosts.get({ hostId: input.hostId });
+      if (machine.status !== 'connected') return { state: 'offline' as const, message: 'Машина офлайн — OpenCodex не проверен' };
+      try { return await host.call('inspect_gateway', { providerId: input.providerId, force: input.force }, { hostId: input.hostId }); }
+      catch { return { state: 'unknown' as const, message: 'Не удалось проверить OpenCodex на машине' }; }
     },
     model_routes: modelRoutes, set_model_route: setModelRoute,
     list, add, bind, remove: ({ id }) => remove(id), check: ({ hostId, proxyId }) => check(hostId, proxyId),

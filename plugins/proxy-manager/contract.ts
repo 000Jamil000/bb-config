@@ -25,7 +25,10 @@ export const modelRouteInput = z.object({ hostId: z.string().min(1), providerId:
 export const modelRouteState = modelRouteInput.extend({ message: z.string(), updatedAt: z.string() });
 export type ModelRouteState = z.infer<typeof modelRouteState>;
 const modelRoutePrepared = z.object({ env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() })), message: z.string() });
+export const gatewayStatus = z.object({ state: z.enum(['unconfigured', 'unavailable', 'available', 'offline', 'unknown']), message: z.string() });
+export type GatewayStatus = z.infer<typeof gatewayStatus>;
 export const hostContract = defineRpcContract({
+  inspect_gateway: { input: z.object({ providerId: z.enum(['codex', 'claude-code']), force: z.boolean().optional() }), output: gatewayStatus },
   prepare_model_route: { input: z.object({ providerId: z.enum(['codex', 'claude-code']), mode: z.enum(['direct', 'opencodex']) }), output: modelRoutePrepared },
   claude_route: { input: z.object({ path: z.string().nullable(), threadId: z.string().nullable() }), output: claudeRouteSchema },
   check: { input: z.object({ proxy: storedProxy.nullable(), previous: checkSchema.optional() }), output: checkSchema },
@@ -43,6 +46,7 @@ export const routeContextSchema = z.object({
 });
 export type RouteContext = z.infer<typeof routeContextSchema>;
 export const rpcContract = defineRpcContract({
+  gateway_status: { input: z.object({ hostId: z.string().min(1), providerId: z.enum(['codex', 'claude-code']), force: z.boolean().optional() }), output: gatewayStatus },
   model_routes: { input: z.null(), output: z.array(modelRouteState) },
   set_model_route: { input: modelRouteInput, output: modelRouteState },
   route_context: { input: z.object({ threadId: z.string().nullable(), hostId: z.string().nullable(), environmentId: z.string().nullable(), providerId: z.string().nullable() }), output: routeContextSchema.nullable() },

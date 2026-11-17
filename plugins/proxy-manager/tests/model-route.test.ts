@@ -17,7 +17,7 @@ test('direct profile removes gateway catalog and provider override while preserv
 test('routing env never changes OS proxies or exposes credentials', () => {
   for (const mode of ['direct', 'opencodex'] as const) {
     assert.deepEqual(routeEnv('codex', mode, '/private/profile').map(e => e.name), ['CODEX_HOME']);
-    assert.deepEqual(routeEnv('claude-code', mode).map(e => e.name), ['ANTHROPIC_BASE_URL']);
+    assert.deepEqual(routeEnv('claude-code', mode, undefined, 'http://127.0.0.1:12345').map(e => e.name), ['ANTHROPIC_BASE_URL']);
   }
   assert.throws(() => routeEnv('unknown', 'direct'));
 });
@@ -37,7 +37,7 @@ test('preparation preserves native config, shares history, and does not overwrit
   await prepareModelRoute('codex', 'direct', data, source);
   assert.equal(await readFile(join(home, 'auth.json'), 'utf8'), '{"refreshed":true}');
   assert.equal(await readFile(join(source, 'auth.json'), 'utf8'), '{"fixture":true}');
-  assert.equal((await prepareModelRoute('codex', 'opencodex', data, source)).env[0]!.value, source);
+  assert.equal((await prepareModelRoute('claude-code', 'direct', data, source)).env[0]!.value, 'https://api.anthropic.com');
 });
 
 test('OpenCodex selection refuses a nonlocal native route', async () => {

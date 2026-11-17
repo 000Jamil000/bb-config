@@ -108,7 +108,7 @@ spoken phrasing remains model-dependent and requires a live voice acceptance che
 ## Fork releases and native updates
 
 Source: https://github.com/ainurminibaev/bb-plugin-voice-mode, branch
-`personal-assistant`. Stable releases are installed with `@^0.2.0`; BB discovers
+`main`. Stable releases are installed with `@^0.2.0`; BB discovers
 compatible 0.2.x tags through native plugin updates. Use the Plugins screen or
 `bb plugin update voice-mode`. The shared fix is proposed in upstream PR #7.
 

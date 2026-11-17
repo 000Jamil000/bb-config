@@ -1479,7 +1479,7 @@ patch recovery process, or disable the keeper and reinstall catalog Voice Mode.
 ## Voice Mode personal fork and upstream contribution
 
 Source: https://github.com/ainurminibaev/bb-plugin-voice-mode, branch
-`personal-assistant`. Stable release v0.2.0 contains the Russian speech, mobile
+`main`. Stable release v0.2.0 contains the Russian speech, mobile
 launch, readiness greetings, noise controls and waiting/status edits. No separate
 transcript storage or panel. Generic waiting/status behavior is proposed in
 https://github.com/steveafrost/bb-plugin-voice-mode/pull/7. The upstream PR passed

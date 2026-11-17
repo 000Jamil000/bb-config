@@ -1,6 +1,6 @@
 {
   "id": "plugin-voice-mode-keeper",
-  "title": "Plugin Keeper 0.2.2: проверка встроенных правок форка Voice Mode",
+  "title": "Plugin Keeper 0.2.3: штатные обновления форка Voice Mode",
   "component": "voice-mode-keeper",
   "where": "server",
   "kind": "local-plugin",

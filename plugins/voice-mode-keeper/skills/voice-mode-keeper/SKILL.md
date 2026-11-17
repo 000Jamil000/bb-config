@@ -35,8 +35,9 @@ Check the installed patch with `python3 plugins/voice-mode/apply.py --check`.
 Apply with `python3 plugins/voice-mode/auto_update.py` (staged tests/build, then reload;
 ends the current voice session). The model's spoken wording still needs a live check.
 
-The reviewed personal fork is pinned in `plugins/voice-mode/fork.json`. Keeper
-verifies its version/source hashes and skips catalog patching because its source
-already includes the edits; other kept plugins continue normally. Unknown fork
-revisions require review. Use `switch_to_fork.py --check` / `--apply` for the migration;
-it refuses configured Voice Mode secrets rather than exporting or deleting them.
+The personal fork uses native BB release updates: its repository and compatible
+range are in `plugins/voice-mode/fork.json`. Keeper skips source patching for that
+channel and accepts newer stable versions in range. It does not pin file hashes.
+Other kept plugins continue normally. Use `switch_to_fork.py --check` / `--apply`
+for the one-time migration; configured Voice Mode secrets cause a safe refusal.
+Subsequent fork updates use BB's Plugins updates or `bb plugin update voice-mode`.

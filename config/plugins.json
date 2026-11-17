@@ -430,15 +430,15 @@
   },
   {
     "id": "voice-mode",
-    "version": "0.2.0-personal.1",
+    "version": "0.2.0",
     "enabled": true,
     "name": "Voice Mode",
-    "source": "git:https://github.com/ainurminibaev/bb-plugin-voice-mode.git@7ca6eba900ad372c94ffa1468b30998b79d39522",
+    "source": "git:https://github.com/ainurminibaev/bb-plugin-voice-mode.git@semver:^0.2.0",
     "installSource": "voice-mode@bb-community"
   },
   {
     "id": "voice-mode-keeper",
-    "version": "0.2.2",
+    "version": "0.2.3",
     "enabled": true,
     "name": "Plugin Keeper",
     "source": "path:plugins/voice-mode-keeper"

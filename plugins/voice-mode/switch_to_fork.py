@@ -33,13 +33,14 @@ def main():
     args = parser.parse_args()
     current = installed()
     if current and patcher.verify_fork(current):
-        print('Reviewed fork already installed; no reinstall.')
+        print('Fork release channel already configured; no reinstall.')
         return
     if args.check:
         raise SystemExit('Reviewed Voice Mode fork is not installed.')
     if not current:
         raise SystemExit('Voice Mode is not installed; this migration does not enable new components.')
-    if not current['source'].startswith('git:https://github.com/steveafrost/bb-plugin-voice-mode.git@'):
+    policy = json.loads((patcher.HERE / 'fork.json').read_text())
+    if not (current['source'].startswith('git:https://github.com/steveafrost/bb-plugin-voice-mode.git@') or current['source'] == policy['legacySource']):
         raise SystemExit('Unexpected source; refusing to replace it.')
     settings = cli('plugin', 'config', 'voice-mode')
     values = settings['values']
@@ -51,7 +52,7 @@ def main():
             raise SystemExit('A plugin secret is configured; migration stopped without removing anything. Use a credential-preserving migration or re-enter it securely after explicit approval.')
     preferences = {k: v for k, v in values.items() if k not in secret_keys}
     policy = json.loads((patcher.HERE / 'fork.json').read_text())
-    target = 'git:' + policy['repository'] + '@' + policy['commit']
+    target = 'git:' + policy['repository'] + '@' + policy['range']
     journal_dir = patcher.REPO / '.local/plugin-patches/voice-mode'
     journal_dir.mkdir(parents=True, exist_ok=True)
     journal = journal_dir / 'fork-migration.json'

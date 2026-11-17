@@ -1478,31 +1478,33 @@ patch recovery process, or disable the keeper and reinstall catalog Voice Mode.
 
 ## Voice Mode personal fork and upstream contribution
 
-Personal source: https://github.com/ainurminibaev/bb-plugin-voice-mode,
-branch `personal-assistant`, version `0.2.0-personal.1`, reviewed commit
-`7ca6eba900ad372c94ffa1468b30998b79d39522`. This contains the existing Russian
-speech, mobile launch, readiness greetings, noise controls and waiting/status
-edits. No extra transcript storage or UI was added. Generic waiting/status behavior
-is submitted separately in https://github.com/steveafrost/bb-plugin-voice-mode/pull/7.
-The PR's 47 tests and the fork's 53 tests, type checks and builds passed.
+Source: https://github.com/ainurminibaev/bb-plugin-voice-mode, branch
+`personal-assistant`. Stable release v0.2.0 contains the Russian speech, mobile
+launch, readiness greetings, noise controls and waiting/status edits. No separate
+transcript storage or panel. Generic waiting/status behavior is proposed in
+https://github.com/steveafrost/bb-plugin-voice-mode/pull/7. The upstream PR passed
+47 tests; the fork passed 53 tests, typecheck and build.
 
-`config/plugins.json` now selects the pinned fork for restoration. Keeper 0.2.2
-verifies the pin and file hashes in `plugins/voice-mode/fork.json`, without applying
-catalog patches again; its protection of other plugins remains enabled. Source
-edits remain reproducible in `changes.json`; full source is in the fork. Updates
-require reviewing a new fork commit and updating the pin/hashes together.
+`config/plugins.json` selects `@semver:^0.2.0`. BB discovers compatible stable
+0.2.x tags through its native Plugins updates; apply with `bb plugin update
+voice-mode`. Publishing a fork release does not require a bb-config release.
+Source development and releases live in the fork; bb-config records installation,
+settings and restoration. The old patch is retained only for catalog recovery.
+Keeper 0.2.3 skips source patching for the fork release channel without checking
+fixed commit/file hashes, and continues protecting the other catalog plugins.
+`fork.json` retains the old pin solely as an allowed migration origin.
 
-Existing installation migration: `python3 plugins/voice-mode/switch_to_fork.py
---apply`, then `--check`. BB's managed-source replacement requires remove/install.
-The script refuses before removal if a Voice Mode secret is configured, retains
-nonsecret settings and enabled state, and leaves authentication in connection
-plugins untouched. Recovery data are ignored under `.local/plugin-patches/voice-mode`.
-If installation fails before registration, it reinstalls the original source;
-if a new plugin was registered before another failure, inspect it and the journal
-rather than removing it blindly. Restore preferences through `bb plugin config`.
-Rollback uses the same credential check, removes the fork, installs the original
-catalog source, restores preferences, and lets Keeper reapply the legacy patch.
-Never silently discard configured credentials. Both paths end active voice sessions.
+Migration from the original catalog or the old fork pin:
+`python3 plugins/voice-mode/switch_to_fork.py --apply`, then `--check`.
+BB's managed-source replacement requires remove/install. The script refuses before
+removal if a Voice Mode secret is configured, retains nonsecret settings and enabled
+state, and leaves connection-plugin credentials untouched. Private recovery data
+live under `.local/plugin-patches/voice-mode`. A failure before registration restores
+the prior source; a failure after registration requires inspection and preference
+recovery from the journal. Never silently discard configured credentials.
+Reinstallation ends live voice sessions. Rollback uses the same credential check
+and the previous source/settings from the journal. Updates within the configured
+release range use BB's normal update/rollback path, not this migration script.
 
-No stable release was published by this change. Pending release steps distinguish
-keeper verification, fork migration and waiting-policy verification.
+The fork's v0.2.0 release is published. The pending bb-config steps cover the
+one-time migration and keeper change; no new bb-config stable release is implied.

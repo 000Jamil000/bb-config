@@ -105,20 +105,24 @@ Verify installation with `python3 plugins/voice-mode/apply.py --check`.
 Backend tests cover stale output exclusion and finished result delivery; actual
 spoken phrasing remains model-dependent and requires a live voice acceptance check.
 
-## Reviewed fork
+## Fork releases and native updates
 
-The personal edition is now published at
-https://github.com/ainurminibaev/bb-plugin-voice-mode/tree/personal-assistant.
-`fork.json` pins its reviewed commit, version and source hashes. The shared fix
-is proposed upstream in https://github.com/steveafrost/bb-plugin-voice-mode/pull/7.
-The legacy patch remains for catalog recovery; it is not applied to the fork.
-`auto_update.py` verifies the pinned fork without editing it; unexpected fork
-commits or modified source require a review and a new policy.
+Source: https://github.com/ainurminibaev/bb-plugin-voice-mode, branch
+`personal-assistant`. Stable releases are installed with `@^0.2.0`; BB discovers
+compatible 0.2.x tags through native plugin updates. Use the Plugins screen or
+`bb plugin update voice-mode`. The shared fix is proposed in upstream PR #7.
 
-Migration: `python3 plugins/voice-mode/switch_to_fork.py --apply`, then `--check`.
-BB cannot replace one managed Git source with another in place, so the migration
-uses remove/install only after verifying that no Voice Mode secret is configured.
-It preserves nonsecret preferences and enabled state, does not touch connection
-plugins or their credentials, and records a private recovery journal. If a secret
-is configured it refuses before removal. This is intentionally not a universal
-credential migration. Reloading/reinstalling ends any live voice session.
+`fork.json` records the repository/range and the old pin only for migration.
+Keeper skips patching this release channel, including newer compatible versions;
+it does not hash-lock fork files. The legacy patch remains for catalog recovery.
+Source development and releases belong in the fork. bb-config records installation
+and settings; a bb-config release is not needed for each Voice Mode release.
+
+Migration from the original catalog or the old pin:
+`python3 plugins/voice-mode/switch_to_fork.py --apply`, then `--check`.
+BB's managed-source change needs remove/install. The script refuses configured
+Voice Mode secrets before removal, preserves nonsecret settings and enabled state,
+and leaves connection-plugin credentials alone. Recovery uses the private journal.
+If an install fails before registration, it restores the prior source; failures
+following registration require inspection of the current install and journal.
+A reinstall ends the active voice session. Do not blindly remove configured secrets.

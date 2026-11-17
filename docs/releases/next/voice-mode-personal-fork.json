@@ -1,13 +1,28 @@
 {
   "id": "voice-mode-personal-fork",
-  "title": "Voice Mode: проверенная версия из личного форка",
+  "title": "Voice Mode: стабильные релизы форка через BB",
   "component": "voice-mode",
   "where": "server",
   "kind": "command",
-  "after": ["next/plugin-voice-mode-keeper"],
-  "applies": ["{python}", "scripts/updates.py", "require-plugin", "voice-mode"],
-  "apply": ["{python}", "plugins/voice-mode/switch_to_fork.py", "--apply"],
-  "verify": ["{python}", "plugins/voice-mode/switch_to_fork.py", "--check"],
-  "rerun": "Проверенный форк повторно не устанавливается; неизвестный источник не заменяется.",
+  "after": [
+    "next/plugin-voice-mode-keeper"
+  ],
+  "applies": [
+    "{python}",
+    "scripts/updates.py",
+    "require-plugin",
+    "voice-mode"
+  ],
+  "apply": [
+    "{python}",
+    "plugins/voice-mode/switch_to_fork.py",
+    "--apply"
+  ],
+  "verify": [
+    "{python}",
+    "plugins/voice-mode/switch_to_fork.py",
+    "--check"
+  ],
+  "rerun": "Настроенный канал релизов повторно не устанавливается; неизвестный источник не заменяется.",
   "rollback": "Проверить отсутствие настроенных секретов Voice Mode, сохранить несекретные настройки, удалить форк и установить прежний источник из приватного журнала, восстановить настройки и проверить Keeper."
 }

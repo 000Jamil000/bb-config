@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import subprocess
 import tempfile
@@ -18,14 +19,20 @@ def verify_fork(plugin):
         return False
     policy = json.loads(policy_file.read_text())
     prefix = 'git:' + policy['repository'] + '@'
-    if not plugin['source'].startswith(prefix):
+    if plugin['source'] not in (prefix + policy['range'], prefix + 'semver:' + policy['range']):
         return False
-    if policy['commit'] not in plugin['source'] or plugin['version'] != policy['version']:
-        raise RuntimeError('Voice Mode fork differs from the reviewed pin; update fork.json after review.')
-    root = Path(plugin['rootDir'])
-    for name, expected in policy['files'].items():
-        if hashlib.sha256((root / name).read_bytes()).hexdigest() != expected:
-            raise RuntimeError('Voice Mode fork source verification failed: ' + name)
+    # BB resolves signed-in source intent, compatible release tags and engines.
+    # Keeper does not freeze or patch the fork's source files.
+    version = re.fullmatch(r'(\d+)\.(\d+)\.(\d+)', plugin['version'])
+    lower = re.fullmatch(r'\^(\d+)\.(\d+)\.(\d+)', policy['range'])
+    if not version or not lower:
+        return False
+    current = tuple(map(int, version.groups()))
+    minimum = tuple(map(int, lower.groups()))
+    major, minor, patch = minimum
+    upper = (major + 1, 0, 0) if major else ((0, minor + 1, 0) if minor else (0, 0, patch + 1))
+    if not minimum <= current < upper:
+        return False
     return True
 
 
@@ -73,7 +80,7 @@ def main():
     inventory = json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json']))['plugins']
     plugin = next(p for p in inventory if p['id'] == 'voice-mode')
     if verify_fork(plugin):
-        print('Reviewed Voice Mode fork is installed; source patches are already included.')
+        print('Voice Mode follows compatible fork releases through BB; no source patching.')
         return
     if not plugin['source'].startswith('git:https://github.com/steveafrost/bb-plugin-voice-mode.git@'):
         raise RuntimeError('Expected the original managed catalog installation.')

@@ -7,7 +7,7 @@
 // credentials on that machine, so they are instant.
 import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { z } from "zod";
-import { buildFeed, chatFromEvents, describeActivity, oneLine, sameContent, type Feed, type FeedThread } from "./feed.ts";
+import { buildFeed, chatFromEvents, describeActivity, oneLine, sameContent, statusFile, type Feed, type FeedThread } from "./feed.ts";
 
 const message = z.object({ role: z.enum(["user", "agent", "thread"]), text: z.string(), at: z.number() });
 // The same data the panel reads from files, for the CLI and diagnostics.
@@ -50,8 +50,8 @@ const USAGE_MS = 120_000;
 
 export default async function menubarStatus(bb: BbPluginApi) {
   const settings = bb.settings.define({
-    hostId: { type: "string", label: "Machine that shows the menu bar widget (host ID)", default: "" },
-    filePath: { type: "string", label: "Absolute path of the status file on that machine", default: "" },
+    hostId: { type: "string", label: "Machine that shows the menu bar or tray widget (host ID)", default: "" },
+    filePath: { type: "string", label: "Absolute path of the status file on that machine (/… or C:\\…)", default: "" },
     webUrl: { type: "string", label: "Public BB address for links (optional)", default: "" },
     maxItems: { type: "string", label: "How many agents to list", default: "12" },
   });
@@ -145,8 +145,9 @@ export default async function menubarStatus(bb: BbPluginApi) {
   }
 
   async function publish(): Promise<void> {
-    const { hostId, filePath } = await settings.get();
-    if (!hostId || !filePath.startsWith("/")) {
+    const { hostId, filePath: configured } = await settings.get();
+    const filePath = statusFile(configured);
+    if (!hostId || !filePath) {
       bb.status.needsConfiguration(
         "Set the machine (host ID) and an absolute status file path in Menubar Status settings.",
       );
@@ -201,9 +202,10 @@ export default async function menubarStatus(bb: BbPluginApi) {
   }
 
   async function target(): Promise<{ hostId: string; dir: string } | null> {
-    const { hostId, filePath } = await settings.get();
-    if (!hostId || !filePath.startsWith("/")) return null;
-    return { hostId, dir: filePath.slice(0, filePath.lastIndexOf("/")) };
+    const settled = await settings.get();
+    const filePath = statusFile(settled.filePath);
+    if (!settled.hostId || !filePath) return null;
+    return { hostId: settled.hostId, dir: filePath.slice(0, filePath.lastIndexOf("/")) };
   }
 
   let outboxBusy = false;
@@ -215,7 +217,7 @@ export default async function menubarStatus(bb: BbPluginApi) {
       const listing = (await bb.sdk.files.list({ hostId: where.hostId, path: `${where.dir}/outbox`, limit: 50 })) as unknown as
         { files?: { path: string }[] };
       for (const file of (listing.files ?? []).filter((f) => f.path.endsWith(".json"))) {
-        const path = `${where.dir}/outbox/${file.path.split("/").at(-1)}`;
+        const path = `${where.dir}/outbox/${file.path.split(/[\\/]/).at(-1)}`;
         let request: { action?: string; thread?: string; text?: string } = {};
         try {
           const read = (await bb.sdk.files.read({ hostId: where.hostId, path } as never)) as { content?: string };

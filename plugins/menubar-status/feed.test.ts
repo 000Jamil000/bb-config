@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { buildFeed, chatFromEvents, describeActivity, oneLine, sameContent, stateOf, type FeedThread } from "./feed.ts";
+import { buildFeed, chatFromEvents, describeActivity, oneLine, sameContent, stateOf, statusFile, type FeedThread } from "./feed.ts";
 
 const thread = (over: Partial<FeedThread>): FeedThread => ({
   id: "t", projectId: "p", title: "T", status: "idle", updatedAt: 1, ...over,
@@ -123,4 +123,12 @@ test("titles: bb's fallback title, then a Russian placeholder", () => {
     thread({ id: "b", title: null, updatedAt: 1 }),
   ]);
   assert.deepEqual(feed.items.map((i) => i.title), ["Первое сообщение", "Без названия"]);
+});
+
+test("the status file may be a POSIX path or a Windows drive path", () => {
+  assert.equal(statusFile("/Users/example/Library/Application Support/bb-menubar/status.json"), "/Users/example/Library/Application Support/bb-menubar/status.json");
+  assert.equal(statusFile("C:\\Users\\example\\AppData\\Local\\bb-menubar\\status.json"), "C:/Users/example/AppData/Local/bb-menubar/status.json");
+  assert.equal(statusFile(" d:/bb/status.json "), "d:/bb/status.json");
+  assert.equal(statusFile("status.json"), null);
+  assert.equal(statusFile(""), null);
 });

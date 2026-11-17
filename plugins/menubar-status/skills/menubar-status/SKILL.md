@@ -18,6 +18,11 @@ Closing a BB window does not quit BB. The LaunchAgent remains enabled at login
 to observe launches, including when BB was not running at login. Workspace
 notifications update visibility immediately, with a two-second polling fallback.
 
+On a Windows PC the counterpart is `bb Status.exe` (`windows/install.ps1`): a
+notification-area icon with the most urgent state and its count, the limits in
+the tooltip, and the same panel in an Edge window on click. `filePath` is then a
+Windows path such as `C:/Users/example/AppData/Local/bb-menubar/status.json`.
+
 - `bb menubar-status show` — print the feed the menu bar would get.
 - `bb menubar-status sync` — write the file now.
 - `bb plugin rpc call menubar-status chat --input-file <json>` with

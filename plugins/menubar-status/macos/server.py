@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local helper for the bb menu bar panel.
+"""Local helper for the bb menu bar (macOS) and notification area (Windows) panel.
 
 Serves the panel page and, from local files the menubar-status plugin keeps
 in this folder, the status, account usage and each listed thread's
@@ -44,6 +44,16 @@ def queue(request):
     os.replace(temporary, os.path.join(outbox, f"{name}.json"))
 
 
+def show_bb():
+    """Bring the bb desktop app forward, starting it if needed."""
+    if os.name == "nt":
+        app = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "bb", "bb.exe")
+        if os.path.isfile(app):
+            os.startfile(app)
+    else:
+        subprocess.Popen(["/usr/bin/open", "-a", "bb"])
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
@@ -86,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/open":
             if THREAD_ID.match(thread):
                 queue({"action": "open", "thread": thread})
-            subprocess.Popen(["/usr/bin/open", "-a", "bb"])
+            show_bb()
             self.reply(200, "{}")
         else:
             self.reply(404, "{}")

@@ -212,3 +212,12 @@ export function chatFromEvents(events: readonly RawEvent[], limit = 40): ChatMes
   }
   return out.slice(-limit);
 }
+
+/**
+ * The status file as an absolute path with forward slashes, or null: a POSIX
+ * path, or a Windows drive path written with either slash.
+ */
+export function statusFile(filePath: string): string | null {
+  const path = filePath.trim().replace(/\\/g, "/");
+  return path.startsWith("/") || /^[A-Za-z]:\//.test(path) ? path : null;
+}

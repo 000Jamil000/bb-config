@@ -1,16 +1,8 @@
 # Project Open
 
-Two folder/terminal icons on thread rows and thread headers. Sidebar controls
-appear on hover or keyboard focus; header controls stay visible. Both buttons
-show a custom tooltip after 100 ms with the action, machine name and full
-thread environment path. Destination data comes from BB’s live sidebar and
-is refreshed through the thread/environment/host SDK when the tooltip opens. Sidebar shortcuts reserve their measured width only while the native toolbar
-is visible (hover, keyboard focus, or an open actions menu). The title truncates
-before the native project link and child expander, which stay in normal layout.
-A mouse click leaving focus on the expander does not keep empty space after
-the pointer leaves. ResizeObserver keeps the reserve current when toolbar sizes
-change; idle rows have no extra reserve. Header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
-remain adjacent. BB’s sidebar renderer and menus are preserved.
+Folder and terminal actions are available in the thread’s native **…** menu. Choose **Customize actions** in that menu to show up to three shortcuts on a row. BB stores the selection in the thread-list preference `rowActions`. The bb-config default is an empty list. The plugin action keys are `project-open/open-folder` and `project-open/open-terminal`.
+
+The open thread’s header also shows both buttons with machine and folder tooltips.
 
 The terminal uses BB’s original New tab → Start terminal, scoped to the thread
 pane or the selected project host. No separate terminal or SSH UI is implemented.
@@ -92,8 +84,7 @@ requires restored connectivity and may require ejecting/reopening the disk.
 The helper neither provides a VPN/proxy route nor maintains an offline project
 copy. Every remote host needs an explicit private SSH/root mapping.
 
-On touch clients no sidebar shortcuts are mounted: hidden controls must not
-intercept row taps. Header folder shortcuts on iPhone/iPad/Android open BB’s
+On iPhone/iPad/Android the folder action opens BB’s
 original New tab file search for that thread, never the macOS URL handler.
 The macOS handler is used only on a Mac desktop; other desktop clients use
 BB’s native Open behavior.

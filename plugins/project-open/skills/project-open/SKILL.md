@@ -3,15 +3,11 @@ name: project-open
 description: Diagnose Project Open’s Finder folder buttons and original BB terminal shortcuts.
 ---
 
-Project Open adds hover/focus folder and terminal icons on individual thread
-rows on desktop and always-visible icons in thread headers. Touch clients
-have no injected sidebar buttons. Desktop rows reserve measured toolbar width only
-on hover, visible keyboard focus, or an open native menu. Native child expanders
-and project links stay in normal layout; never translate them over the title.
-Plain focus after a mouse click must not retain the reserve once the pointer
-leaves. ResizeObserver tracks toolbar/trailing widths and is disposed on reload. On mobile the folder button opens BB’s
-original New tab file search; never dispatch the macOS app URL there. Both buttons have fast custom
-tooltips with the machine name and full environment path. Do not replace BB’s sidebar, menus or terminal.
+Project Open registers folder and terminal actions in BB’s native thread menu.
+Use … → Customize actions or the thread-list preference `rowActions` to choose
+up to three row shortcuts. The keys are `project-open/open-folder` and
+`project-open/open-terminal`. An empty array leaves only the overflow menu.
+Header buttons show the machine and full path. On mobile use BB’s native files UI.
 Resolve host/path from the selected thread’s environment, never a project source.
 Header scope comes from the real thread composer; never infer a thread from
 only the URL when split panes are open.

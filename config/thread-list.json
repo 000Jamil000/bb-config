@@ -26,11 +26,7 @@
     "threads"
   ],
   "hiddenGroups": [],
-  "rowActions": [
-    "code-open/open-code-menu",
-    "bb--core/newThreadInEnvironment",
-    "bb--core/archive"
-  ],
+  "rowActions": [],
   "collapsedSections": [],
   "collapsedProjects": [],
   "collapsedThreads": [],

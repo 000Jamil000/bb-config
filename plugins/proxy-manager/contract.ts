@@ -23,6 +23,8 @@ export const claudeRouteSchema = z.object({
 export type ClaudeRoute = z.infer<typeof claudeRouteSchema>;
 export const modelRouteInput = z.object({ hostId: z.string().min(1), providerId: z.enum(['codex', 'claude-code']), mode: z.enum(['direct', 'opencodex']) });
 export const modelRouteState = modelRouteInput.extend({ message: z.string(), updatedAt: z.string() });
+/** What a user may pick: a route, or `inherit` to stop overriding the CLI's own configuration. */
+export const modelRouteChoice = modelRouteInput.extend({ mode: z.enum(['direct', 'opencodex', 'inherit']) });
 export type ModelRouteState = z.infer<typeof modelRouteState>;
 const modelRoutePrepared = z.object({ env: z.array(z.object({ name: z.string(), value: z.string(), reason: z.string() })), message: z.string() });
 export const gatewayStatus = z.object({ state: z.enum(['unconfigured', 'unavailable', 'available', 'offline', 'unknown']), message: z.string() });
@@ -48,7 +50,7 @@ export type RouteContext = z.infer<typeof routeContextSchema>;
 export const rpcContract = defineRpcContract({
   gateway_status: { input: z.object({ hostId: z.string().min(1), providerId: z.enum(['codex', 'claude-code']), force: z.boolean().optional() }), output: gatewayStatus },
   model_routes: { input: z.null(), output: z.array(modelRouteState) },
-  set_model_route: { input: modelRouteInput, output: modelRouteState },
+  set_model_route: { input: modelRouteChoice, output: modelRouteState.nullable() },
   route_context: { input: z.object({ threadId: z.string().nullable(), hostId: z.string().nullable(), environmentId: z.string().nullable(), providerId: z.string().nullable() }), output: routeContextSchema.nullable() },
   list: { input: z.null(), output: z.object({ proxies: z.array(publicProxy), bindings: z.array(bindingSchema), checks: z.record(z.string(), checkSchema), routes: z.record(z.string(), routeStateSchema) }) },
   machines: { input: z.null(), output: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() })) },

@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { readFile, stat } from 'node:fs/promises';
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { z } from 'zod';
-import { hostContract, rpcContract, storedProxy, bindingSchema, modelRouteInput, modelRouteState, redact, parseProxyFile, type ClaudeRoute, type Check, type StoredProxy, type RouteContext, type RouteState, type ModelRouteState } from './contract';
+import { hostContract, rpcContract, storedProxy, bindingSchema, modelRouteChoice, modelRouteState, redact, parseProxyFile, type ClaudeRoute, type Check, type StoredProxy, type RouteContext, type RouteState, type ModelRouteState } from './contract';
 export type { rpcContract } from './contract';
 export default async function plugin(bb: BbPluginApi) {
   const secrets = bb.settings.define({ vault: { type: 'string', label: 'Хранилище учётных данных прокси', secret: true } });
@@ -16,26 +16,61 @@ export default async function plugin(bb: BbPluginApi) {
     for (const key of await bb.storage.kv.list('model-route:')) result.push(modelRouteState.parse(await bb.storage.kv.get(key)));
     return result;
   }
+  type Env = { name: string; value: string; reason: string }[];
+  // What the dispatch hook last prepared for a host and provider. The environment
+  // resolver is fail-open in the SDK, so it must not depend on a second host call
+  // succeeding: it reuses the hook's result for the same saved choice.
+  const preparedEnv = new Map<string, { mode: string; at: number; env: Env }>();
+  const PREPARE_MS = 8000, RETRY_MS = 30_000, FRESH_MS = 60_000;
+  /** Bounded below the SDK's own time limit for a hook decision, so a hung machine becomes a wait with a retry. */
+  async function prepareRoute(hostId: string, saved: ModelRouteState): Promise<Env> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      const prepared = await Promise.race([
+        host.call('prepare_model_route', { providerId: saved.providerId, mode: saved.mode }, { hostId }),
+        new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error('Машина не ответила вовремя')), PREPARE_MS); }),
+      ]);
+      preparedEnv.set(modelKey(hostId, saved.providerId), { mode: saved.mode, at: Date.now(), env: prepared.env });
+      return prepared.env;
+    } finally { clearTimeout(timer); }
+  }
   for (const providerId of ['codex', 'claude-code'] as const) {
     bb.providers.experimental_contributeEnv(providerId, async ctx => {
       const saved = await bb.storage.kv.get<ModelRouteState>(modelKey(ctx.hostId, providerId));
       if (!saved) return [];
-      const prepared = await host.call('prepare_model_route', { providerId, mode: saved.mode }, { hostId: ctx.hostId });
-      return prepared.env;
+      const known = preparedEnv.get(modelKey(ctx.hostId, providerId));
+      if (known && known.mode === saved.mode && Date.now() - known.at < FRESH_MS) return known.env;
+      try { return await prepareRoute(ctx.hostId, saved); }
+      catch (error) {
+        // Better the route prepared a moment ago than a start without the chosen route.
+        if (known && known.mode === saved.mode) return known.env;
+        throw error;
+      }
     });
   }
-  // Environment resolvers are fail-open in the SDK; hold a message if preparation fails.
   bb.experimental_hooks.on('message.dispatch', async ctx => {
     const native = await routing.guard(ctx);
     if (native.action === 'wait') return { action: 'wait', reason: native.reason! };
     if (!ctx.host || !['codex', 'claude-code'].includes(ctx.thread.providerId)) return { action: 'proceed' };
     const saved = await bb.storage.kv.get<ModelRouteState>(modelKey(ctx.host.id, ctx.thread.providerId));
     if (!saved) return { action: 'proceed' };
-    try { await host.call('prepare_model_route', { providerId: saved.providerId, mode: saved.mode }, { hostId: ctx.host.id }); }
-    catch { return { action: 'wait', reason: 'Не удалось подготовить выбранный маршрут модели. Проверьте Подключения → Маршрут моделей BB' }; }
+    try { await prepareRoute(ctx.host.id, saved); }
+    // sendAt: the machine or the gateway may come back without any event reaching this plugin.
+    catch { return { action: 'wait', reason: 'Не удалось подготовить выбранный маршрут модели. Проверьте Подключения → Маршрут моделей BB', sendAt: Date.now() + RETRY_MS }; }
     return { action: 'proceed' };
   });
-  async function setModelRoute(input: z.infer<typeof modelRouteInput>) {
+  /** Stops an idle thread so its next turn starts with the new route; anything else is left marked for its idle event. */
+  async function releaseRuntime(threadId: string) {
+    await bb.storage.kv.set(`model-restart:${threadId}`, true);
+    try {
+      // Read again: between the listing and now the thread may have started a turn.
+      const thread = await bb.sdk.threads.get({ threadId });
+      if (thread.status !== 'idle' && thread.status !== 'error') return;
+      await bb.sdk.threads.stop({ threadId });
+      await bb.storage.kv.delete(`model-restart:${threadId}`);
+    } catch { /* the mark stays: the next idle event retries */ }
+  }
+  async function setModelRoute(input: z.infer<typeof modelRouteChoice>) {
     return serialize(async () => {
       const machine = await bb.sdk.hosts.get({ hostId: input.hostId });
       if (machine.status !== 'connected') throw new Error('Машина недоступна');
@@ -43,16 +78,21 @@ export default async function plugin(bb: BbPluginApi) {
         const check = await host.call('inspect_gateway', { providerId: input.providerId, force: true }, { hostId: input.hostId });
         if (check.state !== 'available') throw new Error(check.message);
       }
-      const prepared = await host.call('prepare_model_route', input, { hostId: input.hostId });
-      const state = { ...input, message: prepared.message, updatedAt: new Date().toISOString() };
-      await bb.storage.kv.set(modelKey(input.hostId, input.providerId), state);
-      // Release only this provider's idle BB runtimes. Active turns finish first.
+      let state: ModelRouteState | null = null;
+      if (input.mode === 'inherit') {
+        // Back to whatever the CLI itself is configured for: no record, nothing contributed.
+        await bb.storage.kv.delete(modelKey(input.hostId, input.providerId));
+      } else {
+        const prepared = await host.call('prepare_model_route', { providerId: input.providerId, mode: input.mode }, { hostId: input.hostId });
+        state = { hostId: input.hostId, providerId: input.providerId, mode: input.mode, message: prepared.message, updatedAt: new Date().toISOString() };
+        await bb.storage.kv.set(modelKey(input.hostId, input.providerId), state);
+      }
+      preparedEnv.delete(modelKey(input.hostId, input.providerId));
+      // From here the choice is saved and in effect. Releasing runtimes cannot fail the
+      // change any more: a thread that could not be stopped keeps its mark and is retried.
       for (let offset = 0; ; offset += 100) {
         const rows = await bb.sdk.threads.list({ hostId: input.hostId, includeHidden: true, limit: 100, offset });
-        for (const thread of rows) if (thread.providerId === input.providerId) {
-          if (thread.status === 'idle' || thread.status === 'error') await bb.sdk.threads.stop({ threadId: thread.id });
-          else await bb.storage.kv.set(`model-restart:${thread.id}`, true);
-        }
+        for (const thread of rows) if (thread.providerId === input.providerId) await releaseRuntime(thread.id);
         if (rows.length < 100) break;
       }
       bb.realtime.publish('changed', {});
@@ -214,10 +254,7 @@ export default async function plugin(bb: BbPluginApi) {
     providers: ({ hostId, force }) => providers(hostId, force),
   });
   bb.events.on('thread.idle', async ({ thread }) => {
-    if (await bb.storage.kv.get(`model-restart:${thread.id}`)) {
-      await bb.storage.kv.delete(`model-restart:${thread.id}`);
-      await bb.sdk.threads.stop({ threadId: thread.id });
-    }
+    if (await bb.storage.kv.get(`model-restart:${thread.id}`)) await releaseRuntime(thread.id);
     const armed = await bb.storage.kv.get<z.infer<typeof bindingSchema> & { threadId: string }>('armed');
     if (!armed || armed.threadId !== thread.id) return;
     await bb.storage.kv.delete('armed');
@@ -226,7 +263,7 @@ export default async function plugin(bb: BbPluginApi) {
   bb.cli.register({
     name: 'proxy-manager', summary: 'Прокси: список, импорт и проверка с выбранной машины',
     commands: [
-      { name: 'model-route', summary: 'Маршрут моделей только в BB; системный VPN сохраняется', usage: 'bb proxy-manager model-route [<host-id> <codex|claude-code> <direct|opencodex>]' },
+      { name: 'model-route', summary: 'Маршрут моделей только в BB; системный VPN сохраняется', usage: 'bb proxy-manager model-route [<host-id> <codex|claude-code> <direct|opencodex|inherit>]' },
       { name: 'prepare', summary: 'Проверить возможность применения без изменений', usage: 'bb proxy-manager prepare <host-id> <proxy-id|direct>' },
       { name: 'apply', summary: 'Применить маршрут Codex и остановить его треды на машине', usage: 'bb proxy-manager apply <host-id> <proxy-id|direct>' },
       { name: 'arm', summary: 'Первое применение после завершения указанного треда', usage: 'bb proxy-manager arm <thread-id> <host-id> <proxy-id|direct>' },
@@ -240,7 +277,7 @@ export default async function plugin(bb: BbPluginApi) {
       try {
         let output: unknown;
         if (command === 'model-route' && args.length === 0) output = await modelRoutes();
-        else if (command === 'model-route' && args.length === 3) output = await setModelRoute(modelRouteInput.parse({ hostId: args[0], providerId: args[1], mode: args[2] }));
+        else if (command === 'model-route' && args.length === 3) output = await setModelRoute(modelRouteChoice.parse({ hostId: args[0], providerId: args[1], mode: args[2] }));
         else if (command === 'prepare' && args.length === 2) {
           const proxy = args[1] === 'direct' ? null : (await read()).find(p => p.id === args[1]);
           if (proxy === undefined) throw new Error('Прокси не найден');

@@ -34,7 +34,7 @@ export function ModelRoutePanel({ machines }: { machines: { id: string; name: st
   };
   useEffect(() => { void refresh(); }, [rpc]);
   useRealtime('changed', refresh);
-  async function change(hostId: string, providerId: 'codex' | 'claude-code', mode: 'direct' | 'opencodex') {
+  async function change(hostId: string, providerId: 'codex' | 'claude-code', mode: 'direct' | 'opencodex' | 'inherit') {
     setBusy(`${hostId}:${providerId}`); setError('');
     try { await rpc.call('set_model_route', { hostId, providerId, mode }); await refresh(); }
     catch (e) { setError(e instanceof Error ? e.message : 'Не удалось изменить маршрут'); void refreshGateways(); }
@@ -53,9 +53,9 @@ export function ModelRoutePanel({ machines }: { machines: { id: string; name: st
         const name = providerId === 'codex' ? 'Codex' : 'Claude Code';
         return <label key={providerId} className="flex flex-wrap items-center justify-between gap-2 text-sm">
           <span>{name}</span>
-          <select aria-label={`Маршрут моделей ${name} · ${machine.name}`} className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={current?.mode ?? ''}
-            disabled={!machine.connected || !!busy} onChange={e => void change(machine.id, providerId, e.target.value as 'direct' | 'opencodex')}>
-            {!current && <option value="" disabled>Текущие настройки</option>}
+          <select aria-label={`Маршрут моделей ${name} · ${machine.name}`} className="h-9 rounded-md border border-input bg-background px-2 text-sm" value={current?.mode ?? 'inherit'}
+            disabled={!machine.connected || !!busy} onChange={e => void change(machine.id, providerId, e.target.value as 'direct' | 'opencodex' | 'inherit')}>
+            <option value="inherit">Как в CLI (не переопределять)</option>
             <option value="direct">Напрямую</option><option value="opencodex" disabled={gateway?.state !== 'available'}>Через OpenCodex</option>
           </select>
           <span className="w-full text-xs text-muted-foreground" role="status">{gateway?.message ?? 'OpenCodex пока не проверен'}</span>

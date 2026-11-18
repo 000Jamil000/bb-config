@@ -64,7 +64,7 @@ function findRoot(): string {
   for (let depth = 0; depth < 4; depth += 1, directory = dirname(directory)) {
     if (existsSync(resolve(directory, "scripts/updates.py")) && existsSync(resolve(directory, ".git"))) return realpathSync(directory);
   }
-  throw new Error("Плагин должен быть установлен из checkout репозитория доработок (path:…/plugins/config-updates): рядом нет scripts/updates.py.");
+  throw new Error("Рядом с плагином нет checkout с scripts/updates.py. Из постоянной рабочей копии bb-config соберите plugins/config-updates и выполните bb plugin install path:\"$PWD/plugins/config-updates\".");
 }
 
 const WINDOWS = process.platform === "win32";
@@ -342,7 +342,7 @@ export default async function configUpdates(bb: BbPluginApi) {
         ...(result.error ? [`ОШИБКА ПРОВЕРКИ: ${result.error}`, "Это не означает отсутствие обновлений."] : []),
         ...(result.runRelease ? [`Сейчас идёт обновление до ${result.runRelease} (тред ${result.runOwner}).`] : []),
         target ? `Доступно: ${target.tag}${target.title === target.tag ? "" : ` — ${target.title}`}, опубликован ${target.publishedAt.slice(0, 10)} (${result.commit?.slice(0, 12)}); к применению: ${result.pending.map((r) => r.tag).join(", ")}`
-          : result.okAt ? "Новых стабильных релизов нет." : "",
+          : result.okAt && !result.error ? "Новых стабильных релизов нет." : "",
       ].filter(Boolean);
       return { exitCode: result.error ? 1 : 0, stdout: lines.join("\n") + "\n" };
     },

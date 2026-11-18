@@ -43,8 +43,8 @@ as shown. Filters last for the page session and are not a stored preference.
 
 The plugin setting `rowMark` chooses the mark before a thread title: `project`
 (the project's image or letters), `topic` (the guessed topic's icon) or `ask`
-(default: project marks, plus a chooser with previews the first time the filter
-row is opened). Project group headers always show the project mark. Change it
+(default: project marks, plus a chooser with previews once per page load when the
+list first shows marked rows, and when the filter row is opened). Project group headers always show the project mark. Change it
 with `bb plugin config machine-tabs set rowMark <ask|project|topic>`; do not
 pick it for the user unasked.
 

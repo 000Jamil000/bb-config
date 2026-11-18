@@ -1151,7 +1151,8 @@ function MachineThreadList(props: PluginThreadListProps) {
   const [projectFilter, setProjectFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtering = topicFilter !== "all" || projectFilter !== "all";
-  // Project marks stay until the user picks topic icons; the question comes with the first use of the filters.
+  // Project marks stay until the user picks topic icons. The question comes once the list first
+  // draws a mark before a title, and again with the filters if it was put off.
   const markRpc = useRpc<typeof rpcContract>();
   const [rowMark, setRowMark] = useState<RowMark | null>(null);
   const [askingMark, setAskingMark] = useState(false);
@@ -1160,6 +1161,7 @@ function MachineThreadList(props: PluginThreadListProps) {
   }, [markRpc]);
   useEffect(loadRowMark, [loadRowMark]);
   useRealtime("row-mark-changed", loadRowMark);
+  const askedMark = useRef(false);
   const { threads, projects } = experimental_useSidebarThreads();
   const { collapsed, toggle } = useCollapsedGroups();
   const [sort, setSort] = useState<string | null>(null);
@@ -1296,6 +1298,12 @@ function MachineThreadList(props: PluginThreadListProps) {
     return map;
   }, [threads, projectBadges, rowMark]);
   const headerCss = useMemo(() => projectHeaderCss(projectBadges), [projectBadges]);
+  useEffect(() => {
+    // Once per page load, and only when there is a row whose mark the choice is about.
+    if (rowMark !== "ask" || askedMark.current || badges.size === 0) return;
+    askedMark.current = true;
+    setAskingMark(true);
+  }, [rowMark, badges]);
 
   // First-level groups, each a filter for one instance of bb's list.
   const groups = useMemo<OuterGroup[]>(() => {

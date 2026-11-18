@@ -1,0 +1,10 @@
+{
+  "id": "plugin-machine-tabs-sidebar-filters",
+  "title": "Machine Tabs 0.2.0 — фильтры по теме и проекту в боковой панели",
+  "component": "machine-tabs",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "machine-tabs",
+  "rerun": "При совпадении версии и источника шаг только проверяет состояние плагина.",
+  "rollback": "Восстановить plugins/machine-tabs из тега v1.1.0 в каталоге установки, выполнить npm ci --include=dev в каталоге плагина, затем bb plugin build и bb plugin reload machine-tabs."
+}

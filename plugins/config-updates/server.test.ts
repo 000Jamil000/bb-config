@@ -94,6 +94,26 @@ test("a network failure is a failed check that keeps the last known update", asy
   await s.harness.lifecycle.dispose(); await never.harness.lifecycle.dispose();
 });
 
+test("a failed check after an up-to-date result reports an error in both CLI commands", async () => {
+  const s = setup({ installed: "v1.1.0" });
+  await plugin(s.bb);
+  try {
+    const success = await s.harness.behavior.runCli(["check"]);
+    assert.equal(success.exitCode, 0);
+    assert.match(success.stdout, /Новых стабильных релизов нет/);
+
+    s.state.offline = true;
+    for (const command of ["check", "status"]) {
+      const result = await s.harness.behavior.runCli([command]);
+      assert.equal(result.exitCode, 1);
+      assert.match(result.stdout, /ОШИБКА ПРОВЕРКИ/);
+      assert.doesNotMatch(result.stdout, /Новых стабильных релизов нет/);
+    }
+  } finally {
+    await s.harness.lifecycle.dispose();
+  }
+});
+
 test("start spawns one agent thread on the server checkout with the pinned release", async () => {
   const s = setup({ installed: "v1.0.0" }); await plugin(s.bb);
   const [a, b] = await Promise.all([cliStart(s), cliStart(s)]);

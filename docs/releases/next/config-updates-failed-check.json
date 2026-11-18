@@ -1,0 +1,10 @@
+{
+  "id": "config-updates-failed-check",
+  "title": "Config Updates 0.1.4 корректно сообщает об ошибке повторной проверки",
+  "component": "config-updates",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "config-updates",
+  "rerun": "Повтор сверяет установленную версию и источник плагина.",
+  "rollback": "Соберите Config Updates из предыдущего стабильного релиза и установите из его постоянной рабочей копии. Сохраните журнал обновлений."
+}

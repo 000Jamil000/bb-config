@@ -33,6 +33,21 @@ the order of machine/day groups. Last 5 stays above the main list.
 Threads in a project show its two-letter badge before the title, except when
 the list is grouped by project.
 
+The funnel button in the search field opens a row with two filters, topic and
+project. They combine with the machine tab and the search (archive and message
+results included) and also narrow Last 5. A topic is guessed locally from
+Russian or English words in the thread title; a title with no match is
+"Обсуждение". While a filter or a search is active the row shows "7 из 24":
+threads shown out of the tab's total; ancestors kept for a matching child count
+as shown. Filters last for the page session and are not a stored preference.
+
+The plugin setting `rowMark` chooses the mark before a thread title: `project`
+(the project's image or letters), `topic` (the guessed topic's icon) or `ask`
+(default: project marks, plus a chooser with previews once per page load when the
+list first shows marked rows, and when the filter row is opened). Project group headers always show the project mark. Change it
+with `bb plugin config machine-tabs set rowMark <ask|project|topic>`; do not
+pick it for the user unasked.
+
 - `bb machine-tabs list` — machines; `*` marks the active tab.
 - `bb machine-tabs select <machine-id|all>` — switch the tab.
 

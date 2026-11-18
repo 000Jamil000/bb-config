@@ -30,6 +30,8 @@ import { cn } from "@/lib/utils";
 import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
 import { withProjectAliases } from "./lib/project-alias-view";
+import { TOPICS, matchesFilters, shownOfTotal, topicForTitle, withAncestors, type RowMark, type Topic } from "./lib/thread-topics";
+import { ROW_MARK_CSS, RowMarkChooser } from "./lib/row-mark-chooser";
 import { installSidebarView } from "./lib/sidebar-view";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
@@ -75,6 +77,8 @@ const DEFAULT_VIEW: ListView = {
 
 /** A project's mark, shown before a thread's title. */
 interface ProjectBadge {
+  /** Set when rows show topic icons instead of project marks. */
+  topic?: Topic;
   letters: string;
   name: string;
   /** Threads outside any project: an icon instead of letters. */
@@ -220,6 +224,16 @@ function ProjectBadgeMark({
   /** In a group header: no agent icon is attached to it. */
   header?: boolean;
 }) {
+  if (!header && badge.topic) {
+    const topic = badge.topic;
+    return (
+      <span data-machine-tabs-badge="topic" title={`${topic.label} · ${badge.name}`} aria-label={topic.label}
+        className="machine-tabs-topic-mark" style={{ color: topic.color }}>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+          strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={topic.path} /></svg>
+      </span>
+    );
+  }
   return (
     <span
       data-machine-tabs-badge={header ? "header" : ""}
@@ -1132,6 +1146,22 @@ function MachineThreadList(props: PluginThreadListProps) {
   const { component: RecentList } = useNativeList("recent");
   const [query, setQuery] = useState("");
   const [searchOptions, setSearchOptions] = useState<SearchOptions>({ archive: false, messages: false });
+  // Filters last for the sidebar session; "all" is no filter.
+  const [topicFilter, setTopicFilter] = useState("all");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtering = topicFilter !== "all" || projectFilter !== "all";
+  // Project marks stay until the user picks topic icons. The question comes once the list first
+  // draws a mark before a title, and again with the filters if it was put off.
+  const markRpc = useRpc<typeof rpcContract>();
+  const [rowMark, setRowMark] = useState<RowMark | null>(null);
+  const [askingMark, setAskingMark] = useState(false);
+  const loadRowMark = useCallback(() => {
+    markRpc.call("row_mark", null).then((result) => setRowMark(result.rowMark), () => {});
+  }, [markRpc]);
+  useEffect(loadRowMark, [loadRowMark]);
+  useRealtime("row-mark-changed", loadRowMark);
+  const askedMark = useRef(false);
   const { threads, projects } = experimental_useSidebarThreads();
   const { collapsed, toggle } = useCollapsedGroups();
   const [sort, setSort] = useState<string | null>(null);
@@ -1172,12 +1202,14 @@ function MachineThreadList(props: PluginThreadListProps) {
   // would: project, machine, or day ("today", "yesterday", "12 nov").
   const matchIds = useMemo(() => {
     const typed = query.trim().toLowerCase();
-    if (typed === "") return null;
+    if (typed === "" && !filtering) return null;
     // Also what the same keys spell in the other keyboard layout.
     const todayStart = startOfToday();
-    return new Set(
+    // A matching child keeps its parents, so bb can still draw the path to it.
+    return withAncestors(threads, new Set(
       threads
         .filter((thread) =>
+          matchesFilters(thread.displayTitle, thread.projectId, topicFilter, projectFilter) &&
           [
             thread.displayTitle,
             projectNames.get(thread.projectId)?.name ?? "",
@@ -1189,8 +1221,14 @@ function MachineThreadList(props: PluginThreadListProps) {
           }),
         )
         .map((thread) => thread.id),
-    );
-  }, [threads, projectNames, query, dayField, needles]);
+    ));
+  }, [threads, projectNames, query, dayField, needles, filtering, topicFilter, projectFilter]);
+
+  /** Live threads of the selected tab before search and filters: the "of N" in the counter. */
+  const tabTotal = useMemo(
+    () => live.filter((thread) => selectedId === null || thread.host?.id === selectedId).length,
+    [live, selectedId],
+  );
 
   /** Live threads of the selected tab that pass the search filter. */
   const shown = useMemo(
@@ -1250,12 +1288,22 @@ function MachineThreadList(props: PluginThreadListProps) {
       const machine = thread.host?.name;
       map.set(
         thread.id,
-        machine ? { ...badge, name: `${badge.name} · ${machine}` } : badge,
+        {
+          ...badge,
+          name: machine ? `${badge.name} · ${machine}` : badge.name,
+          topic: rowMark === "topic" ? topicForTitle(thread.displayTitle) : undefined,
+        },
       );
     }
     return map;
-  }, [threads, projectBadges]);
+  }, [threads, projectBadges, rowMark]);
   const headerCss = useMemo(() => projectHeaderCss(projectBadges), [projectBadges]);
+  useEffect(() => {
+    // Once per page load, and only when there is a row whose mark the choice is about.
+    if (rowMark !== "ask" || askedMark.current || badges.size === 0) return;
+    askedMark.current = true;
+    setAskingMark(true);
+  }, [rowMark, badges]);
 
   // First-level groups, each a filter for one instance of bb's list.
   const groups = useMemo<OuterGroup[]>(() => {
@@ -1364,33 +1412,107 @@ function MachineThreadList(props: PluginThreadListProps) {
           }}
           placeholder="Поиск тредов"
           aria-label="Поиск тредов"
-          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-12 text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
+          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-[4.25rem] text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
         />
         {query === "" ? null : (
           <button
             type="button"
             aria-label="Clear filter"
             onClick={() => setQuery("")}
-            className="absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
+            className="absolute right-[3.75rem] top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
           >
             <BbIcon name="X" className="size-3.5" />
           </button>
         )}
+        <button
+          type="button"
+          aria-label="Фильтры по теме и проекту"
+          title="Фильтры по теме и проекту"
+          aria-expanded={filtersOpen || filtering}
+          aria-controls="machine-tabs-filters"
+          data-active={filtering ? "" : undefined}
+          onClick={() => {
+            if (!filtersOpen && rowMark === "ask") setAskingMark(true);
+            setFiltersOpen((open) => !open);
+          }}
+          className="machine-tabs-filter-toggle absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
+        >
+          {/* A funnel drawn here: bb's icon set has none and shows a lightning bolt for an unknown name. */}
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5Z" />
+          </svg>
+        </button>
         <SearchSettings options={searchOptions} onChange={setSearchOptions} />
       </div>
+      {filtersOpen || filtering ? (
+        <div id="machine-tabs-filters" className="machine-tabs-filters relative z-[90] flex items-center gap-1 px-2 pb-1.5">
+          <select aria-label="Фильтр по теме" value={topicFilter} data-active={topicFilter !== "all" ? "" : undefined}
+            onChange={(event) => setTopicFilter(event.target.value)}>
+            <option value="all">Все темы</option>
+            {TOPICS.map((topic) => <option key={topic.id} value={topic.id}>{topic.label}</option>)}
+          </select>
+          <select aria-label="Фильтр по проекту" value={projectFilter} data-active={projectFilter !== "all" ? "" : undefined}
+            onChange={(event) => setProjectFilter(event.target.value)}>
+            <option value="all">Все проекты</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.isPersonal ? "Без проекта" : project.name}</option>)}
+          </select>
+          {matchIds !== null ? (
+            <span aria-live="polite" className="ml-auto shrink-0 whitespace-nowrap pl-1 text-[11px] tabular-nums text-muted-foreground">
+              {shownOfTotal(shown.length, tabTotal)}
+            </span>
+          ) : null}
+          {filtering ? (
+            <button
+              type="button"
+              aria-label="Сбросить фильтры"
+              title="Сбросить фильтры"
+              onClick={() => { setTopicFilter("all"); setProjectFilter("all"); setFiltersOpen(false); }}
+              className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
+            >
+              <BbIcon name="X" className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <style>{HIDE_EMPTY_GROUPS}</style>
       <style>{GROUP_PAGING_CSS}</style>
+      <style>{ROW_MARK_CSS}</style>
+      {askingMark ? (
+        <RowMarkChooser
+          current={rowMark === "topic" ? "topic" : "project"}
+          first={rowMark === "ask"}
+          onClose={() => setAskingMark(false)}
+          onChoose={async (next) => {
+            const saved = await markRpc.call("set_row_mark", { rowMark: next });
+            setRowMark(saved.rowMark);
+            setAskingMark(false);
+          }}
+        />
+      ) : null}
       <style>{`
         .machine-tabs-search-settings { opacity: 0; transition: opacity 120ms ease; }
         .machine-tabs-search:hover .machine-tabs-search-settings,
         .machine-tabs-search:focus-within .machine-tabs-search-settings,
         .machine-tabs-search-settings[data-open] { opacity: .7; }
         @media (hover: none) { .machine-tabs-search-settings { opacity: .7; } }
+        .machine-tabs-filter-toggle { opacity: .7; }
+        .machine-tabs-filter-toggle:hover, .machine-tabs-filter-toggle[aria-expanded="true"] { opacity: 1; }
+        .machine-tabs-filter-toggle[data-active] { color: var(--sidebar-foreground); background: var(--state-active); }
+        .machine-tabs-filters > select {
+          min-width: 2.5rem; flex: 0 10 auto; height: 22px; padding: 0 6px;
+          font: inherit; font-size: 11px; color: var(--muted-foreground); text-overflow: ellipsis;
+          background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; outline: none;
+        }
+        .machine-tabs-filters > select:hover { color: var(--sidebar-foreground); background: var(--state-hover); }
+        .machine-tabs-filters > select[data-active] { flex-shrink: 1; color: var(--sidebar-foreground); background: var(--state-active); border-color: transparent; font-weight: 500; }
+        .machine-tabs-filters > select:focus-visible { outline: 2px solid var(--sidebar-ring); }
+        .machine-tabs-filters option { background: var(--background); color: var(--foreground); font-weight: 400; }
       `}</style>
       <style>{headerCss}</style>
       <style>{emptyCss}</style>
-      {matchIds !== null ? <SearchExtras query={query} needles={needles}
-        options={searchOptions} machineId={selectedId} localIds={new Set(shown.map((thread) => thread.id))} /> : null}
+      {query.trim() !== "" ? <SearchExtras query={query} needles={needles}
+        options={searchOptions} machineId={selectedId} topicFilter={topicFilter} projectFilter={projectFilter} localIds={new Set(shown.map((thread) => thread.id))} /> : null}
       <ProjectBadges.Provider value={badges}>
         {RecentList && recentView && state !== null ? (
           <>
@@ -1409,7 +1531,7 @@ function MachineThreadList(props: PluginThreadListProps) {
       </ProjectBadges.Provider>
       {matchIds !== null && shown.length === 0 ? (
         <p className="px-4 py-2 text-xs text-muted-foreground">
-          {searchOptions.archive || searchOptions.messages
+          {!query.trim() ? "По выбранным фильтрам тредов нет." : searchOptions.archive || searchOptions.messages
             ? "В названиях активных тредов совпадений нет."
             : `Ничего не найдено по запросу «${query.trim()}».`}
         </p>

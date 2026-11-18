@@ -33,3 +33,11 @@ test("the counter names what is shown out of the tab's total", () => {
   assert.equal(shownOfTotal(7, 24), "7 из 24");
   assert.equal(shownOfTotal(0, 3), "0 из 3");
 });
+test("words that merely contain a keyword do not pick its topic", () => {
+  for (const title of ["Кодекс правил", "Исправление кодека", "Codex setup", "Протест"]) {
+    assert.notEqual(topicForTitle(title).id, "code", title);
+  }
+  for (const title of ["Ревью кода", "Code review", "Тесты бэкенда", "Fix build"]) {
+    assert.equal(topicForTitle(title).id, "code", title);
+  }
+});

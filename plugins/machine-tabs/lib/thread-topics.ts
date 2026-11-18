@@ -4,7 +4,7 @@ export const TOPICS = [
   { id: "migration", label: "Миграция", color: "#8271a4", path: "M6 3v12a4 4 0 0 0 4 4h8M14 15l4 4-4 4M6 7h8a4 4 0 0 1 4 4v1M3 3h6", match: /миграц|перенос|репозитори|migration|migrate|repository/i },
   { id: "integration", label: "Подключение", color: "#4f8794", path: "m9 15 6-6M8 17l-1 1a4 4 0 0 1-6-6l5-5a4 4 0 0 1 6 0M16 7l1-1a4 4 0 0 1 6 6l-5 5a4 4 0 0 1-6 0", match: /подключ|интеграц|dolphin|proxy|прокси|connect|integration|\bapi\b|\bmcp\b/i },
   { id: "search", label: "Поиск чатов", color: "#ad8050", path: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0ZM7 10h6M10 7v6", match: /пропал|пропали|чатов нет|найти.*чат|истори.*чат|missing|lost.*chat/i },
-  { id: "code", label: "Разработка", color: "#538575", path: "m8 6-6 6 6 6M16 6l6 6-6 6M14 3l-4 18", match: /код|баг|ошибк|разработ|рефактор|тест|build|bug|code|refactor|test/i },
+  { id: "code", label: "Разработка", color: "#538575", path: "m8 6-6 6 6 6M16 6l6 6-6 6M14 3l-4 18", match: /(?<![а-яё])код(а|у|е|ом|ы|ов)?(?![а-яё])|(?<![а-яё])баг|ошибк|разработ|рефактор|(?<![а-яё])тест|\bbuild|\bbugs?\b|\bcode\b|refactor|\btest/i },
   { id: "docs", label: "Документы", color: "#637da1", path: "M14 2H5v20h14V7l-5-5ZM14 2v6h5M8 12h8M8 16h6", match: /отч[её]т|документ|план|report|document|planning/i },
   { id: "chat", label: "Обсуждение", color: "#71818d", path: "M21 11.5a8.5 8.5 0 0 1-8.5 8.5H4l-3 3V11.5a10 10 0 0 1 20 0ZM7 10h8M7 14h5", match: null },
 ] as const;

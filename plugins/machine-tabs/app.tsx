@@ -1446,12 +1446,12 @@ function MachineThreadList(props: PluginThreadListProps) {
         .machine-tabs-filter-toggle:hover, .machine-tabs-filter-toggle[aria-expanded="true"] { opacity: 1; }
         .machine-tabs-filter-toggle[data-active] { color: var(--sidebar-foreground); background: var(--state-active); }
         .machine-tabs-filters > select {
-          min-width: 0; flex: 0 1 auto; max-width: 42%; height: 22px; padding: 0 6px;
+          min-width: 2.5rem; flex: 0 10 auto; height: 22px; padding: 0 6px;
           font: inherit; font-size: 11px; color: var(--muted-foreground); text-overflow: ellipsis;
           background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; outline: none;
         }
         .machine-tabs-filters > select:hover { color: var(--sidebar-foreground); background: var(--state-hover); }
-        .machine-tabs-filters > select[data-active] { color: var(--sidebar-foreground); background: var(--state-active); border-color: transparent; font-weight: 500; }
+        .machine-tabs-filters > select[data-active] { flex-shrink: 1; color: var(--sidebar-foreground); background: var(--state-active); border-color: transparent; font-weight: 500; }
         .machine-tabs-filters > select:focus-visible { outline: 2px solid var(--sidebar-ring); }
         .machine-tabs-filters option { background: var(--background); color: var(--foreground); font-weight: 400; }
       `}</style>

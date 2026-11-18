@@ -243,6 +243,13 @@
     "installSource": "kodaforge@bb-community"
   },
   {
+    "id": "kodaforge-inspector",
+    "version": "0.3.0",
+    "enabled": true,
+    "name": "KodaForge Inspector",
+    "source": "path:plugins/kodaforge-inspector"
+  },
+  {
     "id": "limits",
     "version": "1.1.8",
     "enabled": false,

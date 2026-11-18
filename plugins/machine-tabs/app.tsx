@@ -30,9 +30,8 @@ import { cn } from "@/lib/utils";
 import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
 import { withProjectAliases } from "./lib/project-alias-view";
-import { TOPICS, chatCount, matchesFilters, topicForTitle, withAncestors, type Topic } from "./lib/thread-topics";
+import { TOPICS, matchesFilters, shownOfTotal, withAncestors } from "./lib/thread-topics";
 import { installSidebarView } from "./lib/sidebar-view";
-import { FOLDER_LIST_CSS } from "./lib/folder-list-style";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
 const TABS_CHANGED = "machine-tabs-changed";
@@ -59,8 +58,10 @@ interface ListView {
   byDay: boolean;
   /** The timestamp a thread's day comes from. */
   dayField: DayField;
-  /** Only these threads (the search filter); null is no limit. */
+  /** Only these threads (the search filter, or the Last 5 block); null is no limit. */
   ids: ReadonlySet<string> | null;
+  /** Draw the threads as one "Last 5" section, preserving native parent/child trees. */
+  recent: boolean;
 }
 
 const DEFAULT_VIEW: ListView = {
@@ -70,11 +71,11 @@ const DEFAULT_VIEW: ListView = {
   byDay: false,
   dayField: "updatedAt",
   ids: null,
+  recent: false,
 };
 
 /** A project's mark, shown before a thread's title. */
 interface ProjectBadge {
-  topic?: Topic;
   letters: string;
   name: string;
   /** Threads outside any project: an icon instead of letters. */
@@ -131,9 +132,9 @@ function dayBucket(thread: ThreadLike, field: DayField, todayStart: number) {
 }
 
 function dayLabel(bucket: number, todayStart: number): string {
-  if (bucket === 0) return "Сегодня";
-  if (bucket === 1) return "Вчера";
-  if (bucket === EARLIER) return "Ранее";
+  if (bucket === 0) return "Today";
+  if (bucket === 1) return "Yesterday";
+  if (bucket === EARLIER) return "Earlier";
   return new Date(todayStart - bucket * DAY_MS).toLocaleDateString(undefined, {
     weekday: "short",
     day: "numeric",
@@ -205,6 +206,9 @@ const PERSON_ICON = iconUrl(
 const PIN_ICON = iconUrl(
   '<path d="M12 17v5"/><path d="M8 3h8l-1 6 3 4H6l3-4z"/>',
 );
+const RECENT_ICON = iconUrl(
+  '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+);
 const DAY_ICON = iconUrl(
   '<rect x="4" y="5" width="16" height="15" rx="2"/><path d="M4 10h16M9 3v4M15 3v4"/>',
 );
@@ -217,14 +221,6 @@ function ProjectBadgeMark({
   /** In a group header: no agent icon is attached to it. */
   header?: boolean;
 }) {
-  if (!header && badge.topic) {
-    const topic = badge.topic;
-    return <span data-machine-tabs-badge="topic" title={`${topic.label} · ${badge.name}`}
-      aria-label={topic.label} className="machine-tabs-topic-mark" style={{ color: topic.color }}>
-      <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor"
-        strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={topic.path} /></svg>
-    </span>;
-  }
   return (
     <span
       data-machine-tabs-badge={header ? "header" : ""}
@@ -340,7 +336,48 @@ ${group(' [data-sidebar="group-label"] > span:first-child::after')},
 ${group(' [data-sidebar="group-label"] > span:first-child > button')} { display: none; }`;
 }
 
-let nativeListPromise: Promise<ThreadListComponent> | undefined;
+const RECENT_SECTION_ID = "machine-tabs-recent";
+
+/** One recent section, preserving parents so BB renders its own child controls. */
+function asRecentSection<T extends SidebarData>(data: T, view: ListView): T {
+  const threads = data.threads
+    .filter((thread) => view.ids?.has(thread.id))
+    .map((thread) => ({
+      ...thread,
+      isPinned: false,
+      pinnedAt: null,
+      sectionId: RECENT_SECTION_ID,
+    }));
+  return {
+    ...data,
+    threads,
+    sections: [
+      { id: RECENT_SECTION_ID, name: "Last 5", createdAt: 0, updatedAt: 0 },
+    ],
+  };
+}
+
+/**
+ * Two instances of bb's list: "main" follows the user's preferences; "recent"
+ * uses chronological organization, so the Last 5 block looks the same
+ * whatever grouping the main list uses.
+ */
+type ListKind = "main" | "recent";
+
+const RECENT_PREFERENCES: AnyRecord = {
+  organizationMode: "chronological",
+  chronologicalSort: "updated",
+  sortDirection: "default",
+  groupByReadStatus: false,
+  environmentGrouping: false,
+  hiddenGroups: [],
+  collapsedThreadSections: [],
+  manualSectionOrder: ["pinned", "sections", "threads"],
+};
+
+const nativeListPromises = new Map<ListKind, Promise<ThreadListComponent>>();
+/** Loads run one at a time: each swaps the shared SDK while its bundle evaluates. */
+let loadQueue: Promise<unknown> = Promise.resolve();
 
 /** Accepts any registration call and ignores it. */
 function swallow(): unknown {
@@ -348,7 +385,10 @@ function swallow(): unknown {
   return new Proxy(fn, { get: () => swallow(), apply: () => undefined });
 }
 
-async function loadNativeList(sdk: Sdk): Promise<ThreadListComponent> {
+async function loadNativeList(
+  sdk: Sdk,
+  kind: ListKind,
+): Promise<ThreadListComponent> {
   const { plugins } = await sdk.plugins.list();
   const bundle =
     plugins.find((plugin) => plugin.id === THREAD_LIST_PLUGIN)?.app.bundle ??
@@ -389,6 +429,7 @@ async function loadNativeList(sdk: Sdk): Promise<ThreadListComponent> {
       const result = useThreads(options);
       const view = useContext(MachineFilter);
       return useMemo(() => {
+        if (view.recent) return asRecentSection(result, view);
         const filtered = applyFilters(result, view);
         const ordered = filtered.projects
           ? { ...filtered, projects: projectsByLatestThread(filtered.projects, filtered.threads) }
@@ -414,50 +455,87 @@ async function loadNativeList(sdk: Sdk): Promise<ThreadListComponent> {
     );
   };
 
-  // The native list's persisted project IDs otherwise override the sorted
-  // sidebar data. Resolve those slots dynamically within each filtered list.
-  const normalize = (value: unknown) => Array.isArray(value)
-    ? automaticProjectSectionOrder(value as string[]) : value;
-  const useRealRpc = base.useRpc as () => {
-    call(method: string, input: unknown): Promise<AnyRecord>;
-  };
-  wrapped.useRpc = function useProjectOrderRpc() {
-    const rpc = useRealRpc();
-    return useMemo(() => ({
-      ...rpc,
-      async call(method: string, input: unknown) {
-        const result = await rpc.call(method, input);
-        if (method === "listPreferences") {
-          const preferences = result.preferences as AnyRecord;
-          return { ...result, preferences: { ...preferences,
-            sectionOrder: normalize(preferences.sectionOrder) } };
-        }
-        if (method === "setPreference" && result.key === "sectionOrder") {
-          return { ...result, value: normalize(result.value) };
-        }
-        return result;
-      },
-    }), [rpc]);
-  };
-  const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
-  wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
-    const event = payload as AnyRecord;
-    handler(channel === "preferences" && event?.key === "sectionOrder"
-      ? { ...event, value: normalize(event.value) } : payload);
-  });
+  if (kind === "recent") {
+    // Keep a chronological section, but native child expansion stays shared.
+    const useRealRpc = base.useRpc as () => {
+      call(method: string, input: unknown): Promise<AnyRecord>;
+    };
+    wrapped.useRpc = function useRecentRpc() {
+      const rpc = useRealRpc();
+      return useMemo(
+        () => ({
+          ...rpc,
+          async call(method: string, input: unknown) {
+            if (method === "listPreferences") {
+              const result = await rpc.call(method, input);
+              return {
+                ...result,
+                preferences: {
+                  ...(result.preferences as AnyRecord),
+                  ...RECENT_PREFERENCES,
+                },
+              };
+            }
+            const { key, value } = (input ?? {}) as AnyRecord;
+            if (method === "setPreference" && key === "collapsedThreads") return rpc.call(method, input);
+            return { key, value: value ?? RECENT_PREFERENCES[String(key)] };
+          },
+        }),
+        [rpc],
+      );
+    };
+    const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
+    wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
+      if (channel === "preferences" && (payload as AnyRecord)?.key === "collapsedThreads") handler(payload);
+    });
+  }
 
-  const url = `${bundle.jsUrl}${separator}machine_tabs=main-${Date.now().toString(36)}`;
+  if (kind === "main") {
+    // The native list's persisted project IDs otherwise override the sorted
+    // sidebar data. Resolve those slots dynamically within each filtered list.
+    const normalize = (value: unknown) => Array.isArray(value)
+      ? automaticProjectSectionOrder(value as string[]) : value;
+    const useRealRpc = base.useRpc as () => {
+      call(method: string, input: unknown): Promise<AnyRecord>;
+    };
+    wrapped.useRpc = function useProjectOrderRpc() {
+      const rpc = useRealRpc();
+      return useMemo(() => ({
+        ...rpc,
+        async call(method: string, input: unknown) {
+          const result = await rpc.call(method, input);
+          if (method === "listPreferences") {
+            const preferences = result.preferences as AnyRecord;
+            return { ...result, preferences: { ...preferences,
+              sectionOrder: normalize(preferences.sectionOrder) } };
+          }
+          if (method === "setPreference" && result.key === "sectionOrder") {
+            return { ...result, value: normalize(result.value) };
+          }
+          return result;
+        },
+      }), [rpc]);
+    };
+    const useRealRealtime = base.useRealtime as (channel: string, handler: (payload: unknown) => void) => void;
+    wrapped.useRealtime = (channel: string, handler: (payload: unknown) => void) => useRealRealtime(channel, payload => {
+      const event = payload as AnyRecord;
+      handler(channel === "preferences" && event?.key === "sectionOrder"
+        ? { ...event, value: normalize(event.value) } : payload);
+    });
+  }
+
+  const url = `${bundle.jsUrl}${separator}machine_tabs=${kind}-${Date.now().toString(36)}`;
   let module: { default?: unknown };
   // The bundle reads the SDK from the shared runtime once, while it
   // evaluates. Swap the SDK in for that moment; if the runtime object is
   // read-only, swap the whole runtime for a copy that inherits from it.
   const globals = globalThis as AnyRecord;
   const realJsx = runtime.jsxRuntime as AnyRecord;
-  const aliasesJsx = withProjectAliases(realJsx, () => {
+  const aliasesJsx = kind === "main" ? withProjectAliases(realJsx, () => {
     const data = useThreads();
     const view = useContext(MachineFilter);
     return useMemo(() => applyFilters(data, view).threads, [data, view]);
-  });
+  }) : realJsx;
   const pagedJsx = withGroupPaging(aliasesJsx);
   // The native list captures its JSX helpers during evaluation, just like SDK.
   // Use an inheriting copy so other plugins keep their original runtime.
@@ -502,19 +580,24 @@ async function loadNativeList(sdk: Sdk): Promise<ThreadListComponent> {
   return component;
 }
 
-function useNativeList() {
+function useNativeList(kind: ListKind) {
   const sdk = useSdk();
   const [component, setComponent] = useState<ThreadListComponent | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     let cancelled = false;
-    const promise = nativeListPromise ??= loadNativeList(sdk);
+    let promise = nativeListPromises.get(kind);
+    if (!promise) {
+      promise = loadQueue.then(() => loadNativeList(sdk, kind));
+      loadQueue = promise.catch(() => undefined);
+      nativeListPromises.set(kind, promise);
+    }
     promise.then(
       (loaded) => {
         if (!cancelled) setComponent(() => loaded);
       },
       (cause: unknown) => {
-        if (nativeListPromise === promise) nativeListPromise = undefined;
+        nativeListPromises.delete(kind);
         if (!cancelled) {
           setError(cause instanceof Error ? cause.message : String(cause));
         }
@@ -523,7 +606,7 @@ function useNativeList() {
     return () => {
       cancelled = true;
     };
-  }, [sdk]);
+  }, [sdk, kind]);
   return { component, error };
 }
 
@@ -572,17 +655,17 @@ function useTabs() {
 }
 
 const GROUPINGS: readonly { value: Grouping; label: string }[] = [
-  { value: "project", label: "Проект" },
-  { value: "machine", label: "Машина" },
+  { value: "project", label: "Project" },
+  { value: "machine", label: "Machine" },
   // Not a bb mode: this plugin splits bb's flat list into day sections.
-  { value: "day", label: "День" },
-  { value: "none", label: "Без групп" },
+  { value: "day", label: "Day" },
+  { value: "none", label: "None" },
 ];
 
 const SORT_OPTIONS = [
-  { value: "updated", label: "По обновлению" },
-  { value: "created", label: "По созданию" },
-  { value: "alpha", label: "По названию" },
+  { value: "updated", label: "Last updated" },
+  { value: "created", label: "Created" },
+  { value: "alpha", label: "Name" },
 ] as const;
 
 /** bb's organization mode that draws a grouping. Day and None use its flat list. */
@@ -730,33 +813,32 @@ function OrganizeMenu({
     >
       <button
         type="button"
-        aria-label="Вид и сортировка"
+        aria-label="Group and sort threads"
         aria-haspopup="menu"
         aria-expanded={open}
-        title="Группировка, вложенность и сортировка"
+        title="Group and sort threads"
         onClick={() => setOpen((value) => !value)}
         className={cn(
-          "flex h-7 items-center justify-center gap-1.5 px-2 rounded-md text-muted-foreground outline-none hover:bg-state-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
+          "flex size-7 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-state-hover hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
           open && "bg-state-active text-sidebar-foreground",
         )}
       >
-        <BbIcon name="Layers" className="size-3.5" /><span className="text-xs">{first === "day" ? "По дням" : first === "project" ? "Проекты" : first === "machine" ? "Машины" : "Список"}</span>
+        <BbIcon name="Layers" className="size-4" />
       </button>
       {open ? (
         <div
           role="menu"
-          className="absolute left-0 top-8 z-[200] w-48 max-w-[calc(100vw-2rem)] overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
-          style={{ maxHeight: "min(65dvh, 32rem)" }}
+          className="absolute right-0 top-8 z-[200] min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
         >
           <MenuSection
-            title="Группировать"
+            title="Group by"
             options={GROUPINGS}
             current={first}
             onChoose={(value) => apply(value as Grouping, second)}
           />
           <div className="my-1 border-t" />
           <MenuSection
-            title="Внутри группы"
+            title="Then by"
             options={GROUPINGS.filter(
               (option) => option.value === "none" || option.value !== first,
             )}
@@ -765,7 +847,7 @@ function OrganizeMenu({
           />
           <div className="my-1 border-t" />
           <MenuSection
-            title="Сортировка"
+            title="Sort"
             options={SORT_OPTIONS}
             current={prefs.sort}
             onChoose={(value) => {
@@ -902,13 +984,6 @@ interface OuterGroup {
 // only say "No threads". A collapsed group has no rows either, but its
 // header carries the expand button, so it stays.
 const HIDE_EMPTY_GROUPS = `
-.machine-tabs-topic-mark { display:inline-flex; width:26px; height:26px; flex-shrink:0; align-items:center; justify-content:center; margin-right:8px; border-radius:8px; background:color-mix(in srgb,currentColor 11%,transparent); box-shadow:inset 0 0 0 1px color-mix(in srgb,currentColor 10%,transparent); }
-.machine-tabs-controls { position:relative; z-index:110; display:flex; align-items:center; gap:4px; margin:0 8px 8px; padding:4px; border:1px solid var(--border); border-radius:9px; }
-.machine-tabs-controls > select { min-width:0; flex:1; width:0; padding:4px; font:inherit; font-size:11px; color:var(--sidebar-foreground); background:transparent; border:0; border-radius:5px; cursor:pointer; }
-.machine-tabs-controls > select:focus-visible { outline:2px solid var(--sidebar-ring); }
-.machine-tabs-controls option { background:var(--background); color:var(--foreground); }
-[data-machine-tabs-list] [data-sidebar-thread-provider]:has(+ .bb-thread-title > [data-machine-tabs-badge="topic"]) { display:none; }
-
 /* Only a group that says "No threads" is empty. One whose rows are simply
    not drawn yet (bb draws rows as they scroll into view) must stay, or it
    would never get the chance to draw them. */
@@ -932,10 +1007,17 @@ const HIDE_EMPTY_GROUPS = `
   margin-top: 0;
   margin-bottom: 0;
 }
-/* This plugin's day sections are not bb sections: no New thread
+/* This plugin's sections (days, Last 5) are not bb sections: no New thread
    in section, no rename or delete menu. */
 [data-sidebar-visibility-group^="section:machine-tabs-"] [data-sidebar-trailing-controls] {
   display: none;
+}
+/* The Last 5 block is a whole bb list: drop the space it leaves below itself. */
+[data-machine-tabs-recent] [data-sidebar="group"] {
+  padding-bottom: 0;
+}
+[data-machine-tabs-recent] [data-sidebar-visibility-group] {
+  margin-bottom: 0;
 }
 .bb-thread-title:has(> [data-machine-tabs-badge]) {
   align-items: center;
@@ -982,6 +1064,10 @@ const HIDE_EMPTY_GROUPS = `
 [data-machine-tabs-list] [data-sidebar="group-label"]:not([data-sidebar-visibility-group] *) > span:first-child::before {
   content: "";
   background: ${PIN_ICON} center / 14px no-repeat;
+}
+[data-machine-tabs-list] [data-sidebar-visibility-group="section:machine-tabs-recent"] [data-sidebar="group-label"] > span:first-child::before {
+  content: "";
+  background: ${RECENT_ICON} center / 14px no-repeat;
 }
 [data-machine-tabs-list] [data-sidebar-visibility-group^="section:machine-tabs-day"] [data-sidebar="group-label"] > span:first-child::before {
   content: "";
@@ -1043,20 +1129,15 @@ const HIDE_EMPTY_GROUPS = `
 
 function MachineThreadList(props: PluginThreadListProps) {
   const { state, select, setView } = useTabs();
-  const rpc = useRpc<typeof rpcContract>();
-  const [sortError, setSortError] = useState("");
-  const chooseSort = async (value: string) => {
-    try {
-      await rpc.call("setPreference", { key: "chronologicalSort", value });
-      await rpc.call("setPreference", { key: "sortDirection", value: "default" });
-      setSort(value); setListKey(key => key + 1); setSortError("");
-    } catch { setSortError("Не удалось сохранить сортировку"); }
-  };
-  const { component: NativeList, error } = useNativeList();
+  const { component: NativeList, error } = useNativeList("main");
+  const { component: RecentList } = useNativeList("recent");
   const [query, setQuery] = useState("");
+  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ archive: false, messages: false });
+  // Filters last for the sidebar session; "all" is no filter.
   const [topicFilter, setTopicFilter] = useState("all");
   const [projectFilter, setProjectFilter] = useState("all");
-  const [searchOptions, setSearchOptions] = useState<SearchOptions>({ archive: false, messages: false });
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const filtering = topicFilter !== "all" || projectFilter !== "all";
   const { threads, projects } = experimental_useSidebarThreads();
   const { collapsed, toggle } = useCollapsedGroups();
   const [sort, setSort] = useState<string | null>(null);
@@ -1084,11 +1165,6 @@ function MachineThreadList(props: PluginThreadListProps) {
     return map;
   }, [live]);
 
-  const machineThreads = useMemo(
-    () => selectedId === null ? live : live.filter(thread => thread.host?.id === selectedId),
-    [live, selectedId],
-  );
-
   const projectNames = useMemo(
     () => new Map(projects.map((project) => [project.id, project])),
     [projects],
@@ -1102,11 +1178,12 @@ function MachineThreadList(props: PluginThreadListProps) {
   // would: project, machine, or day ("today", "yesterday", "12 nov").
   const matchIds = useMemo(() => {
     const typed = query.trim().toLowerCase();
-    if (typed === "" && topicFilter === "all" && projectFilter === "all") return null;
+    if (typed === "" && !filtering) return null;
     // Also what the same keys spell in the other keyboard layout.
     const todayStart = startOfToday();
-    return withAncestors(machineThreads, new Set(
-      machineThreads
+    // A matching child keeps its parents, so bb can still draw the path to it.
+    return withAncestors(threads, new Set(
+      threads
         .filter((thread) =>
           matchesFilters(thread.displayTitle, thread.projectId, topicFilter, projectFilter) &&
           [
@@ -1121,12 +1198,23 @@ function MachineThreadList(props: PluginThreadListProps) {
         )
         .map((thread) => thread.id),
     ));
-  }, [machineThreads, projectNames, query, dayField, needles, topicFilter, projectFilter]);
+  }, [threads, projectNames, query, dayField, needles, filtering, topicFilter, projectFilter]);
+
+  /** Live threads of the selected tab before search and filters: the "of N" in the counter. */
+  const tabTotal = useMemo(
+    () => live.filter((thread) => selectedId === null || thread.host?.id === selectedId).length,
+    [live, selectedId],
+  );
 
   /** Live threads of the selected tab that pass the search filter. */
   const shown = useMemo(
-    () => matchIds === null ? machineThreads : machineThreads.filter(thread => matchIds.has(thread.id)),
-    [machineThreads, matchIds],
+    () =>
+      live.filter(
+        (thread) =>
+          (selectedId === null || thread.host?.id === selectedId) &&
+          (matchIds === null || matchIds.has(thread.id)),
+      ),
+    [live, selectedId, matchIds],
   );
 
   const baseView = useMemo<ListView>(
@@ -1139,6 +1227,15 @@ function MachineThreadList(props: PluginThreadListProps) {
     }),
     [selectedId, byDay, dayField, matchIds],
   );
+
+  // Include descendants: BB owns the hierarchy, expander and child activity.
+  const recentView = useMemo<ListView | null>(() => {
+    const ids = [...shown]
+      .sort((a, b) => b.updatedAt - a.updatedAt)
+      .map((thread) => thread.id);
+    if (ids.length === 0) return null;
+    return { ...DEFAULT_VIEW, recent: true, ids: new Set(ids) };
+  }, [shown]);
 
   const projectIcons = useProjectIcons();
   const projectBadges = useMemo(() => {
@@ -1167,7 +1264,7 @@ function MachineThreadList(props: PluginThreadListProps) {
       const machine = thread.host?.name;
       map.set(
         thread.id,
-        { ...badge, topic: topicForTitle(thread.displayTitle), name: machine ? `${badge.name} · ${machine}` : badge.name },
+        machine ? { ...badge, name: `${badge.name} · ${machine}` } : badge,
       );
     }
     return map;
@@ -1241,7 +1338,7 @@ function MachineThreadList(props: PluginThreadListProps) {
             className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto [scrollbar-width:none]"
           >
             <Tab
-              label="Все"
+              label="All"
               count={live.length}
               active={selectedId === null}
               onClick={() => select(null)}
@@ -1257,10 +1354,7 @@ function MachineThreadList(props: PluginThreadListProps) {
               />
             ))}
           </div>
-        </div>
-      )}
-      <div className="machine-tabs-controls">
-        <OrganizeMenu
+          <OrganizeMenu
             outer={outer}
             byDay={byDay}
             onView={setView}
@@ -1268,15 +1362,8 @@ function MachineThreadList(props: PluginThreadListProps) {
             onMode={setInnerMode}
             onChanged={() => setListKey((key) => key + 1)}
           />
-        <select aria-label="Фильтр по теме" value={topicFilter} onChange={e => setTopicFilter(e.target.value)}>
-          <option value="all">Все темы</option>
-          {TOPICS.map(topic => <option key={topic.id} value={topic.id}>{topic.label}</option>)}
-        </select>
-        <select aria-label="Фильтр по проекту" value={projectFilter} onChange={e => setProjectFilter(e.target.value)}>
-          <option value="all">Все проекты</option>
-          {projects.map(project => <option key={project.id} value={project.id}>{project.isPersonal ? "Личные чаты" : project.name}</option>)}
-        </select>
-      </div>
+        </div>
+      )}
       <div className="machine-tabs-search relative z-[100] px-2 pb-1.5">
         <BbIcon
           name="Search"
@@ -1291,28 +1378,62 @@ function MachineThreadList(props: PluginThreadListProps) {
           }}
           placeholder="Поиск тредов"
           aria-label="Поиск тредов"
-          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-12 text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
+          className="h-7 w-full rounded-md border border-transparent bg-state-hover pl-7 pr-[4.25rem] text-xs text-sidebar-foreground outline-none placeholder:text-muted-foreground focus:border-sidebar-ring [&::-webkit-search-cancel-button]:hidden"
         />
         {query === "" ? null : (
           <button
             type="button"
             aria-label="Clear filter"
             onClick={() => setQuery("")}
-            className="absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
+            className="absolute right-[3.75rem] top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground"
           >
             <BbIcon name="X" className="size-3.5" />
           </button>
         )}
+        <button
+          type="button"
+          aria-label="Фильтры по теме и проекту"
+          title="Фильтры по теме и проекту"
+          aria-expanded={filtersOpen || filtering}
+          aria-controls="machine-tabs-filters"
+          data-active={filtering ? "" : undefined}
+          onClick={() => setFiltersOpen((open) => !open)}
+          className="machine-tabs-filter-toggle absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
+        >
+          <BbIcon name="ListFilter" className="size-3.5" />
+        </button>
         <SearchSettings options={searchOptions} onChange={setSearchOptions} />
       </div>
-      <div className="mx-3 mb-2 flex items-center justify-between gap-2 text-[10px] text-muted-foreground">
-        <span aria-live="polite">{chatCount(shown.length)}</span>
-        <select aria-label="Сортировка чатов" value={sort ?? "updated"} onChange={e => void chooseSort(e.target.value)}
-          className="max-w-[65%] rounded bg-transparent text-right text-[10px] outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring">
-          {SORT_OPTIONS.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
-        </select>
-      </div>
-      {sortError ? <p role="alert" className="px-3 text-xs">{sortError}</p> : null}
+      {filtersOpen || filtering ? (
+        <div id="machine-tabs-filters" className="machine-tabs-filters relative z-[90] flex items-center gap-1 px-2 pb-1.5">
+          <select aria-label="Фильтр по теме" value={topicFilter} data-active={topicFilter !== "all" ? "" : undefined}
+            onChange={(event) => setTopicFilter(event.target.value)}>
+            <option value="all">Все темы</option>
+            {TOPICS.map((topic) => <option key={topic.id} value={topic.id}>{topic.label}</option>)}
+          </select>
+          <select aria-label="Фильтр по проекту" value={projectFilter} data-active={projectFilter !== "all" ? "" : undefined}
+            onChange={(event) => setProjectFilter(event.target.value)}>
+            <option value="all">Все проекты</option>
+            {projects.map((project) => <option key={project.id} value={project.id}>{project.isPersonal ? "Без проекта" : project.name}</option>)}
+          </select>
+          {matchIds !== null ? (
+            <span aria-live="polite" className="ml-auto shrink-0 whitespace-nowrap pl-1 text-[11px] tabular-nums text-muted-foreground">
+              {shownOfTotal(shown.length, tabTotal)}
+            </span>
+          ) : null}
+          {filtering ? (
+            <button
+              type="button"
+              aria-label="Сбросить фильтры"
+              title="Сбросить фильтры"
+              onClick={() => { setTopicFilter("all"); setProjectFilter("all"); setFiltersOpen(false); }}
+              className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
+            >
+              <BbIcon name="X" className="size-3.5" />
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       <style>{HIDE_EMPTY_GROUPS}</style>
       <style>{GROUP_PAGING_CSS}</style>
       <style>{`
@@ -1321,12 +1442,39 @@ function MachineThreadList(props: PluginThreadListProps) {
         .machine-tabs-search:focus-within .machine-tabs-search-settings,
         .machine-tabs-search-settings[data-open] { opacity: .7; }
         @media (hover: none) { .machine-tabs-search-settings { opacity: .7; } }
+        .machine-tabs-filter-toggle { opacity: .7; }
+        .machine-tabs-filter-toggle:hover, .machine-tabs-filter-toggle[aria-expanded="true"] { opacity: 1; }
+        .machine-tabs-filter-toggle[data-active] { color: var(--sidebar-foreground); background: var(--state-active); }
+        .machine-tabs-filters > select {
+          min-width: 0; flex: 0 1 auto; max-width: 42%; height: 22px; padding: 0 6px;
+          font: inherit; font-size: 11px; color: var(--muted-foreground); text-overflow: ellipsis;
+          background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; outline: none;
+        }
+        .machine-tabs-filters > select:hover { color: var(--sidebar-foreground); background: var(--state-hover); }
+        .machine-tabs-filters > select[data-active] { color: var(--sidebar-foreground); background: var(--state-active); border-color: transparent; font-weight: 500; }
+        .machine-tabs-filters > select:focus-visible { outline: 2px solid var(--sidebar-ring); }
+        .machine-tabs-filters option { background: var(--background); color: var(--foreground); font-weight: 400; }
       `}</style>
       <style>{headerCss}</style>
       <style>{emptyCss}</style>
-      <style>{FOLDER_LIST_CSS}</style>
       {query.trim() !== "" ? <SearchExtras query={query} needles={needles}
         options={searchOptions} machineId={selectedId} topicFilter={topicFilter} projectFilter={projectFilter} localIds={new Set(shown.map((thread) => thread.id))} /> : null}
+      <ProjectBadges.Provider value={badges}>
+        {RecentList && recentView && state !== null ? (
+          <>
+            <div
+              data-machine-tabs-list=""
+              data-machine-tabs-hide-empty=""
+              data-machine-tabs-recent=""
+            >
+              <MachineFilter.Provider value={recentView}>
+                <RecentList {...props} />
+              </MachineFilter.Provider>
+            </div>
+            <div className="mx-3 mb-1.5 mt-1 border-b border-border" />
+          </>
+        ) : null}
+      </ProjectBadges.Provider>
       {matchIds !== null && shown.length === 0 ? (
         <p className="px-4 py-2 text-xs text-muted-foreground">
           {!query.trim() ? "По выбранным фильтрам тредов нет." : searchOptions.archive || searchOptions.messages

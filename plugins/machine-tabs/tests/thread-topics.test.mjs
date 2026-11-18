@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { chatCount, matchesFilters, topicForTitle, withAncestors } from "../lib/thread-topics.ts";
+import { matchesFilters, shownOfTotal, topicForTitle, withAncestors } from "../lib/thread-topics.ts";
 test("Russian and English titles receive distinct topics", () => {
   for (const [title, topic] of [
     ["Дизайн формы", "design"],
@@ -29,7 +29,7 @@ test("topic and project filters must both match", () => {
   assert.equal(matchesFilters("Hello", "p1", "all", "all"), true);
 });
 
-test("chat count uses Russian plural forms", () => {
-  assert.deepEqual([0, 1, 2, 11, 21, 24].map(chatCount),
-    ["0 чатов", "1 чат", "2 чата", "11 чатов", "21 чат", "24 чата"]);
+test("the counter names what is shown out of the tab's total", () => {
+  assert.equal(shownOfTotal(7, 24), "7 из 24");
+  assert.equal(shownOfTotal(0, 3), "0 из 3");
 });

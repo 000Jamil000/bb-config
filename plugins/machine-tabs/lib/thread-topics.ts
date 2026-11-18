@@ -17,10 +17,9 @@ export function matchesFilters(title: string, projectId: string, topicFilter: st
     (topicFilter === "all" || topicForTitle(title).id === topicFilter);
 }
 
-const chatPlural = new Intl.PluralRules("ru");
-export function chatCount(count: number): string {
-  const forms: Record<string, string> = { one: "чат", few: "чата" };
-  return `${count} ${forms[chatPlural.select(count)] ?? "чатов"}`;
+/** "7 из 24": how many threads the search and filters left of the tab's total. */
+export function shownOfTotal(shown: number, total: number): string {
+  return `${shown} из ${total}`;
 }
 
 /** Keep the path to a matching child readable without including unrelated siblings. */

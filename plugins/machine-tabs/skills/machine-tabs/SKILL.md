@@ -17,8 +17,9 @@ adds, above it:
   Day sections are the plugin's, not bb sections.
 - A filter field: matches thread titles and group headers (project, machine,
   day), ignoring case and a wrong RU/EN keyboard layout.
-- A single thread list: pinned threads first, followed by the selected grouping.
-  Day grouping shows unpinned threads once under their day; native child controls remain available.
+- A "Last 5" block: the five most recently updated threads, which also stay
+  in their own groups. Parent/child links are preserved, so BB’s original
+  expand/collapse controls, child rows and activity indicators also work here.
 
 Project groups automatically sort by their latest visible thread's `updatedAt`
 (newest first), including nested projects and projects used as the outer group.
@@ -27,14 +28,18 @@ this automatic order in Machine Tabs; their stored preferences remain intact.
 Pinned/Threads placement and other preference events remain native.
 Empty projects remain at the bottom; ties
 keep BB's existing project order. This does not change thread row sorting or
-the order of machine/day groups. There is no separate recent-thread block.
+the order of machine/day groups. Last 5 stays above the main list.
 
-Rows show topic icons based on Russian or English title keywords. Unknown
-titles use the discussion icon. The toolbar filters by topic and project,
-including archive and message search results. A matching child retains its
-ancestor path in the active list. Filters last for the current sidebar session.
-Below the search field, the counter includes visible ancestors. The sort
-selector saves the same BB preference as the grouping menu.
+Threads in a project show its two-letter badge before the title, except when
+the list is grouped by project.
+
+The funnel button in the search field opens a row with two filters, topic and
+project. They combine with the machine tab and the search (archive and message
+results included) and also narrow Last 5. A topic is guessed locally from
+Russian or English words in the thread title; a title with no match is
+"Обсуждение". While a filter or a search is active the row shows "7 из 24":
+threads shown out of the tab's total; ancestors kept for a matching child count
+as shown. Filters last for the page session and are not a stored preference.
 
 - `bb machine-tabs list` — machines; `*` marks the active tab.
 - `bb machine-tabs select <machine-id|all>` — switch the tab.
@@ -54,7 +59,7 @@ use Settings → Appearance → Sidebar or the CLI command above.
 
 ## Project images
 
-Project headers show the project's mark: two letters, or
+A thread row and a project header show the project's mark: two letters, or
 the project's own image when its root holds one of `.bb/icon.png`,
 `.bb/icon.svg`, `favicon.png`, `favicon.svg`, `favicon.ico` (first found, up
 to 256 KB). Images are drawn grey. They are re-read every five minutes;

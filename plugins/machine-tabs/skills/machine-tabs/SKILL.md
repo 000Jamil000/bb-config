@@ -40,6 +40,13 @@ Russian or English words in the thread title; a title with no match is
 "Обсуждение". While a filter or a search is active the row shows "7 из 24":
 threads shown out of the tab's total; ancestors kept for a matching child count
 as shown. Filters last for the page session and are not a stored preference.
+Each filter is a chip with its own list (no system select): choices are sorted
+by the threads they would leave, each with its count, and a search field
+appears when there are eight or more. The funnel is hidden until the search
+field is hovered or focused, and stays visible while a filter is on.
+Thread search, archive title search and the filter lists also match across
+alphabets by transliteration ("маруся" finds `marusya`); message-text search
+is BB's own and does not.
 
 The plugin setting `rowMark` chooses the mark before a thread title: `project`
 (the project's image or letters), `topic` (the guessed topic's icon) or `ask`

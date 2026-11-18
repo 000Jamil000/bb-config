@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { UrlLink, useSdk, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 
 import { matchesFilters } from "./thread-topics";
+import { textMatches } from "./text-match";
 
 type SearchThread = { id: string; projectId: string; title: string | null; titleFallback: string | null; environmentHostId: string | null; archivedAt: number | null };
 export type SearchOptions = { archive: boolean; messages: boolean };
@@ -78,7 +79,7 @@ export function SearchExtras({ query, needles, options, machineId, topicFilter, 
           const addTitles = (threads: SearchThread[]) => {
             for (const thread of threads) {
               const title = `${thread.title ?? ''} ${thread.titleFallback ?? ''}`.toLowerCase();
-              if (needles.some((needle) => title.includes(needle))) rows.set(thread.id, thread);
+              if (textMatches(title, needles)) rows.set(thread.id, thread);
             }
           };
           if (archiveCache.current && Date.now() - archiveCache.current.at < 60_000) addTitles(archiveCache.current.rows);

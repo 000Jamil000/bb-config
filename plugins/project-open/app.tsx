@@ -7,8 +7,94 @@ import * as Tooltip from '@radix-ui/react-tooltip';
 import { openNativeTerminal, openNativeWorkspace, openNativeFiles, waitFor } from './native';
 import { finderFolderUrl, folderClientMode } from './folder-target';
 
+type Anchor = { threadId: string; element: HTMLElement };
+function useThreadAnchors(enabled: boolean) {
+  const [anchors, setAnchors] = useState<Anchor[]>([]);
+  useEffect(() => {
+    if (!enabled) { setAnchors([]); return; }
+    const mounts = new Map<HTMLElement, Anchor>();
+    let frame = 0;
+    const scan = () => {
+      frame = 0;
+      const desktop = window.matchMedia('(hover:hover) and (pointer:fine)').matches;
+      const rows = new Set(desktop ? document.querySelectorAll<HTMLElement>('a[data-sidebar-thread-id]') : []);
+      for (const [row, anchor] of mounts) {
+        if (!rows.has(row) || !anchor.element.isConnected || row.dataset.sidebarThreadId !== anchor.threadId) {
+          row.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-toolbar-inset');
+          resizeObserver.unobserve(anchor.element.closest('[data-sidebar-row-controls]') ?? anchor.element);
+          resizeObserver.unobserve(anchor.element.closest('[data-sidebar-thread-trailing]') ?? anchor.element);
+          anchor.element.remove(); mounts.delete(row);
+        }
+      }
+      for (const row of rows) {
+        if (mounts.has(row)) continue;
+        const trailing = row.closest('[data-sidebar-rename-row]')?.querySelector<HTMLElement>('[data-sidebar-thread-trailing]');
+        if (!trailing) continue;
+        const element = document.createElement('span');
+        element.dataset.projectOpenControls = '';
+        const controls = trailing.querySelector<HTMLElement>('[data-sidebar-row-controls]');
+        if (!controls) continue;
+        controls.prepend(element);
+        resizeObserver.observe(controls);
+        resizeObserver.observe(trailing);
+        mounts.set(row, { threadId: row.dataset.sidebarThreadId!, element });
+      }
+      // Reserve the toolbar's overflow in layout, so native project links and
+      // child expanders stay after the title instead of translating over it.
+      for (const [link, anchor] of mounts) {
+        const row = link.closest<HTMLElement>('[data-sidebar-rename-row]');
+        const toolbar = anchor.element.closest<HTMLElement>('[data-sidebar-row-controls]');
+        const trailing = toolbar?.closest<HTMLElement>('[data-sidebar-thread-trailing]');
+        if (!row || !toolbar || !trailing) continue;
+        const inset = Math.max(0, toolbar.getBoundingClientRect().width - trailing.getBoundingClientRect().width + 2);
+        row.style.setProperty('--project-open-toolbar-inset', `${inset}px`);
+      }
+      setAnchors(previous => {
+        const next = [...mounts.values()];
+        return next.length === previous.length && next.every((a, i) => a === previous[i]) ? previous : next;
+      });
+    };
+    const schedule = () => { if (!frame) frame = requestAnimationFrame(scan); };
+    const resizeObserver = new ResizeObserver(schedule);
+    const pointer = window.matchMedia('(hover:hover) and (pointer:fine)');
+    pointer.addEventListener('change', schedule);
+    window.addEventListener('resize', schedule);
+    const observer = new MutationObserver(schedule);
+    observer.observe(document.body, { childList: true, subtree: true, attributes: true,
+      attributeFilter: ['data-sidebar-thread-id'] });
+    scan();
+    return () => {
+      observer.disconnect(); resizeObserver.disconnect(); cancelAnimationFrame(frame);
+      pointer.removeEventListener('change', schedule);
+      window.removeEventListener('resize', schedule);
+      for (const [link, a] of mounts) {
+        link.closest<HTMLElement>('[data-sidebar-rename-row]')?.style.removeProperty('--project-open-toolbar-inset');
+        a.element.remove();
+      }
+    };
+  }, [enabled]);
+  return anchors;
+}
 const CSS = `
-[data-project-open-header] { position:relative; z-index:31; display:inline-flex; flex:0 0 56px; align-items:center; width:56px; overflow:visible; }
+[data-project-open-controls], [data-project-open-header] { position:relative; z-index:31; display:inline-flex; flex:0 0 56px; align-items:center; width:56px; overflow:visible; opacity:0; pointer-events:none; transition:opacity 100ms ease; }
+@media (hover:hover) {
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]) { column-gap:0; }
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]) > span:has(> a[data-sidebar-thread-id]) { padding-right:0; }
+[data-sidebar-thread-trailing]:has([data-project-open-controls]) > span > span { width:20px; }
+[data-sidebar-row-controls]:has(> [data-project-open-controls]) { gap:0; background:var(--sidebar-accent); box-shadow:-6px 0 6px var(--sidebar-accent); }
+[data-sidebar-row-controls]:has(> [data-project-open-controls]) > button { width:20px; height:24px; }
+}
+[data-project-open-controls] { position:relative; width:40px; flex-basis:40px; }
+[data-project-open-controls] .project-open-button { width:20px; height:24px; flex-basis:20px; }
+@media (hover:hover) and (pointer:fine) {
+[data-sidebar-rename-row]:has(> [data-sidebar-thread-trailing] [data-project-open-controls]):is(:hover, :has(:focus-visible), :has([data-sidebar-hover-actions-open="true"])) > span:has(> a[data-sidebar-thread-id]) { padding-right:var(--project-open-toolbar-inset, 0px); }
+}
+[data-project-open-header] { opacity:1; pointer-events:auto; }
+[data-sidebar-rename-row]:hover > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-sidebar-rename-row]:has(:focus-visible) > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-sidebar-rename-row]:has([data-sidebar-hover-actions-open="true"]) > [data-sidebar-thread-trailing] [data-sidebar-row-controls] > [data-project-open-controls],
+[data-testid="app-page-header-content-row"]:hover [data-project-open-header],
+[data-testid="app-page-header-content-row"]:focus-within [data-project-open-header] { opacity:1; pointer-events:auto; }
 .project-open-button { display:inline-flex; flex:0 0 28px; align-items:center; justify-content:center; width:28px; height:28px; border-radius:6px; color:var(--muted-foreground); background:transparent; border:0; cursor:pointer; }
 .project-open-button:hover { background:var(--state-hover); color:var(--foreground); }
 .project-open-button:focus-visible { outline:2px solid var(--ring); outline-offset:-2px; }
@@ -20,10 +106,12 @@ const CSS = `
 .project-open-tooltip-row > svg { width:14px; height:14px; flex-shrink:0; margin-top:1px; opacity:.8; }
 .project-open-tooltip-host { font-weight:500; }
 .project-open-tooltip-path { min-width:0; font-family:var(--font-mono, monospace); white-space:pre-wrap; overflow-wrap:anywhere; }
-@media (hover:none) { [data-project-open-header] { flex-basis:64px; width:64px; opacity:1; pointer-events:auto; } .project-open-button { flex-basis:32px; width:32px; height:36px; } }
+@media (hover:none) { [data-project-open-controls], [data-project-open-header] { flex-basis:64px; width:64px; opacity:1; pointer-events:auto; } .project-open-button { flex-basis:32px; width:32px; height:36px; } }
+@media (hover:none), (pointer:coarse) { [data-project-open-controls], [data-project-open-controls] * { display:none !important; pointer-events:none !important; } }
 @media (pointer:coarse) {
 [data-sidebar-rename-row] button[aria-expanded][aria-label$=" threads"] { width:36px; height:36px; flex:0 0 36px; touch-action:manipulation; }
 }
+@media (prefers-reduced-motion:reduce) { [data-project-open-controls], [data-project-open-header] { transition:none; } }
 `;
 
 type HeaderAnchor = { element: HTMLElement; root: HTMLElement };
@@ -148,8 +236,14 @@ function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: strin
   </Tooltip.Root>)}</Tooltip.Provider>;
 }
 
+/** Where the folder and terminal shortcuts live: on the row (default) or in the thread's native menu. */
+const inMenu = (values: ReturnType<typeof useSettings>['values']) => values?.placement === 'menu';
+
 function ProjectControls() {
-  return <style>{CSS}</style>;
+  const { values } = useSettings();
+  // Until settings load nothing is mounted, so a "menu" choice never flashes row buttons.
+  const anchors = useThreadAnchors(values !== undefined && !inMenu(values));
+  return <><style>{CSS}</style>{anchors.map(anchor => createPortal(<ThreadButtons threadId={anchor.threadId} />, anchor.element))}</>;
 }
 
 export default definePluginApp(app => {
@@ -160,8 +254,8 @@ export default definePluginApp(app => {
     app.slots.experimental_threadAction({
       id: 'open-' + kind, title, icon, group: GROUPS.open, order,
       useData: () => useSettings().values,
-      item: ({ thread, sdk, navigate, data }) => thread.environment ? {
-        label: title, icon, disabled: kind === 'folder' && !data,
+      item: ({ thread, sdk, navigate, data }) => thread.environment && inMenu(data) ? {
+        label: title, icon,
         run: () => openThreadTarget(kind, thread.id, sdk, navigate, data, new AbortController().signal)
           .catch(error => { toast.error(error instanceof Error ? error.message : String(error)); }),
       } : null,

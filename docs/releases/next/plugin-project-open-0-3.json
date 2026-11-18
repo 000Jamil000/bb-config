@@ -1,10 +1,10 @@
 {
   "id": "plugin-project-open-0-3",
-  "title": "Project Open 0.3.0 — действия в меню треда",
+  "title": "Project Open 0.3.0 — папка и терминал в меню треда по выбору",
   "component": "project-open",
   "where": "server",
   "kind": "local-plugin",
   "plugin": "project-open",
-  "rerun": "Повторная сборка сохраняет настройку rowActions.",
+  "rerun": "Повторная сборка сохраняет настройки placement и rowActions.",
   "rollback": "Восстановить предыдущую версию plugins/project-open и пересобрать и перезагрузить плагин. Выбор быстрых действий хранится в настройках списка BB."
 }

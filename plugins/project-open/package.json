@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "Project Open",
-    "description": "Thread menu actions and header shortcuts for project folders and the BB terminal.",
+    "description": "Row or menu shortcuts to Finder project folders and the original BB terminal.",
     "branding": {
       "icon": "FolderOpen"
     },

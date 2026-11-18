@@ -57,7 +57,7 @@ scope kinds or its `kodaforge:side:<kind>:<id>:open` key, update `target.ts`
 and its tests. Anchors depend on BB's sidebar markup
 (`data-sidebar-project-id`, `data-sidebar-row-controls`,
 `data-thread-header-pane-actions`); after a BB update verify all three places
-in a browser. Project Open also registers its folder and terminal actions through BB.
+in a browser. Project Open still injects its folder and terminal buttons into the same row toolbar.
 
 Build and install: `NODE_PATH=/usr/lib/node_modules bb plugin build .` then
 `bb plugin install path:<repo>/plugins/code-open --yes`. Checks:

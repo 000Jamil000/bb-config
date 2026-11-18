@@ -67,6 +67,27 @@ function findRoot(): string {
   throw new Error("Рядом с плагином нет checkout с scripts/updates.py. Из постоянной рабочей копии bb-config соберите plugins/config-updates и выполните bb plugin install path:\"$PWD/plugins/config-updates\".");
 }
 
+const WINDOWS = process.platform === "win32";
+/** Set from the plugin setting before each use; empty means the default interpreter name. */
+export const runtime = { python: "" };
+
+/**
+ * scripts/updates.py under Python. Windows has no `python3` unless one was put
+ * on PATH, so the interpreter can be named in the settings. UTF-8 mode there:
+ * the repository files are UTF-8, the Windows default is the ANSI code page.
+ * The console window of the child stays hidden.
+ */
+function updates(root: string, args: string[], options: { timeout: number; env?: NodeJS.ProcessEnv }) {
+  return run(runtime.python || (WINDOWS ? "python" : "python3"), [...(WINDOWS ? ["-X", "utf8"] : []), resolve(root, "scripts/updates.py"), ...args],
+    { ...options, windowsHide: true });
+}
+
+/** Same directory however it is written: Windows ignores case and accepts both slashes. */
+export function samePath(a: string, b: string): boolean {
+  const normal = (path: string) => (WINDOWS ? path.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase() : path.replace(/\/+$/, ""));
+  return normal(a) === normal(b);
+}
+
 async function github(path: string, accept: string): Promise<Response> {
   let response: Response;
   try {
@@ -88,14 +109,14 @@ async function github(path: string, accept: string): Promise<Response> {
 export const io = {
   root: findRoot,
   async origin(root: string): Promise<string> {
-    return (await run("git", ["-C", root, "remote", "get-url", "origin"])).stdout;
+    return (await run("git", ["-C", root, "remote", "get-url", "origin"], { windowsHide: true })).stdout;
   },
   async local(root: string): Promise<LocalStatus> {
-    const { stdout } = await run("python3", [resolve(root, "scripts/updates.py"), "status"], { timeout: 30_000 });
+    const { stdout } = await updates(root, ["status"], { timeout: 30_000 });
     return JSON.parse(stdout) as LocalStatus;
   },
   async accept(root: string, tag: string, commit: string, plugins: string): Promise<{ accepted: boolean; reason?: string }> {
-    const { stdout } = await run("python3", [resolve(root, "scripts/updates.py"), "accept", tag, "--commit", commit],
+    const { stdout } = await updates(root, ["accept", tag, "--commit", commit],
       { timeout: 120_000, env: { ...process.env, BB_CONFIG_PLUGINS_JSON: plugins } });
     return JSON.parse(stdout) as { accepted: boolean; reason?: string };
   },
@@ -115,6 +136,8 @@ export default async function configUpdates(bb: BbPluginApi) {
       description: "Когда все шаги релиза уже выполнены или неприменимы, версия отмечается установленной сразу при проверке. Ничего не собирается и не устанавливается." },
     iconOnlyWhenNeeded: { type: "boolean", label: "Показывать значок в нижнем ряду только при обновлении", default: true,
       description: "Без доступных обновлений значок убирается в меню «…» нижнего ряда боковой панели." },
+    pythonPath: { type: "string", label: "Интерпретатор Python (3.11+)", default: "",
+      description: "Чем запускать scripts/updates.py. Пусто — python3 из PATH сервера BB (на Windows — python). На Windows укажите полный путь, если python в PATH — заглушка Microsoft Store." },
     archiveWhenDone: { type: "boolean", label: "Архивировать тред после успешного обновления", default: true,
       description: "Тред обновления уходит в архив, когда релиз применён полностью и агент закончил ответ. При остатке или ошибке тред остаётся." },
   });
@@ -154,6 +177,7 @@ export default async function configUpdates(bb: BbPluginApi) {
     const checkedAt = Date.now();
     try {
       root = io.root();
+      runtime.python = (await settings.get()).pythonPath.trim();
       const configured = (await settings.get()).repository.trim();
       const repository = configured || parseRepository(await io.origin(root));
       if (!repository || !/^[\w.-]+\/[\w.-]+$/.test(repository)) {
@@ -227,7 +251,7 @@ export default async function configUpdates(bb: BbPluginApi) {
     const projects = await bb.sdk.projects.list();
     const { primaryHostId } = await bb.sdk.system.config();
     const sources = projects.flatMap((project) => project.sources.map((source) => ({ project, source })))
-      .filter(({ source }) => source.path.replace(/\/+$/, "") === root)
+      .filter(({ source }) => samePath(source.path, root))
       .sort((a, b) => Number(b.source.hostId === primaryHostId) - Number(a.source.hostId === primaryHostId));
     const match = sources[0];
     if (!match) throw new Error(`Добавьте каталог ${root} на машине сервера BB как проект BB, затем повторите.`);
@@ -270,6 +294,7 @@ export default async function configUpdates(bb: BbPluginApi) {
   bb.events.on("thread.idle", async ({ thread }) => {
     if (thread.id !== status.lastRunOwner && thread.id !== status.runOwner && thread.id !== status.threadId) return;
     try {
+      runtime.python = (await settings.get()).pythonPath.trim();
       const journal = await io.local(root || io.root());
       const last = journal.lastRun;
       if (journal.run || journal.partial || !last?.complete || last.owner !== thread.id) return;

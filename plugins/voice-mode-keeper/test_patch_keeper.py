@@ -50,7 +50,7 @@ class Fixture:
 
     def run(self, command, cwd=None, data=None):
         if command[0] == 'patch':
-            result = keeper.subprocess.run(command, cwd=cwd, input=data, capture_output=True, text=True)
+            result = keeper.subprocess.run(keeper.compat.argv(command), cwd=cwd, input=data.encode(), capture_output=True)
             if result.returncode:
                 raise RuntimeError('patch did not fit')
             return result.stdout

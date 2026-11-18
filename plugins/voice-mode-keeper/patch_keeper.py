@@ -16,7 +16,6 @@ its author released it and the status asks for attention. Catalog sources,
 settings and data are never touched; no network access, no npm install.
 Prints one JSON status line per plugin.
 """
-import fcntl
 import hashlib
 import json
 import re
@@ -28,6 +27,8 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
 STATE_DIR = REPO / '.local/plugin-patches/kept'
+sys.path.insert(0, str(REPO / 'scripts'))
+import platform_compat as compat  # noqa: E402
 
 KEPT = {
     'inbox': {
@@ -67,11 +68,14 @@ def digest(data):
 
 
 def plugins():
-    return {p['id']: p for p in json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json']))['plugins']}
+    return {p['id']: p for p in json.loads(subprocess.check_output(compat.argv(['bb', 'plugin', 'list', '--json'])))['plugins']}
 
 
 def run(command, cwd=None, data=None):
-    result = subprocess.run(command, cwd=cwd, input=data, capture_output=True, text=True, timeout=180)
+    # Bytes in and out: text mode on Windows would turn the patch's LF into CRLF.
+    result = subprocess.run(compat.argv(command), cwd=cwd, input=None if data is None else data.encode(),
+                            capture_output=True, timeout=180)
+    result.stdout, result.stderr = (stream.decode(errors='replace') for stream in (result.stdout, result.stderr))
     if result.returncode:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         log = STATE_DIR / 'last-validation.log'
@@ -85,11 +89,21 @@ def patch_text(spec):
     return ''.join((REPO / name).read_text() for name in spec['patches'])
 
 
+def unix_lines(data):
+    return data.replace(b'\r\n', b'\n')
+
+
 def applied(folder, spec):
     """True when reversing the patch would succeed, i.e. it is already in place."""
-    # git apply never guesses a direction, unlike patch in batch mode.
-    result = subprocess.run(['git', 'apply', '--check', '--reverse', '-p1', '-'],
-                            cwd=folder, input=patch_text(spec), capture_output=True, text=True)
+    # git apply never guesses a direction, unlike patch in batch mode. It runs on
+    # LF copies: Git for Windows may have checked the plugin out with CRLF.
+    with tempfile.TemporaryDirectory(prefix='kept-check-') as directory:
+        for name in spec['files']:
+            copy = Path(directory) / name
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_bytes(unix_lines((Path(folder) / name).read_bytes()))
+        result = subprocess.run(['git', 'apply', '--check', '--reverse', '-p1', '-'],
+                                cwd=directory, input=patch_text(spec).encode(), capture_output=True)
     return result.returncode == 0
 
 
@@ -121,12 +135,22 @@ def keep(plugin_id, spec, installed):
         modules = next((folder / 'node_modules' for folder in (root, *root.parents)
                         if (folder / 'node_modules').is_dir()), None)
         if modules:
-            (stage / 'node_modules').symlink_to(modules, target_is_directory=True)
-        # Lines may have moved and small things around them changed; the build
-        # below decides whether the result still holds together.
-        run(['patch', '--batch', '--silent', '--forward', '--no-backup-if-mismatch', '-p1', '--fuzz=2'],
-            cwd=stage, data=patch_text(spec))
-        run(['bb', 'plugin', 'build', str(stage)])
+            compat.link_directory(stage / 'node_modules', modules)
+        try:
+            # The patch has LF endings; a CRLF checkout gets them back below.
+            crlf = [name for name in spec['files'] if b'\r\n' in before[name]]
+            for name in crlf:
+                (stage / name).write_bytes(unix_lines(before[name]))
+            # Lines may have moved and small things around them changed; the build
+            # below decides whether the result still holds together.
+            run(['patch', '--batch', '--silent', '--forward', '--no-backup-if-mismatch', '-p1', '--fuzz=2'],
+                cwd=stage, data=patch_text(spec))
+            run(['bb', 'plugin', 'build', str(stage)])
+            for name in crlf:
+                (stage / name).write_bytes(unix_lines((stage / name).read_bytes()).replace(b'\n', b'\r\n'))
+        finally:
+            # Before the temporary copy is deleted: the link leads to the installed dependencies.
+            compat.unlink_directory(stage / 'node_modules')
         current = plugins().get(plugin_id)
         if not current or current['rootDir'] != str(root):
             raise RuntimeError(f"{spec['name']} changed again during validation; retrying later")
@@ -161,9 +185,7 @@ def main():
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     only = sys.argv[1:] or list(KEPT)
     with (STATE_DIR / 'keeper.lock').open('w') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not compat.try_lock(lock):
             return
         installed = plugins()
         for plugin_id in only:
@@ -179,4 +201,5 @@ def main():
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     main()

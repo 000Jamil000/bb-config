@@ -9,6 +9,8 @@ import shlex
 import subprocess
 import sys
 
+import platform_compat as compat
+
 ROOT = Path(__file__).resolve().parents[1]
 # These may change connectivity or provider routing. Preserve for explicit setup.
 MANUAL_SETTINGS = {'connect', 'proxy-manager', 'provider-acp'}
@@ -47,7 +49,7 @@ def install_source(plugin):
 def installed_ids():
     """Plugin ids the connected BB already has, or None when it cannot be asked."""
     try:
-        listing = json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json'], text=True,
+        listing = json.loads(subprocess.check_output(compat.argv(['bb', 'plugin', 'list', '--json']), text=True,
                                                      stderr=subprocess.DEVNULL))
     except (OSError, subprocess.CalledProcessError, ValueError):
         return None
@@ -148,7 +150,7 @@ def main():
     if args.apply and args.plugins:
         # path: sources are read by the BB server. Refuse a remote-server path
         # mismatch before running even npm ci or changing any preferences.
-        status = json.loads(subprocess.check_output(['bb', 'status', '--json'], text=True))
+        status = json.loads(subprocess.check_output(compat.argv(['bb', 'status', '--json']), text=True))
         if not Path(status['dataDir']).is_dir():
             raise SystemExit('Run --plugins --apply on the BB server machine, in its bb-config checkout. '
                              'Local plugin paths are server-side; this CLI is connected remotely.')
@@ -165,13 +167,13 @@ def main():
         if command[:2] == ['bb', 'settings'] or command[:2] == ['bb', 'thread-list'] or command[:3] == ['bb', 'plugin', 'config']:
             # A saved preference this BB version no longer accepts must not
             # abort the rest; plugin installs and builds stay fatal.
-            result = subprocess.run(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
+            result = subprocess.run(compat.argv(command), stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, text=True)
             if result.returncode != 0:
                 reason = (result.stderr.strip().splitlines() or ['failed'])[-1][:160]
                 print(f'  skipped: {reason}', flush=True)
                 skipped.append(shown)
         else:
-            subprocess.run(command, check=True, stdout=subprocess.DEVNULL)
+            subprocess.run(compat.argv(command), check=True, stdout=subprocess.DEVNULL)
     if skipped:
         print(f'\n{len(skipped)} saved preference(s) were not accepted by this BB version and were skipped:')
         for shown in skipped:
@@ -181,4 +183,5 @@ def main():
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     main()

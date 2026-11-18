@@ -16,9 +16,11 @@ test('HTML and nested CSS assets survive a server-to-Mac copy with Unicode paths
   assert.match(await readFile(path, 'utf8'), /assets\/style.css/);
   assert.notEqual(path, await saveBundle(bundle, join(root, 'downloads')));
 }));
-test('rejects symlink resources escaping the presentation directory', () => fixture(async root => {
+test('rejects symlink resources escaping the presentation directory', (t) => fixture(async root => {
   const src = join(root, 'source'); await mkdir(src);
-  await writeFile(join(root, 'outside.png'), 'private'); await symlink(join(root, 'outside.png'), join(src, 'image.png'));
+  await writeFile(join(root, 'outside.png'), 'private');
+  try { await symlink(join(root, 'outside.png'), join(src, 'image.png')); }
+  catch (error) { if (error.code === 'EPERM') return t.skip('creating a symlink needs a privilege on Windows'); throw error; }
   await writeFile(join(src, 'slides.html'), '<img src="image.png">');
   await assert.rejects(collectBundle(join(src, 'slides.html')), /пределами/);
 }));

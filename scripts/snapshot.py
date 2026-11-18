@@ -9,11 +9,13 @@ import subprocess
 from pathlib import Path
 from plugin_scope import externally_managed
 
+import platform_compat as compat
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def bb(*args):
-    result = subprocess.run(['bb', *args, '--json'], text=True, capture_output=True, timeout=90)
+    result = subprocess.run(compat.argv(['bb', *args, '--json']), text=True, capture_output=True, timeout=90)
     if result.returncode:
         # Never echo settings arguments or command output: they may contain secrets.
         raise RuntimeError(f'BB command failed: {args[0]} {args[1] if len(args) > 1 else ""}')
@@ -165,4 +167,5 @@ def main():
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     raise SystemExit(main())

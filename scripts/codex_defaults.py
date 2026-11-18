@@ -11,6 +11,8 @@ import tempfile
 import uuid
 import tomllib
 
+import platform_compat as compat
+
 ROOT = Path(__file__).resolve().parents[1]
 KEY = 'project_doc_max_bytes'
 
@@ -57,7 +59,7 @@ def verify(config_home):
         (workspace / '.git').mkdir()
         marker = 'INSTRUCTION_BUDGET_' + uuid.uuid4().hex
         (workspace / 'AGENTS.md').write_text('x' * 34000 + '\n' + marker + '\n', encoding='utf-8')
-        result = subprocess.run(['codex', 'debug', 'prompt-input', 'Instruction budget check'],
+        result = subprocess.run(compat.argv(['codex', 'debug', 'prompt-input', 'Instruction budget check']),
             cwd=workspace, env=dict(os.environ, CODEX_HOME=str(config_home)),
             capture_output=True, text=True, timeout=60)
         if result.returncode:
@@ -99,4 +101,5 @@ def main():
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     main()

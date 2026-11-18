@@ -15,13 +15,14 @@ Procedure: docs/updates.md.
 import argparse
 import contextlib
 import datetime
-import fcntl
 import json
 import os
 from pathlib import Path
 import re
 import subprocess
 import sys
+
+import platform_compat as compat
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = re.compile(r'^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$')
@@ -60,7 +61,7 @@ def git(root, *args, check=True):
 
 
 def bb(*args):
-    command = [os.environ.get('BB_CLI') or 'bb', *args]
+    command = compat.argv([os.environ.get('BB_CLI') or 'bb', *args])
     try:
         return subprocess.run(command, capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError) as error:
@@ -237,7 +238,7 @@ def journal(root, write=False):
     directory = state_dir(root)
     directory.mkdir(parents=True, exist_ok=True)
     with open(directory / 'journal.flock', 'w') as guard:
-        fcntl.flock(guard, fcntl.LOCK_EX)
+        compat.lock(guard)
         path = directory / 'journal.json'
         data = json.loads(path.read_text()) if path.is_file() else {}
         data.setdefault('schemaVersion', 1)
@@ -321,7 +322,7 @@ def expand(argv, root):
 
 
 def execute(argv, root):
-    result = subprocess.run(expand(argv, root), cwd=root, capture_output=True, text=True)
+    result = subprocess.run(compat.argv(expand(argv, root)), cwd=root, capture_output=True, text=True)
     return result.returncode, (result.stdout + result.stderr).strip()[-600:]
 
 
@@ -742,4 +743,5 @@ def main(argv=None, root=ROOT):
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     sys.exit(main())

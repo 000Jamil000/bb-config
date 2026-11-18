@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Local helper for the bb menu bar panel.
+"""Local helper for the bb menu bar (macOS) and notification area (Windows) panel.
 
 Serves the panel page and, from local files the menubar-status plugin keeps
 in this folder, the status, account usage and each listed thread's
@@ -44,6 +44,16 @@ def queue(request):
     os.replace(temporary, os.path.join(outbox, f"{name}.json"))
 
 
+def show_bb():
+    """Bring the bb desktop app forward, starting it if needed."""
+    if os.name == "nt":
+        app = os.path.join(os.environ.get("LOCALAPPDATA", ""), "Programs", "bb", "bb.exe")
+        if os.path.isfile(app):
+            os.startfile(app)
+    else:
+        subprocess.Popen(["/usr/bin/open", "-a", "bb"])
+
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_args):
         pass
@@ -86,7 +96,7 @@ class Handler(BaseHTTPRequestHandler):
         elif url.path == "/open":
             if THREAD_ID.match(thread):
                 queue({"action": "open", "thread": thread})
-            subprocess.Popen(["/usr/bin/open", "-a", "bb"])
+            show_bb()
             self.reply(200, "{}")
         else:
             self.reply(404, "{}")
@@ -110,7 +120,34 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(400, "{}")
 
 
+class Server(ThreadingHTTPServer):
+    # Windows gives a port taken with SO_REUSEADDR to a second process as well and
+    # splits the connections between the two: there, one helper per port.
+    allow_reuse_address = os.name != "nt"
+
+
+def leave_with(owner):
+    """Windows: ends this helper once the program that started it is gone, however it ended."""
+    import ctypes
+    import threading
+
+    kernel = ctypes.windll.kernel32
+    kernel.OpenProcess.restype = ctypes.c_void_p
+    handle = kernel.OpenProcess(0x00100000, False, owner)  # SYNCHRONIZE
+    if not handle:
+        os._exit(0)
+
+    def wait():
+        kernel.WaitForSingleObject(ctypes.c_void_p(handle), 0xFFFFFFFF)
+        os._exit(0)
+
+    threading.Thread(target=wait, daemon=True).start()
+
+
 if __name__ == "__main__":
+    # server.py [port [process ID of the Windows program that started it]]
     if len(sys.argv) > 1:
         PORT = int(sys.argv[1])
-    ThreadingHTTPServer(("127.0.0.1", PORT), Handler).serve_forever()
+    if len(sys.argv) > 2 and os.name == "nt":
+        leave_with(int(sys.argv[2]))
+    Server(("127.0.0.1", PORT), Handler).serve_forever()

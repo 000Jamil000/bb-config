@@ -1,8 +1,10 @@
-# Open on Mac
+# Open on Desktop (id `file-local-open`)
 
 A small companion plugin for BB: compact laptop and download icons beside
-file links in chat. The first copies a server file to Mac Downloads and opens
-its default app (HTML explicitly uses Chrome); the second only saves it.
+file links in chat. The first copies a server file to the Downloads of your
+Mac or Windows PC and opens its default app (on a Mac, HTML explicitly uses
+Chrome); the second only saves it. A file that already is on that computer,
+as when bb runs on a single PC, is opened in place without a copy.
 Includes a PDF preview fitted to panel width, without the thumbnail sidebar.
 
 Sources remain on their owning machine. Save writes straight to `~/Downloads/`

@@ -2,6 +2,7 @@ import contextlib
 import copy
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -52,7 +53,8 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(public.read_text(), '{"shared": true}')
             private = root / '.local/config/general.json'
             self.assertEqual(json.loads(private.read_text()), {'private': 'installation value'})
-            self.assertEqual(private.stat().st_mode & 0o777, 0o600)
+            if os.name != 'nt':  # NTFS has no POSIX mode bits; access follows the folder ACL
+                self.assertEqual(private.stat().st_mode & 0o777, 0o600)
 
     def test_failed_read_never_starts_writes_or_source_copy(self):
         with patch.object(snapshot, 'collect', side_effect=RuntimeError('unavailable')), \
@@ -157,6 +159,7 @@ class InstructionTests(unittest.TestCase):
         self.assertEqual(setup_tracking.merge_instructions(merged, newer),
                          'other private rules\n\n' + newer)
 
+    @unittest.skipIf(os.name == 'nt', 'Git for Windows checks the symlink out as a text file without Developer Mode')
     def test_bb_and_native_providers_share_one_instruction_source(self):
         root = Path(__file__).resolve().parents[1]
         self.assertTrue((root / '.bb/AGENTS.md').is_symlink())

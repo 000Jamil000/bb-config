@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Validate compatible catalog upgrades in staging before restoring preferences."""
-import fcntl
 import hashlib
 import json
 import os
@@ -14,6 +13,9 @@ import tempfile
 
 import apply as patcher
 
+sys.path.insert(0, str(patcher.REPO / 'scripts'))
+import platform_compat as compat  # noqa: E402
+
 STATE_DIR = patcher.REPO / '.local/plugin-patches/voice-mode'
 TOOLCHAIN = patcher.REPO / 'plugins/voice-mode-keeper/node_modules'
 KEEPER_NODE = os.environ.get('VOICE_KEEPER_NODE', 'node')
@@ -24,7 +26,7 @@ def digest(path):
 
 
 def inventory():
-    plugins = json.loads(subprocess.check_output(['bb', 'plugin', 'list', '--json']))['plugins']
+    plugins = json.loads(subprocess.check_output(compat.argv(['bb', 'plugin', 'list', '--json'])))['plugins']
     return next((p for p in plugins if p['id'] == 'voice-mode'), None)
 
 
@@ -86,7 +88,7 @@ def forward_prepare(root, spec):
 
 def run(command, cwd=None):
     # Tool output can contain source paths; keep it out of persistent notices.
-    result = subprocess.run(command, cwd=cwd, capture_output=True, text=True, timeout=100)
+    result = subprocess.run(compat.argv(command), cwd=cwd, capture_output=True, text=True, timeout=100)
     if result.returncode:
         STATE_DIR.mkdir(parents=True, exist_ok=True)
         log = STATE_DIR / 'last-validation.log'
@@ -144,12 +146,16 @@ def sync():
     with tempfile.TemporaryDirectory(prefix='voice-mode-update-') as directory:
         stage = Path(directory) / 'plugin'
         shutil.copytree(root, stage, ignore=shutil.ignore_patterns('node_modules', 'dist', 'media', '.git'))
-        (stage / 'node_modules').symlink_to(TOOLCHAIN, target_is_directory=True)
-        for name, text in changed.items():
-            (stage / name).write_text(text)
-        run([KEEPER_NODE, str(TOOLCHAIN / 'vitest/vitest.mjs'), 'run', 'test/server.test.ts', 'test/compact-hosts.test.ts'], stage)
-        run([KEEPER_NODE, str(TOOLCHAIN / 'typescript/bin/tsc'), '--noEmit', '--skipLibCheck'], stage)
-        run(['bb', 'plugin', 'build', str(stage)])
+        compat.link_directory(stage / 'node_modules', TOOLCHAIN)
+        try:
+            for name, text in changed.items():
+                (stage / name).write_text(text)
+            run([KEEPER_NODE, str(TOOLCHAIN / 'vitest/vitest.mjs'), 'run', 'test/server.test.ts', 'test/compact-hosts.test.ts'], stage)
+            run([KEEPER_NODE, str(TOOLCHAIN / 'typescript/bin/tsc'), '--noEmit', '--skipLibCheck'], stage)
+            run(['bb', 'plugin', 'build', str(stage)])
+        finally:
+            # Before the temporary copy is deleted: the link leads to the keeper's own dependencies.
+            compat.unlink_directory(stage / 'node_modules')
         current = inventory()
         if not current or not current['enabled'] or current['rootDir'] != str(root):
             raise ValueError('Voice Mode changed again during validation; retry after the update')
@@ -191,9 +197,7 @@ def main():
     signal.signal(signal.SIGTERM, interrupted)
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     with (STATE_DIR / 'automatic.lock').open('w') as lock:
-        try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
+        if not compat.try_lock(lock):
             print(json.dumps({'state': 'checking', 'message': 'Проверка обновления уже выполняется.', 'version': ''}))
             return
         try:
@@ -214,4 +218,5 @@ def main():
 
 
 if __name__ == '__main__':
+    compat.utf8_main()
     main()

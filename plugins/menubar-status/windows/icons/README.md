@@ -1,0 +1,1 @@
+Provider marks copied unchanged from the installed BB provider icons (Claude and OpenAI). PNGs are rasterizations of the supplied SVG paths at 88 px for the native Windows widget. Marks identify their respective providers; no original brand artwork is claimed.

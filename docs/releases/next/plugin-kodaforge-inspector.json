@@ -7,5 +7,5 @@
   "plugin": "kodaforge-inspector",
   "introduces": true,
   "rerun": "При совпадении версии и источника шаг проверяет установленный компонент.",
-  "rollback": "bb plugin disable kodaforge-inspector, затем обновить страницу BB."
+  "rollback": "bb plugin config kodaforge-inspector set layout native; для полного отключения — bb plugin disable kodaforge-inspector и обновить страницу BB."
 }

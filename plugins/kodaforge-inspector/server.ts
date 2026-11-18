@@ -2,25 +2,43 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { UPSTREAM } from "./inspector";
+import { LAYOUTS, UPSTREAM, layoutOf } from "./inspector";
 const report = z.object({
   state: z.enum(["compatible", "incompatible", "waiting"]),
   reason: z.string().max(300),
 });
+const layout = z.enum(LAYOUTS);
 export const rpcContract = defineRpcContract({
-  config: { input: z.null(), output: z.object({ enabled: z.boolean() }) },
+  config: { input: z.null(), output: z.object({ layout }) },
+  choose: {
+    input: z.object({ layout }),
+    output: z.object({ layout }),
+  },
   report: { input: report, output: z.object({ ok: z.boolean() }) },
 });
 export default function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
-    enabled: {
-      type: "boolean",
-      label: "Показывать чат по центру в редакторе диалога",
-      default: true,
+    layout: {
+      type: "select",
+      label: "Вид редактора диалога в KodaForge",
+      description:
+        "«Спросить» показывает выбор с примерами при следующем открытии редактора диалога. До выбора действует штатный вид.",
+      options: [...LAYOUTS],
+      experimental_optionLabels: {
+        ask: "Спросить при открытии",
+        native: "Штатный: код по центру, чат справа",
+        center: "Чат по центру, код по вкладке",
+      },
+      default: "ask",
     },
   });
   bb.rpc.register(rpcContract, {
-    config: async () => settings.get(),
+    config: async () => ({ layout: layoutOf((await settings.get()).layout) }),
+    choose: async (value) => {
+      const next = await settings.experimental_set({ layout: value.layout });
+      bb.realtime.publish("layout", {});
+      return { layout: layoutOf(next.layout) };
+    },
     report: async (value) => {
       await bb.storage.kv.set("last-inspection", {
         ...value,
@@ -29,6 +47,7 @@ export default function plugin(bb: BbPluginApi) {
       return { ok: true };
     },
   });
+  settings.onChange(() => bb.realtime.publish("layout", {}));
   bb.cli.register({
     name: "kodaforge-inspector",
     summary: "Проверка источника обновлений и независимого слоя интерфейса",
@@ -60,13 +79,13 @@ export default function plugin(bb: BbPluginApi) {
       }
       const config = await settings.get();
       const result = {
-        enabled: config.enabled,
+        layout: layoutOf(config.layout),
         upstreamTracking: tracking,
         source,
         browser: await bb.storage.kv.get("last-inspection"),
         update:
           "BB проверяет обновления; установка — кнопкой Update или bb plugin update kodaforge --yes. Инспектор применяется при загрузке совместимого интерфейса.",
-        restore: "bb plugin disable kodaforge-inspector",
+        restore: "bb plugin config kodaforge-inspector set layout native",
       };
       return {
         exitCode: tracking ? 0 : 1,

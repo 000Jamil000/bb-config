@@ -6,6 +6,13 @@ export function threadInWorkspace(pathname: string): string | null {
     )?.[1] ?? null
   );
 }
+/** ask: nothing chosen yet, the native layout stays until the user picks one. */
+export const LAYOUTS = ["ask", "native", "center"] as const;
+export type Layout = (typeof LAYOUTS)[number];
+/** An unknown stored value never switches the layout on its own. */
+export function layoutOf(value: unknown): Layout {
+  return (LAYOUTS as readonly unknown[]).includes(value) ? (value as Layout) : "ask";
+}
 export const UPSTREAM =
   "git:https://github.com/Kodaks94/bb-plugin-kodaforge.git@semver:>=0.7.0 <1.0.0";
 export type Inspection = {
@@ -98,5 +105,22 @@ export const CSS = `
 .kfi-toolbar button { padding:4px 9px; border-radius:4px; cursor:pointer; }
 .kfi-toolbar button[aria-pressed="true"] { background:var(--muted); font-weight:600; }
 .kfi-toolbar small { margin-left:auto; color:var(--muted-foreground); white-space:nowrap; }
+.kfi-toolbar .kfi-view { margin-left:auto; color:var(--muted-foreground); }
+.kfi-toolbar .kfi-view + small { margin-left:0; }
+.kfi-backdrop { position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px; background:#0006; }
+.kfi-chooser { width:min(680px,100%); max-height:100%; overflow:auto; background:var(--background); color:var(--foreground); border:1px solid var(--border); border-radius:12px; padding:20px; box-shadow:0 12px 40px #0004; font-size:13px; }
+.kfi-chooser h2 { font-size:16px; font-weight:600; margin:0 0 4px; }
+.kfi-chooser p { margin:0; color:var(--muted-foreground); }
+.kfi-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin:16px 0; }
+.kfi-option { display:flex; flex-direction:column; gap:8px; padding:10px; text-align:left; border:1px solid var(--border); border-radius:10px; background:transparent; color:inherit; cursor:pointer; }
+.kfi-option:hover { background:var(--muted); }
+.kfi-option[aria-checked="true"] { border-color:var(--ring); box-shadow:0 0 0 1px var(--ring); }
+.kfi-option:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.kfi-option svg { width:100%; height:auto; border-radius:6px; border:1px solid var(--border); color:var(--foreground); }
+.kfi-option b { font-weight:600; }
+.kfi-option span { color:var(--muted-foreground); font-size:12px; line-height:1.4; }
+.kfi-actions { display:flex; justify-content:flex-end; gap:8px; }
+.kfi-actions button { padding:6px 12px; border-radius:6px; border:1px solid var(--border); background:transparent; color:inherit; cursor:pointer; }
+.kfi-actions button.kfi-primary { background:var(--foreground); color:var(--background); border-color:var(--foreground); }
 .kfi-warning { position:fixed; bottom:40px; right:20px; max-width:420px; z-index:999; background:var(--background); color:var(--foreground); border:1px solid var(--border); border-radius:8px; padding:12px; box-shadow:0 4px 20px #0002; font-size:13px; }
 `;

@@ -8,7 +8,7 @@
   },
   "bb": {
     "name": "KodaForge Inspector",
-    "description": "Центральный чат в редакторе KodaForge и проверка совместимости после обновлений.",
+    "description": "Выбор вида редактора KodaForge: штатный или чат по центру, с проверкой совместимости после обновлений.",
     "branding": {
       "icon": "ShieldCheck"
     },

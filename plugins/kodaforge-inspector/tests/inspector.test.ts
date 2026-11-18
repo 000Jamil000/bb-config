@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { inspect, attachLayout, threadInWorkspace } from "../inspector";
+import { inspect, attachLayout, layoutOf, threadInWorkspace } from "../inspector";
 function fixture() {
   const dom = new JSDOM(
     `<div class="kf-root"><nav aria-label="Views"></nav><div data-panel id="main"><div data-panel id="editors"><div id="original"><input value="unsaved draft"></div></div></div><footer><button title="Switch branch"></button><button title="Toggle Terminal (⌃&#96;)"></button></footer></div>`,
@@ -76,4 +76,12 @@ test("unexpected extra native content leaves the editor untouched", () => {
   doc.querySelector("#editors")!.append(doc.createElement("section"));
   assert.equal(inspect(doc, () => true).state, "incompatible");
   assert.equal(doc.querySelector("[data-kfi-layout]"), null);
+});
+
+test("only a stored explicit choice changes the layout", () => {
+  assert.equal(layoutOf("center"), "center");
+  assert.equal(layoutOf("native"), "native");
+  for (const unset of ["ask", "", undefined, null, true, "sidebar"]) {
+    assert.equal(layoutOf(unset), "ask");
+  }
 });

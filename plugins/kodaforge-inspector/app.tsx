@@ -1,14 +1,28 @@
 import {
+  useCallback,
   useEffect,
   useLayoutEffect,
+  useRef,
   useState,
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { definePluginApp, ThreadChat, useRpc } from "@get-bb/plugin-sdk/app";
+import {
+  definePluginApp,
+  ThreadChat,
+  useRealtime,
+  useRpc,
+} from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
-import { attachLayout, CSS, inspect, threadInWorkspace } from "./inspector";
+import {
+  attachLayout,
+  CSS,
+  inspect,
+  threadInWorkspace,
+  type Layout,
+} from "./inspector";
 type Attachment = ReturnType<typeof attachLayout>;
+type Choice = Exclude<Layout, "ask">;
 function Inspector() {
   const rpc = useRpc<typeof rpcContract>();
   const threadId = useSyncExternalStore(
@@ -16,22 +30,189 @@ function Inspector() {
     currentThread,
     () => null,
   );
-  const [enabled, setEnabled] = useState(false);
-  useEffect(() => {
-    let active = true;
+  // null: not read yet. Nothing is changed or asked before the stored choice is known.
+  const [layout, setLayout] = useState<Layout | null>(null);
+  const [reopened, setReopened] = useState(false);
+  const [postponed, setPostponed] = useState(false);
+  const load = useCallback(() => {
     rpc.call("config", null).then(
-      (config) => {
-        if (active) setEnabled(config.enabled);
-      },
+      (config) => setLayout(config.layout),
       () => {},
     );
-    return () => {
-      active = false;
-    };
   }, [rpc]);
-  return enabled && threadId ? (
-    <Workspace key={threadId} threadId={threadId} />
-  ) : null;
+  useEffect(load, [load]);
+  useRealtime("layout", load);
+  if (!threadId || layout === null) return null;
+  const asking = reopened || (layout === "ask" && !postponed);
+  return (
+    <>
+      {layout === "center" && (
+        <Workspace
+          key={threadId}
+          threadId={threadId}
+          onChangeView={() => setReopened(true)}
+        />
+      )}
+      {asking && (
+        <Chooser
+          current={layout === "center" ? "center" : "native"}
+          first={layout === "ask"}
+          onClose={() => {
+            setReopened(false);
+            setPostponed(true);
+          }}
+          onChoose={async (next) => {
+            const saved = await rpc.call("choose", { layout: next });
+            setLayout(saved.layout);
+            setReopened(false);
+          }}
+        />
+      )}
+    </>
+  );
+}
+
+/** Schematic previews: files on the left in both; what fills the middle differs. */
+function Preview({ kind }: { kind: Choice }) {
+  const line = (x: number, y: number, w: number, o = 0.35) => (
+    <rect key={y} x={x} y={y} width={w} height="4" rx="2" fill="currentColor" opacity={o} />
+  );
+  const bubble = (x: number, y: number, w: number, mine: boolean) => (
+    <rect x={x} y={y} width={w} height="12" rx="6" fill="currentColor" opacity={mine ? 0.55 : 0.22} />
+  );
+  return (
+    <svg viewBox="0 0 240 140" role="img" aria-hidden="true">
+      <rect width="240" height="140" fill="currentColor" opacity="0.04" />
+      <rect x="0" y="0" width="52" height="140" fill="currentColor" opacity="0.07" />
+      {[14, 26, 38, 50, 62, 74].map((y, i) => line(i % 3 ? 14 : 8, y, i % 2 ? 26 : 34, 0.3))}
+      {kind === "native" ? (
+        <>
+          {[14, 26, 38, 50, 62, 74, 86, 98, 110].map((y, i) =>
+            line(62 + (i % 3) * 8, y, [70, 48, 84, 36, 62, 78, 44, 66, 30][i]!, 0.4),
+          )}
+          <rect x="166" y="0" width="74" height="140" fill="currentColor" opacity="0.07" />
+          {bubble(174, 14, 44, false)}
+          {bubble(190, 32, 42, true)}
+          {bubble(174, 50, 52, false)}
+          <rect x="174" y="116" width="58" height="14" rx="7" fill="none" stroke="currentColor" opacity="0.5" />
+        </>
+      ) : (
+        <>
+          <rect x="52" y="0" width="188" height="18" fill="currentColor" opacity="0.07" />
+          <rect x="60" y="5" width="34" height="9" rx="4" fill="currentColor" opacity="0.55" />
+          <rect x="100" y="5" width="34" height="9" rx="4" fill="currentColor" opacity="0.2" />
+          {bubble(70, 30, 96, false)}
+          {bubble(124, 50, 100, true)}
+          {bubble(70, 70, 118, false)}
+          {bubble(150, 90, 74, true)}
+          <rect x="70" y="114" width="154" height="16" rx="8" fill="none" stroke="currentColor" opacity="0.5" />
+        </>
+      )}
+    </svg>
+  );
+}
+
+const OPTIONS: { id: Choice; title: string; text: string }[] = [
+  {
+    id: "native",
+    title: "Штатный вид",
+    text: "Код по центру, чат справа. Так KodaForge выглядит без инспектора.",
+  },
+  {
+    id: "center",
+    title: "Чат по центру",
+    text: "Переписка и поле ввода занимают середину. Код открывается вкладкой «Файлы и код» или кликом по файлу.",
+  },
+];
+
+export function Chooser({
+  current,
+  first,
+  onClose,
+  onChoose,
+}: {
+  current: Choice;
+  first: boolean;
+  onClose: () => void;
+  onChoose: (next: Choice) => Promise<void>;
+}) {
+  const [selected, setSelected] = useState<Choice>(current);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const apply = useRef<HTMLButtonElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    apply.current?.focus();
+    const key = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.stopPropagation();
+      close.current();
+    };
+    document.addEventListener("keydown", key, true);
+    return () => document.removeEventListener("keydown", key, true);
+  }, []);
+  return (
+    <div
+      className="kfi-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget) onClose();
+      }}
+    >
+      <style>{CSS}</style>
+      <div
+        className="kfi-chooser"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="kfi-chooser-title"
+      >
+        <h2 id="kfi-chooser-title">Как показывать диалог в редакторе?</h2>
+        <p>
+          Выбор действует для всех диалогов. Изменить его можно кнопкой «Вид…»
+          или в настройках KodaForge Inspector.
+        </p>
+        <div className="kfi-options" role="radiogroup" aria-label="Вид редактора">
+          {OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              role="radio"
+              aria-checked={selected === option.id}
+              className="kfi-option"
+              onClick={() => setSelected(option.id)}
+              onDoubleClick={() => apply.current?.click()}
+            >
+              <Preview kind={option.id} />
+              <b>{option.title}</b>
+              <span>{option.text}</span>
+            </button>
+          ))}
+        </div>
+        {error && <p role="alert">{error}</p>}
+        <div className="kfi-actions">
+          <button type="button" onClick={onClose} disabled={busy}>
+            {first ? "Позже" : "Отмена"}
+          </button>
+          <button
+            ref={apply}
+            type="button"
+            className="kfi-primary"
+            disabled={busy}
+            onClick={() => {
+              setBusy(true);
+              setError("");
+              onChoose(selected).catch(() => {
+                setError("Не удалось сохранить выбор. Повторите.");
+                setBusy(false);
+              });
+            }}
+          >
+            Применить
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function currentThread() {
@@ -51,7 +232,13 @@ function subscribeToRoute(check: () => void) {
   };
 }
 
-function Workspace({ threadId }: { threadId: string }) {
+function Workspace({
+  threadId,
+  onChangeView,
+}: {
+  threadId: string;
+  onChangeView: () => void;
+}) {
   const rpc = useRpc<typeof rpcContract>();
   const [paused, setPaused] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -219,6 +406,9 @@ function Workspace({ threadId }: { threadId: string }) {
               onClick={() => choose("code")}
             >
               Файлы и код
+            </button>
+            <button className="kfi-view" onClick={onChangeView}>
+              Вид…
             </button>
             <small title="Отдельный плагин. Исходные файлы KodaForge не изменяются.">
               Инспектор ✓

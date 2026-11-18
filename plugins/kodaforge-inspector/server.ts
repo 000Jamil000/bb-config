@@ -38,6 +38,16 @@ export default function plugin(bb: BbPluginApi) {
       },
       default: "ask",
     },
+    autoOpen: {
+      type: "boolean",
+      label: "Открывать выбранный диалог сразу в KodaForge",
+      default: false,
+    },
+    autoOpenThread: {
+      type: "string",
+      label: "ID диалога для автооткрытия (thr_… из адреса диалога BB)",
+      default: "",
+    },
   });
   const PROJECT_KEY = "project-layout:";
   async function resolve(threadId: string) {
@@ -103,6 +113,8 @@ export default function plugin(bb: BbPluginApi) {
       const config = await settings.get();
       const result = {
         layout: layoutOf(config.layout),
+        autoOpen: config.autoOpen,
+        autoOpenThread: config.autoOpenThread,
         projectChoices: (await bb.storage.kv.list(PROJECT_KEY)).length,
         upstreamTracking: tracking,
         source,

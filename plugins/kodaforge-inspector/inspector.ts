@@ -1,3 +1,16 @@
+/** The KodaForge workspace to go to instead of this BB thread page, or null to stay. */
+export function autoOpenWorkspace(
+  route: string,
+  autoOpen: unknown,
+  selectedThread: unknown,
+): string | null {
+  if (autoOpen !== true || typeof selectedThread !== "string") return null;
+  // Only the plain thread page: a link to a message or a file keeps opening as usual.
+  const match = /^\/projects\/[^/?#]+\/threads\/(thr_[A-Za-z0-9_-]+)\/?$/.exec(route);
+  if (!match || match[1] !== selectedThread.trim()) return null;
+  return "/plugins/kodaforge/forge/thread/" + match[1];
+}
+
 /** The workspace route names the thread displayed by this editor. */
 export function threadInWorkspace(pathname: string): string | null {
   return (

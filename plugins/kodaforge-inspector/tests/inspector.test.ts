@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { inspect, attachLayout, effectiveLayout, layoutOf, threadInWorkspace } from "../inspector";
+import { autoOpenWorkspace, inspect, attachLayout, effectiveLayout, layoutOf, threadInWorkspace } from "../inspector";
 function fixture() {
   const dom = new JSDOM(
     `<div class="kf-root"><nav aria-label="Views"></nav><div data-panel id="main"><div data-panel id="editors"><div id="original"><input value="unsaved draft"></div></div></div><footer><button title="Switch branch"></button><button title="Toggle Terminal (⌃&#96;)"></button></footer></div>`,
@@ -92,4 +92,22 @@ test("a project's own choice wins over the one saved for all", () => {
   assert.equal(effectiveLayout("native", "center"), "native");
   assert.equal(effectiveLayout("center", "native"), "center");
   assert.equal(effectiveLayout("garbage", "native"), "native");
+});
+
+test("only the selected dialog's plain page is redirected, and only when switched on", () => {
+  const id = "thr_" + "example";
+  const page = "/projects/demo/threads/" + id;
+  assert.equal(autoOpenWorkspace(page, true, id), "/plugins/kodaforge/forge/thread/" + id);
+  assert.equal(autoOpenWorkspace(page + "/", true, " " + id + " "), "/plugins/kodaforge/forge/thread/" + id);
+  for (const [route, on, selected] of [
+    [page, false, id],
+    [page, true, ""],
+    [page, true, undefined],
+    [page, true, "thr_other"],
+    [page + "#msg=4", true, id],
+    [page + "?file=a", true, id],
+    ["/plugins/kodaforge/forge/thread/" + id, true, id],
+  ] as const) {
+    assert.equal(autoOpenWorkspace(route, on, selected), null);
+  }
 });

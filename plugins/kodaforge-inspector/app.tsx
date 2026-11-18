@@ -12,10 +12,13 @@ import {
   ThreadChat,
   useRealtime,
   useRpc,
+  useSdk,
+  useSettings,
 } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
 import {
   attachLayout,
+  autoOpenWorkspace,
   CSS,
   inspect,
   threadInWorkspace,
@@ -30,6 +33,28 @@ function Inspector() {
     currentThread,
     () => null,
   );
+  const { values } = useSettings();
+  const sdk = useSdk();
+  const route = useSyncExternalStore(subscribeToRoute, currentRoute, () => "");
+  const target = autoOpenWorkspace(route, values?.autoOpen, values?.autoOpenThread);
+  useEffect(() => {
+    if (!target) return;
+    let active = true;
+    sdk.plugins
+      .list()
+      .then(({ plugins }) => {
+        const forge = plugins.find((plugin) => plugin.id === "kodaforge");
+        if (!active || currentRoute() !== route || !forge?.enabled || !forge.app.bundle?.compatible)
+          return;
+        // The SDK exposes navigation to the calling plugin's own panels only.
+        window.history.replaceState(null, "", target);
+        window.dispatchEvent(new PopStateEvent("popstate"));
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [route, sdk, target]);
   // null: not read yet. Nothing is changed or asked before the stored choice is known.
   const [layout, setLayout] = useState<Layout | null>(null);
   const [reopened, setReopened] = useState(false);
@@ -237,6 +262,10 @@ export function Chooser({
   );
 }
 
+function currentRoute() {
+  return location.pathname + location.search + location.hash;
+}
+
 function currentThread() {
   return threadInWorkspace(location.pathname);
 }
@@ -246,10 +275,12 @@ function subscribeToRoute(check: () => void) {
     .navigation;
   navigation?.addEventListener("currententrychange", check);
   window.addEventListener("popstate", check);
+  window.addEventListener("hashchange", check);
   const timer = navigation ? undefined : window.setInterval(check, 250);
   return () => {
     navigation?.removeEventListener("currententrychange", check);
     window.removeEventListener("popstate", check);
+    window.removeEventListener("hashchange", check);
     window.clearInterval(timer);
   };
 }

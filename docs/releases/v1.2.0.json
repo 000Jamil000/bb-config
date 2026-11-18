@@ -1,0 +1,134 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.2.0",
+  "title": "Фильтры Machine Tabs, выбор вида KodaForge, поддержка Windows и маршруты моделей",
+  "steps": [
+    {
+      "id": "config-updates-failed-check",
+      "title": "Config Updates 0.1.4 корректно сообщает об ошибке повторной проверки",
+      "component": "config-updates",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "config-updates",
+      "rerun": "Повтор сверяет установленную версию и источник плагина.",
+      "rollback": "Соберите Config Updates из предыдущего стабильного релиза и установите из его постоянной рабочей копии. Сохраните журнал обновлений."
+    },
+    {
+      "id": "plugin-browser-page",
+      "title": "Browser Page 0.1.0: страницы встроенного браузера для агентов на Windows",
+      "component": "browser-page",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "browser-page",
+      "introduces": true,
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "bb plugin uninstall browser-page; других данных плагин не хранит."
+    },
+    {
+      "id": "plugin-config-updates-windows",
+      "title": "Config Updates 0.1.5: работа на сервере BB под Windows",
+      "component": "config-updates",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "config-updates",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/config-updates к коммиту v1.0.5 (git checkout v1.0.5 -- plugins/config-updates), затем npm ci --include=dev, bb plugin build и bb plugin reload config-updates."
+    },
+    {
+      "id": "plugin-file-local-open-desktop",
+      "title": "Open on Desktop 0.2.0: открытие файлов на Mac или Windows-компьютере",
+      "component": "file-local-open",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "file-local-open",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/file-local-open к релизу v1.1.0 (git checkout v1.1.0 -- plugins/file-local-open), затем npm ci --include=dev, bb plugin build и bb plugin reload file-local-open."
+    },
+    {
+      "id": "plugin-kodaforge-inspector",
+      "title": "Центральный чат KodaForge и инспектор совместимости",
+      "component": "kodaforge-inspector",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "kodaforge-inspector",
+      "introduces": true,
+      "rerun": "При совпадении версии и источника шаг проверяет установленный компонент.",
+      "rollback": "bb plugin config kodaforge-inspector set layout native; для полного отключения — bb plugin disable kodaforge-inspector и обновить страницу BB."
+    },
+    {
+      "id": "plugin-machine-tabs-sidebar-filters",
+      "title": "Machine Tabs 0.2.0 — фильтры по теме и проекту в боковой панели",
+      "component": "machine-tabs",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "machine-tabs",
+      "rerun": "При совпадении версии и источника шаг только проверяет состояние плагина.",
+      "rollback": "Восстановить plugins/machine-tabs из тега v1.1.0 в каталоге установки, выполнить npm ci --include=dev в каталоге плагина, затем bb plugin build и bb plugin reload machine-tabs."
+    },
+    {
+      "id": "plugin-menubar-status-windows",
+      "title": "Menubar Status 0.3.1: полоска статуса на панели задач Windows",
+      "component": "menubar-status",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "menubar-status",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/menubar-status к коммиту v1.0.5 (git checkout v1.0.5 -- plugins/menubar-status), затем npm ci --include=dev, bb plugin build и bb plugin reload menubar-status."
+    },
+    {
+      "id": "plugin-project-catalog-0-3",
+      "title": "Project Catalog 0.3.3: группы категорий, несколько категорий у проекта, треды и быстрые действия",
+      "component": "project-catalog",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-catalog",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/project-catalog к коммиту v1.1.0 (git checkout v1.1.0 -- plugins/project-catalog), затем npm ci --include=dev, bb plugin build и bb plugin reload project-catalog. Карточки и группы категорий остаются в хранилище BB."
+    },
+    {
+      "id": "plugin-project-open-0-3",
+      "title": "Project Open 0.3.0 — папка и терминал в меню треда по выбору",
+      "component": "project-open",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-open",
+      "rerun": "Повторная сборка сохраняет настройки placement и rowActions.",
+      "rollback": "Восстановить предыдущую версию plugins/project-open и пересобрать и перезагрузить плагин. Выбор быстрых действий хранится в настройках списка BB."
+    },
+    {
+      "id": "plugin-proxy-manager-gateway-availability",
+      "title": "Proxy Manager 0.3.1: проверка доступности OpenCodex",
+      "component": "proxy-manager",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "proxy-manager",
+      "introduces": false,
+      "rerun": "Повторяемая сборка и проверка версии; режимы маршрутов не изменяются.",
+      "rollback": "Вернуть предыдущие исходники и выполнить build/reload; предыдущая версия не проверяет доступность шлюза.",
+      "after": [
+        "plugin-proxy-manager-model-routes"
+      ]
+    },
+    {
+      "id": "plugin-proxy-manager-model-routes",
+      "title": "Proxy Manager 0.3.0: отдельный маршрут моделей BB",
+      "component": "proxy-manager",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "proxy-manager",
+      "introduces": false,
+      "rerun": "Сборка и проверка плагина повторяемы. Сохранённые режимы не переключаются при установке.",
+      "rollback": "Вернуть предыдущую версию proxy-manager и перезапустить только BB-runtime выбранного провайдера; обычные настройки CLI не изменяются."
+    },
+    {
+      "id": "plugin-voice-mode-keeper-windows",
+      "title": "Plugin Keeper 0.2.4: работа на сервере BB под Windows",
+      "component": "voice-mode-keeper",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "voice-mode-keeper",
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
+      "rollback": "Вернуть plugins/voice-mode-keeper к коммиту v1.0.5 (git checkout v1.0.5 -- plugins/voice-mode-keeper), затем npm ci --include=dev, bb plugin build и bb plugin reload voice-mode-keeper."
+    }
+  ]
+}

@@ -12,6 +12,12 @@ Plain focus after a mouse click must not retain the reserve once the pointer
 leaves. ResizeObserver tracks toolbar/trailing widths and is disposed on reload. On mobile the folder button opens BB’s
 original New tab file search; never dispatch the macOS app URL there. Both buttons have fast custom
 tooltips with the machine name and full environment path. Do not replace BB’s sidebar, menus or terminal.
+The setting `placement` (`row` by default, or `menu`) decides where row shortcuts
+live: `menu` unmounts the injected row icons and shows the registered actions
+`project-open/open-folder` and `project-open/open-terminal` in BB’s native thread
+menu, where Customize actions / `rowActions` can pin them. In `row` mode those
+actions return no menu item. Change it with
+`bb plugin config project-open set placement <row|menu>`; never edit `rowActions` for the user unasked.
 Resolve host/path from the selected thread’s environment, never a project source.
 Header scope comes from the real thread composer; never infer a thread from
 only the URL when split panes are open.

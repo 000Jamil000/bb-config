@@ -87,7 +87,22 @@ function revealInSidebar(projectId: string) {
   if (!group) return false;
   const label = group.querySelector<HTMLElement>('[data-sidebar="group-label"] [aria-expanded="false"], [data-sidebar="group-label"][aria-expanded="false"]');
   label?.click();
-  group.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  // Scroll the sidebar's own container so the group sits just below whatever is pinned at its top (sticky headers).
+  let box: HTMLElement | null = group.parentElement;
+  while (box && !(box.scrollHeight > box.clientHeight + 1 && /(auto|scroll)/.test(getComputedStyle(box).overflowY))) box = box.parentElement;
+  const behavior: ScrollBehavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  if (box) {
+    const top = box.getBoundingClientRect().top;
+    let covered = 0;
+    for (const el of Array.from(box.querySelectorAll<HTMLElement>('*'))) {
+      if (el.contains(group) || group.contains(el)) continue;
+      const style = getComputedStyle(el);
+      if (style.position !== 'sticky' && style.position !== 'fixed') continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.height && rect.top - top < 80) covered = Math.max(covered, rect.bottom - top);
+    }
+    box.scrollTo({ top: box.scrollTop + group.getBoundingClientRect().top - top - covered - 8, behavior });
+  } else group.scrollIntoView({ block: 'start', behavior });
   group.classList.remove('catalog-flash');
   void group.offsetWidth;
   group.classList.add('catalog-flash');
@@ -114,12 +129,13 @@ function ThreadList({ projectId, enabled, onNavigate }: { projectId: string; ena
   </div>;
 }
 /** Threads of a project on hover or click of its icon in the list. */
-function ThreadsButton({ project }: { project: ProjectView }) {
+function ThreadsButton({ project, onOpenChange }: { project: ProjectView; onOpenChange?: (open: boolean) => void }) {
   const [open, setOpen] = useState(false);
   const [pinned, setPinned] = useState(false);
   const [up, setUp] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const timer = useRef<number | undefined>(undefined);
+  useEffect(() => { onOpenChange?.(open); }, [open, onOpenChange]);
   const show = () => { setUp((ref.current?.getBoundingClientRect().top ?? 0) > window.innerHeight * 0.55); setOpen(true); };
   const enter = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(show, 220); };
   const leave = () => { window.clearTimeout(timer.current); if (!pinned) timer.current = window.setTimeout(() => setOpen(false), 180); };
@@ -133,9 +149,9 @@ function ThreadsButton({ project }: { project: ProjectView }) {
     return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey, true); };
   }, [open]);
   useEffect(() => () => window.clearTimeout(timer.current), []);
-  return <div ref={ref} className="catalog-row-tools relative shrink-0" onMouseEnter={enter} onMouseLeave={leave}>
-    <Button size="icon" variant="ghost" className={`catalog-row-action relative size-7 text-muted-foreground ${open ? '!opacity-100' : ''}`} aria-label={`Треды проекта «${project.name}»`} aria-expanded={open}
-      onClick={() => { if (open && pinned) shut(); else { show(); setPinned(true); } }}>
+  return <div ref={ref} className="relative shrink-0" onMouseEnter={enter} onMouseLeave={leave}>
+    <Button size="icon" variant="ghost" className="relative size-7 text-muted-foreground hover:text-foreground" aria-label={`Треды проекта «${project.name}»`} aria-expanded={open} data-tip={open ? undefined : 'Треды · клик — показать в боковой панели'}
+      onClick={() => { if (open && pinned) shut(); else { show(); setPinned(true); revealInSidebar(project.id); } }}>
       <Icon name="MessageSquare" className="size-3.5" aria-hidden="true"/>
     </Button>
     {open && <div role="dialog" aria-label={`Треды проекта «${project.name}»`} className={`catalog-pop absolute right-0 z-30 w-80 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-lg ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
@@ -149,7 +165,8 @@ function Row({ project, active, onOpen, onEdit, onThread }: { project: ProjectVi
   const entry = project.entry;
   const quiet = project.verdict.level === 'ok' || project.verdict.level === 'info';
   const hosts = [...new Set(project.sources.map(source => shortHost(source.hostName)))];
-  return <li data-catalog-row={project.id} className={`catalog-row group relative flex items-start gap-3 rounded-lg px-2.5 py-2 sm:items-center ${active ? 'bg-muted' : ''} ${entry.status === 'archive' ? 'opacity-60' : ''}`}>
+  const [toolsOpen, setToolsOpen] = useState(false);
+  return <li data-catalog-row={project.id} className={`catalog-row group relative flex items-start gap-3 rounded-lg px-2.5 py-2 sm:items-center ${active ? 'is-active' : ''} ${entry.status === 'archive' ? 'opacity-60' : ''}`}>
     <button type="button" onClick={onOpen} aria-current={active ? 'true' : undefined} className="absolute inset-0 cursor-pointer rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Открыть «${project.name}»`}/>
     <Avatar project={project} size="size-7"/>
     <div className="pointer-events-none relative min-w-0 flex-1">
@@ -159,14 +176,17 @@ function Row({ project, active, onOpen, onEdit, onThread }: { project: ProjectVi
       </p>
       <p className={`line-clamp-2 text-[13px] leading-5 sm:line-clamp-1 ${entry.summary ? 'text-muted-foreground' : 'italic text-muted-foreground/60'}`}>{entry.summary || 'Описания пока нет'}</p>
     </div>
-    <span className="pointer-events-none relative hidden w-20 shrink-0 truncate text-right text-xs text-muted-foreground sm:block" title={project.sources.map(source => `${source.hostName}: ${source.path}`).join('\n')}>{hosts.join(' · ') || '—'}</span>
-    <ThreadsButton project={project}/>
-    <Button size="icon" variant="ghost" className="catalog-row-action relative size-7 shrink-0 text-muted-foreground" aria-label={`Изменить описание, категории и теги «${project.name}»`} onClick={onEdit}>
-      <Icon name="Pencil" className="size-3.5" aria-hidden="true"/>
-    </Button>
-    <Button size="icon" variant="ghost" className="catalog-row-action relative size-7 shrink-0 text-muted-foreground" aria-label={`Новый тред в «${project.name}»`} onClick={onThread}>
-      <Icon name="Plus" className="size-4" aria-hidden="true"/>
-    </Button>
+    <span className="pointer-events-none relative hidden max-w-[7rem] shrink-0 truncate text-right text-xs text-muted-foreground sm:block" title={project.sources.map(source => `${source.hostName}: ${source.path}`).join('\n')}>{hosts.join(' · ') || '—'}</span>
+    {/* Tools take no room of their own: they slide over the right edge of the row on hover, like the thread list in BB's sidebar. */}
+    <div className={`catalog-row-bar absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-r-lg pl-8 pr-1.5 ${toolsOpen ? 'is-open' : ''}`}>
+      <ThreadsButton project={project} onOpenChange={setToolsOpen}/>
+      <Button size="icon" variant="ghost" className="relative size-7 text-muted-foreground hover:text-foreground" aria-label={`Изменить описание, категории и теги «${project.name}»`} data-tip="Изменить" onClick={onEdit}>
+        <Icon name="Pencil" className="size-3.5" aria-hidden="true"/>
+      </Button>
+      <Button size="icon" variant="ghost" className="relative size-7 text-muted-foreground hover:text-foreground" aria-label={`Новый тред в «${project.name}»`} data-tip="Новый тред" onClick={onThread}>
+        <Icon name="Plus" className="size-4" aria-hidden="true"/>
+      </Button>
+    </div>
   </li>;
 }
 
@@ -198,6 +218,24 @@ const Section = ({ title, action, children }: { title: string; action?: ReactNod
   <div className="flex items-center justify-between gap-2"><h3 className="text-xs text-muted-foreground">{title}</h3>{action}</div>
   {children}
 </section>;
+
+/** All categories as toggles: chosen ones filled, the rest outlined; a new one is typed in place. Up to four, the first is primary. */
+function CategoryPicker({ value, all, onChange }: { value: string[]; all: string[]; onChange: (next: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const names = [...value, ...all.filter(name => !value.includes(name))];
+  const full = value.length >= 4;
+  const toggle = (name: string) => onChange(value.includes(name) ? value.filter(item => item !== name) : full ? value : [...value, name]);
+  const add = () => { const name = draft.trim(); setDraft(''); if (name && !value.includes(name) && !full) onChange([...value, name]); };
+  return <div className="flex flex-wrap gap-1.5">
+    {names.map(name => { const on = value.includes(name); return <button key={name} type="button" aria-pressed={on} onClick={() => toggle(name)} disabled={!on && full}
+      data-tip={on ? (value[0] === name && value.length > 1 ? 'Основная категория · нажмите, чтобы убрать' : 'Нажмите, чтобы убрать') : full ? 'Не больше четырёх категорий' : 'Добавить категорию'}
+      className={`inline-flex h-7 cursor-pointer items-center gap-1 rounded-full border px-2.5 text-xs transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-40 ${on ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground'}`}>
+      {on && <Icon name="Check" className="size-3" aria-hidden="true"/>}{name}</button>; })}
+    {!full && <input value={draft} aria-label="Новая категория" placeholder="+ новая" onChange={event => setDraft(event.target.value)}
+      onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); add(); } }} onBlur={add}
+      className="h-7 w-24 rounded-full border border-dashed border-border bg-transparent px-2.5 text-xs placeholder:text-muted-foreground focus:w-36 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"/>}
+  </div>;
+}
 
 const chip = 'inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border px-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring';
 /** Categories and tags change in one click, without opening the full form. */
@@ -277,7 +315,7 @@ function Detail({ project, categories, scanning, startEditing, onClose, onSaved 
         <h2 className="truncate text-base font-semibold">{project.name}</h2>
         <p className="truncate text-xs text-muted-foreground">{entry.categories.join(' · ') || NO_CATEGORY}{entry.status === 'paused' ? ' · на паузе' : entry.status === 'archive' ? ' · архив' : ''}</p>
       </div>
-      <Button size="icon" variant="ghost" className="size-8 shrink-0 text-muted-foreground" aria-label="Закрыть" onClick={onClose}><Icon name="X" className="size-4" aria-hidden="true"/></Button>
+      <Button size="icon" variant="ghost" className="relative size-8 shrink-0 text-muted-foreground" aria-label="Закрыть" data-tip="Закрыть · Esc" onClick={onClose}><Icon name="X" className="size-4" aria-hidden="true"/></Button>
     </header>
     <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
       {!editing && <>
@@ -342,17 +380,16 @@ function Detail({ project, categories, scanning, startEditing, onClose, onSaved 
         <Field label="Мои заметки" hint="ИИ этот текст не меняет.">
           <textarea className={fieldClass} rows={3} maxLength={4000} value={form.notes} placeholder="Что важно помнить" onChange={event => setForm({ ...form, notes: event.target.value })}/>
         </Field>
-        <div className="grid grid-cols-2 gap-3">
-          <Field label="Категории" locked={locked('category')} onUnlock={() => void release('category')} hint="Несколько — через запятую.">
-            <Input list="catalog-categories" maxLength={170} value={form.category} onChange={event => setForm({ ...form, category: event.target.value })}/>
-            <datalist id="catalog-categories">{categories.map(name => <option key={name} value={name}/>)}</datalist>
-          </Field>
-          <Field label="Статус">
-            <select className={`${selectClass} w-full`} value={form.status} onChange={event => setForm({ ...form, status: event.target.value as Status })}>
-              <option value="active">Активный</option><option value="paused">На паузе</option><option value="archive">Архив</option>
-            </select>
-          </Field>
+        <div className="space-y-1.5">
+          <span className="flex items-center justify-between gap-2 text-xs text-muted-foreground"><span>Категории</span>
+            {locked('category') && <button type="button" className="inline-flex cursor-pointer items-center gap-1 hover:text-foreground" data-tip="ИИ не меняет категории. Нажмите, чтобы разрешить" onClick={() => void release('category')}><Icon name="Lock" className="size-3" aria-hidden="true"/>ваш выбор · открепить</button>}</span>
+          <CategoryPicker value={list(form.category)} all={categories} onChange={next => setForm({ ...form, category: next.join(', ') })}/>
         </div>
+        <Field label="Статус">
+          <select className={`${selectClass} w-full`} value={form.status} onChange={event => setForm({ ...form, status: event.target.value as Status })}>
+            <option value="active">Активный</option><option value="paused">На паузе</option><option value="archive">Архив</option>
+          </select>
+        </Field>
         <Field label="Как ещё называю" locked={locked('aliases')} onUnlock={() => void release('aliases')} hint="Через запятую. По этим словам проект находят поиск и агенты.">
           <Input value={form.aliases} onChange={event => setForm({ ...form, aliases: event.target.value })}/>
         </Field>
@@ -382,7 +419,7 @@ function Detail({ project, categories, scanning, startEditing, onClose, onSaved 
 }
 
 let cached: Catalog | null = null;
-type View = { kind: 'all' } | { kind: 'category'; name: string } | { kind: 'focus'; name: 'attention' | 'risk' | 'undescribed' | 'archive' } | { kind: 'machine'; id: string };
+type View = { kind: 'all' } | { kind: 'group'; name: string } | { kind: 'category'; name: string } | { kind: 'focus'; name: 'attention' | 'risk' | 'undescribed' | 'archive' } | { kind: 'machine'; id: string };
 const viewKey = (view: View) => view.kind === 'all' ? 'all' : `${view.kind}:${'name' in view ? view.name : view.id}`;
 const categoriesOf = (project: ProjectView) => project.entry.categories.length ? project.entry.categories : [NO_CATEGORY];
 const typing = (target: EventTarget | null) => { const el = target as HTMLElement | null; return Boolean(el && (/input|textarea|select/i.test(el.tagName) || el.isContentEditable)); };
@@ -394,13 +431,60 @@ function NavItem({ label, count, active, tone, dim, onClick }: { label: string; 
   </button>;
 }
 /** A titled block of the sidebar; blocks are separated by a hairline so the structure reads at a glance. */
-function NavSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function NavSection({ title, count, active, onSelect, onRename, children }: { title: string; count?: number; active?: boolean; onSelect?: () => void; onRename?: (name: string) => void; children: ReactNode }) {
+  const [renaming, setRenaming] = useState(false);
+  const head = 'text-[11px] font-semibold uppercase tracking-wider';
   return <section className="border-t border-border pt-3">
-    <div className="flex h-6 items-center justify-between px-2.5">
-      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>{action}
+    <div className="group/head relative flex h-7 items-center">
+      {renaming && onRename
+        ? <input autoFocus defaultValue={title} aria-label="Название группы" className="h-7 w-full rounded-md border border-input bg-background px-2.5 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+            onBlur={event => { setRenaming(false); const next = event.target.value.trim(); if (next && next !== title) onRename(next); }}
+            onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); if (event.key === 'Escape') setRenaming(false); }}/>
+        : onSelect
+          ? <button type="button" onClick={onSelect} aria-current={active ? 'true' : undefined} title="Все проекты группы"
+              className={`catalog-nav flex h-7 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${head} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
+              <span className="truncate">{title}</span>{count !== undefined && <span className={`shrink-0 tabular-nums font-normal normal-case tracking-normal ${onRename ? 'group-hover/head:invisible' : ''}`}>{count}</span>}
+            </button>
+          : <h2 className={`px-2.5 text-muted-foreground ${head}`}>{title}</h2>}
+      {onRename && !renaming && <button type="button" onClick={() => setRenaming(true)} aria-label={`Переименовать группу «${title}»`} data-tip="Переименовать группу"
+        className="catalog-hover-tool absolute right-1 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring group-hover/head:opacity-100">
+        <Icon name="Pencil" className="size-3" aria-hidden="true"/></button>}
     </div>
-    <div className="mt-1 space-y-0.5">{children}</div>
+    <div className="mt-0.5 space-y-0.5">{children}</div>
   </section>;
+}
+/** Categories are moved between groups by dragging them onto a group heading or into its list. */
+const DRAG_TYPE = 'application/x-catalog-category';
+function CategoryNavItem({ name, count, dim, active, onClick, onDrag }: { name: string; count: number; dim: boolean; active: boolean; onClick: () => void; onDrag: (name: string | null) => void }) {
+  const movable = name !== NO_CATEGORY;
+  return <div draggable={movable} title={movable ? `${name} · перетащите, чтобы перенести в другую группу` : undefined}
+    onDragStart={event => { event.dataTransfer.setData(DRAG_TYPE, name); event.dataTransfer.effectAllowed = 'move'; onDrag(name); }}
+    onDragEnd={() => onDrag(null)} className={movable ? 'catalog-draggable' : undefined}>
+    <NavItem label={name} count={count} dim={dim} active={active} onClick={onClick}/>
+  </div>;
+}
+function DropZone({ group, dragging, onDrop, children }: { group: string; dragging: string | null; onDrop: (category: string, group: string) => void; children: ReactNode }) {
+  const [over, setOver] = useState(false);
+  return <div className={`rounded-lg transition-colors ${dragging && over ? 'bg-muted/70 ring-1 ring-foreground/25' : ''}`}
+    onDragOver={event => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOver(true); }}
+    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOver(false); }}
+    onDrop={event => { event.preventDefault(); setOver(false); const name = event.dataTransfer.getData(DRAG_TYPE); if (name) onDrop(name, group); }}>
+    {children}
+  </div>;
+}
+function NewGroupZone({ dragging, onDrop }: { dragging: string | null; onDrop: (category: string, group: string) => void }) {
+  const [pending, setPending] = useState<string | null>(null);
+  const [over, setOver] = useState(false);
+  if (pending) return <input autoFocus aria-label={`Новая группа для «${pending}»`} placeholder={`Новая группа для «${pending}»`}
+    className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+    onBlur={event => { const name = event.target.value.trim(); if (name) onDrop(pending, name); setPending(null); }}
+    onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); if (event.key === 'Escape') setPending(null); }}/>;
+  if (!dragging) return null;
+  return <div onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
+    onDrop={event => { event.preventDefault(); setOver(false); const name = event.dataTransfer.getData(DRAG_TYPE); if (name) setPending(name); }}
+    className={`flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs transition-colors ${over ? 'border-foreground/50 bg-muted text-foreground' : 'border-border text-muted-foreground'}`}>
+    <Icon name="Plus" className="size-3.5" aria-hidden="true"/>Новая группа
+  </div>;
 }
 
 function CatalogPage({ subPath }: { subPath: string }) {
@@ -410,8 +494,8 @@ function CatalogPage({ subPath }: { subPath: string }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<View>({ kind: 'all' });
-  const [grouping, setGrouping] = useState(false);
   const [navQuery, setNavQuery] = useState('');
+  const [dragging, setDragging] = useState<string | null>(null);
   const [editId, setEditId] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
@@ -445,7 +529,6 @@ function CatalogPage({ subPath }: { subPath: string }) {
     for (const item of categories) { const key = groupOf[item[0]] ?? ''; map.set(key, [...(map.get(key) ?? []), item]); }
     return [...map].sort((a, b) => Number(a[0] === '') - Number(b[0] === '') || a[0].localeCompare(b[0])).map(([name, items]) => ({ name, items }));
   }, [categories, groupOf]);
-  const groupNames = [...new Set(Object.values(groupOf))].sort((a, b) => a.localeCompare(b));
   const visible = useMemo(() => {
     let items = view.kind === 'focus' && view.name === 'archive' ? projects.filter(project => project.entry.status === 'archive') : live;
     if (view.kind === 'focus' && view.name === 'attention') items = items.filter(project => project.verdict.level === 'attention');
@@ -453,12 +536,13 @@ function CatalogPage({ subPath }: { subPath: string }) {
     if (view.kind === 'focus' && view.name === 'undescribed') items = items.filter(project => !project.entry.summary);
     if (view.kind === 'machine') items = items.filter(project => project.sources.some(source => source.hostId === view.id));
     if (view.kind === 'category') items = items.filter(project => categoriesOf(project).includes(view.name));
+    if (view.kind === 'group') items = items.filter(project => categoriesOf(project).some(name => (groupOf[name] ?? '') === view.name));
     if (query.trim()) {
       const docs = items.map(project => ({ id: project.id, name: project.name, aliases: project.entry.aliases, category: project.entry.categories.join(' '), tags: project.entry.tags, summary: project.entry.summary, notes: project.entry.notes, paths: project.sources.map(source => source.path), project }));
       return search(docs, query).map(hit => hit.doc.project);
     }
     return [...items].sort((a, b) => a.name.localeCompare(b.name));
-  }, [projects, live, view, query]);
+  }, [projects, live, view, query, groupOf]);
   /** With a project query, the sidebar becomes a facet: every section shows how many matches it holds. */
   const matched = useMemo(() => {
     if (!query.trim()) return null;
@@ -506,9 +590,21 @@ function CatalogPage({ subPath }: { subPath: string }) {
     try { const result = await rpc.call('set_group', { category, group }); setData(old => { const merged = old ? { ...old, groups: result.groups } : old; cached = merged; return merged; }); }
     catch (reason) { toast.error(String((reason as Error).message ?? reason)); }
   };
+  const renameGroup = async (from: string, to: string) => {
+    for (const [category, group] of Object.entries(groupOf)) if (group === from) await setGroup(category, to);
+    if (view.kind === 'group' && view.name === from) setView({ kind: 'group', name: to });
+  };
   const is = (other: View) => viewKey(view) === viewKey(other);
   const pick = (next: View) => setView(next);
-  const title = view.kind === 'all' ? 'Все проекты' : view.kind === 'category' ? view.name : view.kind === 'machine' ? `На ${shortHost(data?.hosts.find(host => host.id === view.id)?.name ?? '')}`
+  const resetAll = () => { setView({ kind: 'all' }); setQuery(''); setNavQuery(''); };
+  const filters: { key: string; kind: string; label: string; clear: () => void }[] = [];
+  if (view.kind === 'group') filters.push({ key: 'view', kind: 'Группа', label: view.name || 'Прочее', clear: () => setView({ kind: 'all' }) });
+  if (view.kind === 'category') filters.push({ key: 'view', kind: groupOf[view.name] ? groupOf[view.name]! : 'Категория', label: view.name, clear: () => setView({ kind: 'all' }) });
+  if (view.kind === 'machine') filters.push({ key: 'view', kind: 'Машина', label: shortHost(data?.hosts.find(host => host.id === view.id)?.name ?? ''), clear: () => setView({ kind: 'all' }) });
+  if (view.kind === 'focus') filters.push({ key: 'view', kind: 'Состояние', label: { attention: 'Несохранённая работа', risk: 'Копии расходятся', undescribed: 'Без описания', archive: 'Архив' }[view.name], clear: () => setView({ kind: 'all' }) });
+  if (query.trim()) filters.push({ key: 'query', kind: 'Поиск', label: query.trim(), clear: () => setQuery('') });
+  if (navQuery.trim()) filters.push({ key: 'nav', kind: 'Разделы', label: navQuery.trim(), clear: () => setNavQuery('') });
+  const title = view.kind === 'all' ? 'Все проекты' : view.kind === 'group' ? (view.name || 'Прочее') : view.kind === 'category' ? view.name : view.kind === 'machine' ? `На ${shortHost(data?.hosts.find(host => host.id === view.id)?.name ?? '')}`
     : view.name === 'attention' ? 'Несохранённая работа' : view.name === 'risk' ? 'Копии расходятся' : view.name === 'undescribed' ? 'Без описания' : 'Архив';
   const focusItems: { name: 'risk' | 'attention' | 'undescribed' | 'archive'; label: string; count: number; tone?: string }[] = [
     { name: 'risk' as const, label: 'Копии расходятся', count: count.risk, tone: 'font-medium text-red-600 dark:text-red-400' },
@@ -518,7 +614,10 @@ function CatalogPage({ subPath }: { subPath: string }) {
   ].filter(item => item.count > 0);
   const options: { key: string; label: string; view: View }[] = [
     { key: 'all', label: `Все проекты · ${live.length}`, view: { kind: 'all' } },
-    ...sections.flatMap(section => section.items.map(([name, total]) => ({ key: `category:${name}`, label: `${section.name ? `${section.name} / ` : ''}${name} · ${total}`, view: { kind: 'category', name } as View }))),
+    ...sections.flatMap(section => [
+      ...(section.name ? [{ key: `group:${section.name}`, label: `${section.name} — вся группа`, view: { kind: 'group', name: section.name } as View }] : []),
+      ...section.items.map(([name, total]) => ({ key: `category:${name}`, label: `${section.name ? '   ' : ''}${name} · ${total}`, view: { kind: 'category', name } as View })),
+    ]),
     ...focusItems.map(item => ({ key: `focus:${item.name}`, label: `${item.label} · ${item.count}`, view: { kind: 'focus', name: item.name } as View })),
     ...(data?.hosts ?? []).map(host => ({ key: `machine:${host.id}`, label: `На ${shortHost(host.name)}`, view: { kind: 'machine', id: host.id } as View })),
   ];
@@ -534,20 +633,21 @@ function CatalogPage({ subPath }: { subPath: string }) {
         {!navQuery.trim() && <NavItem label="Все проекты" count={matched ? matched.length : live.length} active={is({ kind: 'all' })} onClick={() => pick({ kind: 'all' })}/>}
       </div>
       <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-4">
-        {sections.map((section, index) => {
+        {sections.map(section => {
           const heading = section.name || (sections.length > 1 ? 'Прочее' : 'Категории');
-          const items = section.items.filter(([name]) => navMatch(name, section.name));
+          const items = section.items.filter(([name]) => navMatch(name, section.name || heading));
           if (!items.length) return null;
-          return <NavSection key={section.name || 'rest'} title={heading}
-            action={index === 0 && !navQuery.trim() ? <button type="button" aria-pressed={grouping} onClick={() => setGrouping(old => !old)} className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">{grouping ? 'Готово' : 'Группы'}</button> : undefined}>
-            {items.map(([name, total]) => { const shown = facet(project => categoriesOf(project).includes(name), total); return grouping && name !== NO_CATEGORY
-              ? <label key={name} className="flex h-8 items-center gap-2 px-2.5 text-[13px]"><span className="min-w-0 flex-1 truncate" title={name}>{name}</span>
-                  <input list="catalog-groups" aria-label={`Группа для «${name}»`} defaultValue={groupOf[name] ?? ''} placeholder="группа" className="h-6 w-24 rounded border border-input bg-background px-1.5 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-                    onBlur={event => void setGroup(name, event.target.value)} onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }}/></label>
-              : <NavItem key={name} label={name} count={shown} dim={shown === 0} active={is({ kind: 'category', name })} onClick={() => pick({ kind: 'category', name })}/>; })}
-          </NavSection>;
+          const inGroup = (project: ProjectView) => categoriesOf(project).some(name => (groupOf[name] ?? '') === section.name);
+          const total = facet(inGroup, live.filter(inGroup).length);
+          return <DropZone key={section.name || 'rest'} group={section.name} dragging={dragging} onDrop={(category, group) => { setDragging(null); void setGroup(category, group); }}><NavSection title={heading} count={sections.length > 1 ? total : undefined}
+            active={is({ kind: 'group', name: section.name })} onSelect={sections.length > 1 ? () => pick({ kind: 'group', name: section.name }) : undefined}
+            onRename={section.name ? next => void renameGroup(section.name, next) : undefined}>
+            {items.map(([name, count]) => { const shown = facet(project => categoriesOf(project).includes(name), count);
+              return <CategoryNavItem key={name} name={name} count={shown} dim={shown === 0} active={is({ kind: 'category', name })}
+                onClick={() => pick({ kind: 'category', name })} onDrag={setDragging}/>; })}
+          </NavSection></DropZone>;
         })}
-        <datalist id="catalog-groups">{groupNames.map(name => <option key={name} value={name}/>)}</datalist>
+        <NewGroupZone dragging={dragging} onDrop={(category, group) => { setDragging(null); void setGroup(category, group); }}/>
         {focusItems.some(item => navMatch(item.label, 'Состояние')) && <NavSection title="Состояние">
           {focusItems.filter(item => navMatch(item.label, 'Состояние')).map(item => <NavItem key={item.name} label={item.label} count={item.count} tone={item.tone} active={is({ kind: 'focus', name: item.name })} onClick={() => pick({ kind: 'focus', name: item.name })}/>)}
         </NavSection>}
@@ -565,7 +665,7 @@ function CatalogPage({ subPath }: { subPath: string }) {
       <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
         <header className="flex items-center justify-between gap-3">
           <h1 className="truncate text-lg font-semibold tracking-tight">{title}<span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">{data ? visible.length : ''}</span></h1>
-          <button type="button" disabled={!data || data.scanning} onClick={() => void refresh()} title="Проверить копии на машинах"
+          <button type="button" disabled={!data || data.scanning} onClick={() => void refresh()} data-tip="Проверить копии на машинах"
             className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60">
             <Icon name="RefreshCw" className={`size-3.5 ${data?.scanning ? 'catalog-spin' : ''}`} aria-hidden="true"/><span className="hidden sm:inline">{data?.scanning ? 'Проверяю машины…' : `Проверено ${ago(data?.scannedAt ?? null)}`}</span>
             <span className="sm:hidden">{data?.scanning ? 'Проверяю…' : ago(data?.scannedAt ?? null).replace(' назад', '')}</span>
@@ -581,6 +681,14 @@ function CatalogPage({ subPath }: { subPath: string }) {
             {options.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
         </div>
+        {filters.length > 0 && <div className="mt-2.5 flex flex-wrap items-center gap-1.5" aria-label="Применённые фильтры">
+          {filters.map(filter => <span key={filter.key} className="inline-flex h-7 max-w-full items-center gap-1 rounded-full border border-border bg-muted/50 pl-2.5 pr-1 text-xs">
+            <span className="text-muted-foreground">{filter.kind}:</span><span className="truncate font-medium">{filter.label}</span>
+            <button type="button" onClick={filter.clear} aria-label={`Убрать фильтр «${filter.label}»`} className="flex size-5 cursor-pointer items-center justify-center rounded-full text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+              <Icon name="X" className="size-3" aria-hidden="true"/></button>
+          </span>)}
+          <button type="button" onClick={resetAll} className="ml-1 cursor-pointer text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">Сбросить фильтры</button>
+        </div>}
         {query.trim() && view.kind !== 'all' && matched && matched.length > visible.length && <p className="mt-2 text-xs text-muted-foreground">
           В других разделах ещё {matched.length - visible.length}. <button type="button" className="cursor-pointer underline underline-offset-2 hover:text-foreground" onClick={() => pick({ kind: 'all' })}>Искать везде</button></p>}
         <div className="mt-4 space-y-6">

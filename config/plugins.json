@@ -301,7 +301,7 @@
   },
   {
     "id": "project-catalog",
-    "version": "0.3.0",
+    "version": "0.3.2",
     "enabled": true,
     "name": "Project Catalog",
     "source": "path:plugins/project-catalog"

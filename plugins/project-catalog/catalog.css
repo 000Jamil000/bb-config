@@ -30,13 +30,15 @@
 }
 
 .catalog-row { transition: background-color 120ms ease; }
-.catalog-row:hover { background-color: color-mix(in srgb, currentColor 5%, transparent); }
-@media (hover: hover) {
-  .catalog-row-action { opacity: 0; transition: opacity 120ms ease; }
-  .catalog-row:hover .catalog-row-action, .catalog-row:focus-within .catalog-row-action { opacity: 1; }
+.catalog-row:hover, .catalog-row.is-active { background-color: var(--muted); }
+/* Row tools overlay the right edge with a fade into the row colour, so they reserve no width. */
+.catalog-row-bar {
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+  background: linear-gradient(to right, transparent, var(--muted) 1.75rem);
 }
+.catalog-row:hover .catalog-row-bar, .catalog-row-bar:focus-within, .catalog-row-bar.is-open { opacity: 1; pointer-events: auto; }
 .catalog-nav { transition: background-color 120ms ease, color 120ms ease; }
-@media (prefers-reduced-motion: reduce) { .catalog-row, .catalog-row-action, .catalog-nav { transition: none; } }
+@media (prefers-reduced-motion: reduce) { .catalog-row, .catalog-row-bar, .catalog-nav { transition: none; } }
 
 .catalog-kbd { display: inline-block; min-width: 1.25rem; margin: 0 5px 0 0; padding: 0 4px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 4px; font: inherit; font-size: 10px; line-height: 16px; text-align: center; }
 .catalog-kbd:first-child { margin-left: 0; }
@@ -49,5 +51,25 @@
 
 /* Touch screens have no hover: row tools would crowd the text, and every action is one tap away in the project panel. */
 @media (hover: none), (max-width: 639px) {
-  .catalog-row-action, .catalog-row-tools { display: none; }
+  .catalog-row-bar { display: none; }
 }
+
+/* Small controls that appear only when their row is hovered or focused. */
+.catalog-hover-tool { opacity: 0; transition: opacity 120ms ease; }
+@media (hover: none) { .catalog-hover-tool { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .catalog-hover-tool { transition: none; } }
+
+/* Text hints for icon-only and hover-only controls: [data-tip] shows a small bubble after a short delay. */
+:where([data-tip]) { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip); position: absolute; z-index: 50; bottom: calc(100% + 6px); right: 0;
+  width: max-content; max-width: 16rem; padding: 4px 8px; border-radius: 6px;
+  background: var(--foreground); color: var(--background); font-size: 11px; line-height: 1.35; font-weight: 400;
+  text-transform: none; letter-spacing: normal; white-space: normal; text-align: left;
+  opacity: 0; pointer-events: none; transform: translateY(2px); transition: opacity 120ms ease, transform 120ms ease; transition-delay: 0s;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: none; transition-delay: 450ms; }
+@media (hover: none) { [data-tip]::after { display: none; } }
+@media (prefers-reduced-motion: reduce) { [data-tip]::after { transition: none; } }
+.catalog-draggable { cursor: grab; }
+.catalog-draggable:active { cursor: grabbing; }

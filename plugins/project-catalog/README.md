@@ -15,9 +15,14 @@ machine, agent and the tab read the same cards.
   inline editing, per-machine state and the list of differing files.
 - **Categories.** A project can sit in up to four categories (comma-separated;
   the first is primary). Categories can be arranged into named groups, shown as
-  separate blocks of the sidebar.
-- **Quick actions.** In a row, on hover: recent threads of the project (hover
-  or click), edit, new thread. In the panel: copy path, open the repository,
+  separate blocks of the sidebar. A group heading filters the whole group;
+  hover it to rename. Drag a category onto another group to move it, or onto
+  **Новая группа**, which appears while dragging.
+- **Quick actions.** In a row, on hover, overlaid on its right edge without
+  reserving width: recent threads of the project (hover or click), edit, new
+  thread. Hidden on touch screens; the panel has the same actions.
+- **Applied filters** show as chips under the search field, each with ×, plus
+  **Сбросить фильтры**. In the panel: copy path, open the repository,
   check copies, describe with an agent, and one-click category and tag editing.
   **Показать в боковой панели** scrolls the app sidebar to the project's thread
   group and highlights it; it needs a thread list that marks project groups

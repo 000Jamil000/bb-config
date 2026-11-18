@@ -1437,7 +1437,11 @@ function MachineThreadList(props: PluginThreadListProps) {
           }}
           className="machine-tabs-filter-toggle absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
         >
-          <BbIcon name="ListFilter" className="size-3.5" />
+          {/* A funnel drawn here: bb's icon set has none and shows a lightning bolt for an unknown name. */}
+          <svg viewBox="0 0 24 24" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="2"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M3 5h18l-7 8.5V19l-4 2v-7.5L3 5Z" />
+          </svg>
         </button>
         <SearchSettings options={searchOptions} onChange={setSearchOptions} />
       </div>

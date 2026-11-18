@@ -1,0 +1,73 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.2.2",
+  "title": "KodaForge: управление вкладками из контекстного меню",
+  "steps": [
+    {
+      "id": "plugin-keeper-workspace-tabs",
+      "title": "Plugin Keeper 0.2.5 для последовательных патчей вкладок",
+      "component": "voice-mode-keeper",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "voice-mode-keeper",
+      "rerun": "Сверяет версию и источник установленного Keeper.",
+      "rollback": "Вернуть предыдущую версию Keeper, собрать её и перезагрузить."
+    },
+    {
+      "id": "kodaforge-workspace-close",
+      "title": "Закрытие рабочих областей KodaForge без повторной загрузки редактора",
+      "component": "kodaforge",
+      "where": "server",
+      "kind": "command",
+      "applies": [
+        "{python}",
+        "scripts/updates.py",
+        "require-plugin",
+        "kodaforge"
+      ],
+      "apply": [
+        "{python}",
+        "scripts/kodaforge_workspace_tabs.py",
+        "--apply"
+      ],
+      "verify": [
+        "{python}",
+        "scripts/kodaforge_workspace_tabs.py",
+        "--check"
+      ],
+      "rerun": "Сверяет работающий плагин и установленный патч.",
+      "rollback": "Остановить применение патчей в Keeper, переустановить каталоговый KodaForge и восстановить предыдущую версию Keeper с предыдущими патчами.",
+      "after": [
+        "plugin-keeper-workspace-tabs"
+      ]
+    },
+    {
+      "id": "kodaforge-close-all-in-tab-menu",
+      "title": "Close all в контекстном меню вкладки KodaForge",
+      "component": "kodaforge",
+      "where": "server",
+      "kind": "command",
+      "applies": [
+        "{python}",
+        "scripts/updates.py",
+        "require-plugin",
+        "kodaforge"
+      ],
+      "apply": [
+        "{python}",
+        "scripts/kodaforge_workspace_tabs.py",
+        "--apply"
+      ],
+      "verify": [
+        "{python}",
+        "scripts/kodaforge_workspace_tabs.py",
+        "--check"
+      ],
+      "rerun": "Проверяет наличие патча в работающей каталожной версии KodaForge.",
+      "rollback": "Вернуть предыдущую версию Keeper и переустановить каталожный KodaForge, затем применить предыдущие патчи.",
+      "after": [
+        "kodaforge-workspace-close"
+      ]
+    }
+  ]
+}

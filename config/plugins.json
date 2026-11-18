@@ -378,7 +378,7 @@
   },
   {
     "id": "proxy-manager",
-    "version": "0.2.1",
+    "version": "0.3.2",
     "enabled": true,
     "name": "Proxy Manager",
     "source": "path:plugins/proxy-manager"

@@ -1,6 +1,6 @@
 import type { BbPluginApi } from '@get-bb/plugin-sdk';
 import { hostContract, type RouteState, type StoredProxy } from './contract';
-export function createRouting(bb: BbPluginApi, registerHook = true) {
+export function createRouting(bb: BbPluginApi) {
   const host = bb.hosts.experimental_client({ contract: hostContract });
   const key = (hostId: string) => `route:${hostId}`;
   const state = async (hostId: string) => (await bb.storage.kv.get<RouteState>(key(hostId))) ?? null;
@@ -42,17 +42,13 @@ export function createRouting(bb: BbPluginApi, registerHook = true) {
       throw new Error('Переключение не завершено; новые запросы Codex на этой машине приостановлены');
     }
   }
-  const guard = async (ctx: { thread: { providerId: string }; host: { id: string } | null }) => {
+  bb.experimental_hooks.on('message.dispatch', async ctx => {
     if (ctx.thread.providerId !== 'codex' || !ctx.host) return { action: 'proceed' };
     const route = await state(ctx.host.id);
     if (!route) return { action: 'proceed' };
     if (route.phase !== 'ready') return { action: 'wait', reason: route.message };
     if (!await verify(ctx.host.id, route)) return { action: 'wait', reason: 'Настройки Codex изменились или машина недоступна. Повторите применение прокси' };
-    return { action: 'proceed' as const };
-  };
-  if (registerHook) bb.experimental_hooks.on('message.dispatch', async ctx => {
-    const result = await guard(ctx);
-    return result.action === 'wait' ? { action: 'wait', reason: result.reason! } : { action: 'proceed' };
+    return { action: 'proceed' };
   });
-  return { state, set, prepare, apply, verify, guard };
+  return { state, set, prepare, apply, verify };
 }

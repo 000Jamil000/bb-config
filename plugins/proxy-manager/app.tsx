@@ -7,7 +7,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import './proxy-ui.css';
-import { ModelRoutePanel } from './model-route-ui';
 function Icon({ name, ...props }: SVGProps<SVGSVGElement> & { name: string }) {
   const paths: Record<string, string> = {
     ChevronRight: 'm9 5 7 7-7 7',
@@ -103,9 +102,8 @@ function ProxiesPage() {
       <div className="min-w-0"><h1 className="text-base font-semibold tracking-tight">Подключения</h1><p className="text-xs text-muted-foreground">Агенты и маршруты подключения</p></div>
     </header>
     {error && !adding && <p role="alert" className="rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
-    <ModelRoutePanel machines={machines}/>
     <section className="space-y-2">
-      <div className="flex items-center justify-between"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Сетевые прокси CLI</h2><Button size="icon" variant="ghost" className="size-7" aria-label="Обновить машины" onClick={() => void discover(true)}><Icon name="RefreshCw" className="size-3.5"/></Button></div>
+      <div className="flex items-center justify-between"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Машины и агенты</h2><Button size="icon" variant="ghost" className="size-7" aria-label="Обновить машины" onClick={() => void discover(true)}><Icon name="RefreshCw" className="size-3.5"/></Button></div>
       {loading && <p className="text-sm text-muted-foreground">Загрузка…</p>}
       <div className="space-y-2.5">{machines.map(m => {
         const installed = (providers[m.id] ?? []).filter(p => p.installed);
@@ -140,7 +138,7 @@ function ProxiesPage() {
           </div>
         </details>;
       })}</div>
-      <p className="text-xs text-muted-foreground">Этот блок меняет общие сетевые настройки Codex, включая внешние CLI. Для обхода OpenCodex только в BB используйте переключатели выше.</p>
+      <p className="text-xs text-muted-foreground">Смена прокси остановит ответы Codex. История сохранится.</p>
     </section>
     <section className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2"><h2 className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Прокси <span className="ml-1 opacity-60">{proxies.length}</span></h2><div className="flex flex-wrap items-center gap-3"><select aria-label="Проверять прокси с машины" title="Машина для проверки" className="max-w-56 truncate rounded bg-transparent py-1 text-xs text-muted-foreground" value={hostId} onChange={e => setHostId(e.target.value)}>{machines.map(m => <option key={m.id} value={m.id}>{m.name}</option>)}</select><Button size="sm" onClick={() => { setError(''); setAdding(true); }}><Icon name="Plus" className="mr-1.5 size-4"/>Добавить прокси</Button></div></div>
@@ -199,7 +197,7 @@ function RouteBadge() {
   const providerName = (route?.providerId ?? providerId) === 'claude-code' ? 'Claude Code' : codex ? 'Codex' : route?.providerId ?? providerId ?? 'Агент';
   const warning = error ? 'Не удалось проверить подключение' : route && !route.connected ? 'Машина офлайн' : codex && route ? route.warning || (route.check && !route.check.ok ? route.check.message : null) : null;
   const detail = route ? `${route.hostName} · ${providerName} · ${codex ? route.applied ? 'Проверка каждые 30 секунд' : 'Маршрут не применён плагином' : claude ? claudeCheck?.message ?? 'Проверяю процесс Claude без изменения маршрута' : 'Маршрут этого CLI не проверяется'}` : 'Выбор машины и агента — в настройках подключения';
-  const label = route?.modelMode ? route.modelMode === 'direct' ? 'Модели: напрямую' : 'Модели: OpenCodex' : claude ? !claudeFresh ? 'Проверяю маршрут' : claudeCheck?.state === 'direct' ? 'Без прокси' : claudeCheck?.state === 'proxy' ? 'Прокси Claude' : claudeCheck?.state === 'inactive' ? 'Claude не запущен' : 'Маршрут не проверен' : !codex ? 'Маршрут CLI' : route?.proxyName ?? 'Без прокси';
+  const label = claude ? !claudeFresh ? 'Проверяю маршрут' : claudeCheck?.state === 'direct' ? 'Без прокси' : claudeCheck?.state === 'proxy' ? 'Прокси Claude' : claudeCheck?.state === 'inactive' ? 'Claude не запущен' : 'Маршрут не проверен' : !codex ? 'Маршрут CLI' : route?.proxyName ?? 'Без прокси';
   const settingsHost = route?.hostId ?? hostId;
   const settingsParams = new URLSearchParams({ returnTo: window.location.pathname + window.location.search + window.location.hash });
   if (settingsHost) settingsParams.set('host', settingsHost);

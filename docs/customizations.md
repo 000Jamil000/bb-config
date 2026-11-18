@@ -1784,36 +1784,3 @@ Windows мигает ступенями: плавное мигание заст�
 test_codex_defaults test_private_config` в `scripts/`; `test_patch_keeper.py`; тесты
 плагинов (`node --test`, `vitest`). Один тест `proxy-manager` (`tests/native.test.ts`)
 проверяет права `0600` и на Windows не проходит.
-
-
-## Proxy Manager: маршруты моделей только в BB (0.3.0)
-
-В Подключениях добавлен выбор напрямую / через OpenCodex для Codex и Claude Code на каждой машине. Системный VPN и обычные конфигурации CLI не меняются. Детали, ограничения авторизации MCP и команды восстановления: `plugins/proxy-manager/README.md`. Исходники и следующий шаг: `docs/releases/next/plugin-proxy-manager-model-routes.*`. Установка: `bb plugin build plugins/proxy-manager`, затем `bb plugin reload proxy-manager`. Режимы сохраняются в KV плагина; восстановление на другой машине — командой `bb proxy-manager model-route <host-id> <provider> <mode>` после проверки штатной авторизации. Не переносить приватный профиль Codex с токенами через Git.
-
-Проверка 0.3.0 на Windows: `npm run check` и 23 теста маршрутизации (включая
-`model-route.test.ts` и `model-route-server.test.ts`) проходят. Сборка и reload
-проверены на работающей установке. В BB подтверждено продолжение истории Codex
-через прямой профиль; Claude проверен отдельным нативным CLI, а не ответом внутри
-BB. Проверка UI включала возврат Codex direct → opencodex → direct. Ускорение
-не измерялось. Старый `native.test.ts` с POSIX-правами `0600` остаётся известным
-ограничением тестов на Windows. Шаг `plugin-proxy-manager-model-routes` проверен
-в режиме development; это не публикация релиза.
-
-
-### Proxy Manager 0.3.1: проверка OpenCodex перед выбором
-
-Пункт OpenCodex остаётся видимым, но отключён, если шлюз не настроен или недоступен.
-Проверка отдельно по машине и провайдеру читает конфигурацию OpenCodex и `/healthz`;
-Claude использует фактический порт. Прямой режим независим. Сервер повторяет проверку
-перед сохранением, UI позволяет обновить кэш. Порядок установки и восстановления,
-поддерживаемая схема и ограничения — в `plugins/proxy-manager/README.md`;
-ожидающий шаг — `plugin-proxy-manager-gateway-availability`.
-Проверены TypeScript и 24 теста; build/reload, приватный снимок и development-шаг
-успешны. В реальном UI шлюз доступен; на подставном read-only ответе в тестовой
-вкладке проверено отключение OpenCodex при сохранении доступного direct.
-Настройки работающей машины для этой проверки не менялись.
-
-Малый сравнительный замер (по три чередующихся CLI-запроса, один исходный CODEX_HOME,
-Astra/medium/default, одинаковый prompt; менялся только openai_base_url): медиана
-OpenCodex 12,780 с, direct 14,047 с. Прямой режим ускорения не показал. Upstream-аккаунт
-в pool и фоновая нагрузка не зафиксированы; результат не устанавливает причину задержки.

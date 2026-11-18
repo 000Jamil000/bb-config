@@ -32,6 +32,8 @@ import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
 import { withProjectAliases } from "./lib/project-alias-view";
 import { TOPICS, matchesFilters, shownOfTotal, topicForTitle, withAncestors, type RowMark, type Topic } from "./lib/thread-topics";
 import { ROW_MARK_CSS, RowMarkChooser } from "./lib/row-mark-chooser";
+import { FILTER_PICKER_CSS, FilterPicker, type FilterOption } from "./lib/filter-picker";
+import { textMatches } from "./lib/text-match";
 import { installSidebarView } from "./lib/sidebar-view";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
@@ -1151,6 +1153,31 @@ function MachineThreadList(props: PluginThreadListProps) {
   const [projectFilter, setProjectFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtering = topicFilter !== "all" || projectFilter !== "all";
+  // A row opened just to look closes by itself: when the pointer has left the search
+  // and the row for a moment, or on a click elsewhere. A row with a filter on stays.
+  const filterArea = useRef(new Set<HTMLElement>());
+  const leaveTimer = useRef<number | undefined>(undefined);
+  const keepFilters = useCallback(() => window.clearTimeout(leaveTimer.current), []);
+  const leaveFilters = useCallback(() => {
+    window.clearTimeout(leaveTimer.current);
+    leaveTimer.current = window.setTimeout(() => {
+      // Focus left on the funnel after the click is not use; an open list is.
+      const inUse = [...filterArea.current].some((node) => node.querySelector(".mt-pick-panel") !== null);
+      if (!inUse) setFiltersOpen(false);
+    }, 700);
+  }, []);
+  const filterAreaRef = useCallback((node: HTMLElement | null) => {
+    if (node) filterArea.current.add(node);
+    for (const known of filterArea.current) if (!known.isConnected) filterArea.current.delete(known);
+  }, []);
+  useEffect(() => {
+    if (!filtersOpen || filtering) { keepFilters(); return; }
+    const outside = (event: MouseEvent) => {
+      if (![...filterArea.current].some((node) => node.contains(event.target as Node))) setFiltersOpen(false);
+    };
+    document.addEventListener("mousedown", outside, true);
+    return () => { document.removeEventListener("mousedown", outside, true); keepFilters(); };
+  }, [filtersOpen, filtering, keepFilters]);
   // Project marks stay until the user picks topic icons. The question comes once the list first
   // draws a mark before a title, and again with the filters if it was put off.
   const markRpc = useRpc<typeof rpcContract>();
@@ -1215,10 +1242,7 @@ function MachineThreadList(props: PluginThreadListProps) {
             projectNames.get(thread.projectId)?.name ?? "",
             thread.host?.name ?? "",
             dayLabel(dayBucket(thread, dayField, todayStart), todayStart),
-          ].some((text) => {
-            const haystack = text.toLowerCase();
-            return needles.some((needle) => haystack.includes(needle));
-          }),
+          ].some((text) => textMatches(text, needles)),
         )
         .map((thread) => thread.id),
     ));
@@ -1298,6 +1322,43 @@ function MachineThreadList(props: PluginThreadListProps) {
     return map;
   }, [threads, projectBadges, rowMark]);
   const headerCss = useMemo(() => projectHeaderCss(projectBadges), [projectBadges]);
+
+  // Each filter's list counts what it would leave with the other filter as it is now.
+  const facets = useMemo(() => {
+    const onTab = live.filter((thread) => selectedId === null || thread.host?.id === selectedId);
+    const topics = new Map<string, number>(), perProject = new Map<string, number>();
+    let forTopics = 0, forProjects = 0;
+    for (const thread of onTab) {
+      const topic = topicForTitle(thread.displayTitle).id;
+      if (projectFilter === "all" || projectFilter === thread.projectId) {
+        forTopics += 1;
+        topics.set(topic, (topics.get(topic) ?? 0) + 1);
+      }
+      if (topicFilter === "all" || topicFilter === topic) {
+        forProjects += 1;
+        perProject.set(thread.projectId, (perProject.get(thread.projectId) ?? 0) + 1);
+      }
+    }
+    return { topics, perProject, forTopics, forProjects };
+  }, [live, selectedId, topicFilter, projectFilter]);
+  const topicOptions = useMemo<FilterOption[]>(() => TOPICS.map((topic) => ({
+    value: topic.id, label: topic.label, count: facets.topics.get(topic.id) ?? 0,
+    mark: <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={{ color: topic.color, flexShrink: 0 }}><path d={topic.path} /></svg>,
+  })), [facets]);
+  const projectOptions = useMemo<FilterOption[]>(() => projects.map((project) => {
+    const badge = projectBadges.get(project.id);
+    return {
+      value: project.id, label: project.isPersonal ? "Без проекта" : project.name,
+      count: facets.perProject.get(project.id) ?? 0,
+      mark: badge ? <ProjectBadgeMark badge={badge} header /> : undefined,
+    };
+  }), [projects, projectBadges, facets]);
+  /** Typed text against a label, also as the same keys in the other keyboard layout. */
+  const labelMatches = useCallback((label: string, typed: string) => {
+    const query = typed.toLowerCase();
+    return textMatches(label, [query, swapLayout(query, EN_TO_RU), swapLayout(query, RU_TO_EN)]);
+  }, []);
   useEffect(() => {
     // Once per page load, and only when there is a row whose mark the choice is about.
     if (rowMark !== "ask" || askedMark.current || badges.size === 0) return;
@@ -1398,7 +1459,8 @@ function MachineThreadList(props: PluginThreadListProps) {
           />
         </div>
       )}
-      <div className="machine-tabs-search relative z-[100] px-2 pb-1.5">
+      <div ref={filterAreaRef} onPointerEnter={keepFilters} onPointerLeave={filtering ? undefined : leaveFilters}
+        className="machine-tabs-search relative z-[100] px-2 pb-1.5">
         <BbIcon
           name="Search"
           className="pointer-events-none absolute left-4 top-1.5 size-3.5 text-muted-foreground"
@@ -1446,17 +1508,13 @@ function MachineThreadList(props: PluginThreadListProps) {
         <SearchSettings options={searchOptions} onChange={setSearchOptions} />
       </div>
       {filtersOpen || filtering ? (
-        <div id="machine-tabs-filters" className="machine-tabs-filters relative z-[90] flex items-center gap-1 px-2 pb-1.5">
-          <select aria-label="Фильтр по теме" value={topicFilter} data-active={topicFilter !== "all" ? "" : undefined}
-            onChange={(event) => setTopicFilter(event.target.value)}>
-            <option value="all">Все темы</option>
-            {TOPICS.map((topic) => <option key={topic.id} value={topic.id}>{topic.label}</option>)}
-          </select>
-          <select aria-label="Фильтр по проекту" value={projectFilter} data-active={projectFilter !== "all" ? "" : undefined}
-            onChange={(event) => setProjectFilter(event.target.value)}>
-            <option value="all">Все проекты</option>
-            {projects.map((project) => <option key={project.id} value={project.id}>{project.isPersonal ? "Без проекта" : project.name}</option>)}
-          </select>
+        <div id="machine-tabs-filters" ref={filterAreaRef} onPointerEnter={keepFilters}
+          onPointerLeave={filtering ? undefined : leaveFilters}
+          className="machine-tabs-filters relative z-[90] flex items-center gap-1 px-2 pb-1.5">
+          <FilterPicker label="Тема" allLabel="Все темы" value={topicFilter} onChange={setTopicFilter}
+            options={topicOptions} total={facets.forTopics} matches={labelMatches} />
+          <FilterPicker label="Проект" allLabel="Все проекты" value={projectFilter} onChange={setProjectFilter}
+            options={projectOptions} total={facets.forProjects} matches={labelMatches} />
           {matchIds !== null ? (
             <span aria-live="polite" className="ml-auto shrink-0 whitespace-nowrap pl-1 text-[11px] tabular-nums text-muted-foreground">
               {shownOfTotal(shown.length, tabTotal)}
@@ -1478,6 +1536,7 @@ function MachineThreadList(props: PluginThreadListProps) {
       <style>{HIDE_EMPTY_GROUPS}</style>
       <style>{GROUP_PAGING_CSS}</style>
       <style>{ROW_MARK_CSS}</style>
+      <style>{FILTER_PICKER_CSS}</style>
       {askingMark ? (
         <RowMarkChooser
           current={rowMark === "topic" ? "topic" : "project"}
@@ -1496,18 +1555,14 @@ function MachineThreadList(props: PluginThreadListProps) {
         .machine-tabs-search:focus-within .machine-tabs-search-settings,
         .machine-tabs-search-settings[data-open] { opacity: .7; }
         @media (hover: none) { .machine-tabs-search-settings { opacity: .7; } }
-        .machine-tabs-filter-toggle { opacity: .7; }
-        .machine-tabs-filter-toggle:hover, .machine-tabs-filter-toggle[aria-expanded="true"] { opacity: 1; }
-        .machine-tabs-filter-toggle[data-active] { color: var(--sidebar-foreground); background: var(--state-active); }
-        .machine-tabs-filters > select {
-          min-width: 2.5rem; flex: 0 10 auto; height: 22px; padding: 0 6px;
-          font: inherit; font-size: 11px; color: var(--muted-foreground); text-overflow: ellipsis;
-          background: transparent; border: 1px solid var(--border); border-radius: 999px; cursor: pointer; outline: none;
-        }
-        .machine-tabs-filters > select:hover { color: var(--sidebar-foreground); background: var(--state-hover); }
-        .machine-tabs-filters > select[data-active] { flex-shrink: 1; color: var(--sidebar-foreground); background: var(--state-active); border-color: transparent; font-weight: 500; }
-        .machine-tabs-filters > select:focus-visible { outline: 2px solid var(--sidebar-ring); }
-        .machine-tabs-filters option { background: var(--background); color: var(--foreground); font-weight: 400; }
+        /* Like the search settings: out of the way until the field is used. An open filter row
+           does not keep it on screen; only a filter that is actually on does. */
+        .machine-tabs-filter-toggle { opacity: 0; transition: opacity 120ms ease; }
+        .machine-tabs-search:hover .machine-tabs-filter-toggle,
+        .machine-tabs-search:focus-within .machine-tabs-filter-toggle { opacity: .7; }
+        .machine-tabs-filter-toggle:hover, .machine-tabs-filter-toggle:focus-visible { opacity: 1; }
+        .machine-tabs-filter-toggle[data-active] { opacity: 1; color: var(--sidebar-foreground); background: var(--state-active); }
+        @media (hover: none) { .machine-tabs-filter-toggle { opacity: .7; } }
       `}</style>
       <style>{headerCss}</style>
       <style>{emptyCss}</style>

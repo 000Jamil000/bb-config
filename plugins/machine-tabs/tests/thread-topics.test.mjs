@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
+import { textMatches, translit } from "../lib/text-match.ts";
 import { matchesFilters, rowMarkOf, shownOfTotal, topicForTitle, withAncestors } from "../lib/thread-topics.ts";
 test("Russian and English titles receive distinct topics", () => {
   for (const [title, topic] of [
@@ -45,4 +46,16 @@ test("only an explicit stored choice replaces project marks", () => {
   assert.equal(rowMarkOf("topic"), "topic");
   assert.equal(rowMarkOf("project"), "project");
   for (const unset of ["ask", "", undefined, null, "icons"]) assert.equal(rowMarkOf(unset), "ask");
+});
+test("a name is found in either alphabet", () => {
+  assert.equal(translit("маруся"), "marusya");
+  assert.equal(translit("marusia"), "marusya");
+  assert.equal(textMatches("marusya-finance-bot", ["маруся"]), true);
+  assert.equal(textMatches("Финансы за октябрь", ["finansy"]), true);
+  assert.equal(textMatches("Личный помощник", ["pomoschnik"]), true);
+  assert.equal(textMatches("Личный помощник", ["pomoshchnik"]), true);
+  assert.equal(textMatches("bb-config", ["конфиг"]), false);
+  assert.equal(textMatches("bb-config", ["config"]), true);
+  // One letter is too little to match across alphabets.
+  assert.equal(textMatches("marusya", ["м"]), false);
 });

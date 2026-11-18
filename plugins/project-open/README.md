@@ -12,6 +12,14 @@ the pointer leaves. ResizeObserver keeps the reserve current when toolbar sizes
 change; idle rows have no extra reserve. Header shortcuts keep their width to avoid shifts. The new icons precede native Open; native Open and the panel toggle
 remain adjacent. BB’s sidebar renderer and menus are preserved.
 
+The plugin setting `placement` chooses where the row shortcuts live. `row`
+(default) keeps the hover icons described above. `menu` removes them from rows
+and registers folder and terminal actions in the thread’s native **…** menu
+instead; **Customize actions** there can pin them back to a row through BB’s
+own `rowActions` preference (keys `project-open/open-folder` and
+`project-open/open-terminal`). Header buttons are shown in both modes.
+Switch with `bb plugin config project-open set placement menu`.
+
 The terminal uses BB’s original New tab → Start terminal, scoped to the thread
 pane or the selected project host. No separate terminal or SSH UI is implemented.
 

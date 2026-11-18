@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { UrlLink, useSdk, experimental_Icon as Icon } from "@get-bb/plugin-sdk/app";
 
+import { matchesFilters } from "./thread-topics";
+
 type SearchThread = { id: string; projectId: string; title: string | null; titleFallback: string | null; environmentHostId: string | null; archivedAt: number | null };
 export type SearchOptions = { archive: boolean; messages: boolean };
 
@@ -41,7 +43,7 @@ export function SearchSettings({ options, onChange }: {
           <input type="checkbox" checked={options[key]}
             onChange={(event) => onChange({ ...options, [key]: event.target.checked })} />{label}
         </label>)}
-      <p className="px-2 pt-1 text-[10px] text-muted-foreground">Область поиска — выбранная вкладка машины.</p>
+      <p className="px-2 pt-1 text-[10px] text-muted-foreground">Поиск учитывает выбранную машину, тему и проект.</p>
     </div> : null}
   </div>;
 }
@@ -49,9 +51,9 @@ export function SearchSettings({ options, onChange }: {
 /** Titles stay synchronous; archive metadata and indexed message search arrive later.
  * Query changes abort previous work, so stale responses cannot replace results.
  */
-export function SearchExtras({ query, needles, options, machineId, localIds }: {
+export function SearchExtras({ query, needles, options, machineId, topicFilter, projectFilter, localIds }: {
   query: string; needles: readonly string[]; options: SearchOptions;
-  machineId: string | null; localIds: ReadonlySet<string>;
+  topicFilter: string; projectFilter: string; machineId: string | null; localIds: ReadonlySet<string>;
 }) {
   const sdk = useSdk();
   const archiveCache = useRef<{ at: number; rows: SearchThread[] } | null>(null);
@@ -59,7 +61,7 @@ export function SearchExtras({ query, needles, options, machineId, localIds }: {
   const [limit, setLimit] = useState(5);
   const [hasMore, setHasMore] = useState(false);
   const key = JSON.stringify([query.trim(), options.archive, options.messages, machineId]);
-  useEffect(() => { setLimit(5); }, [key]);
+  useEffect(() => { setLimit(5); }, [key, topicFilter, projectFilter]);
   useEffect(() => {
     const controller = new AbortController();
     const { signal } = controller;
@@ -106,7 +108,9 @@ export function SearchExtras({ query, needles, options, machineId, localIds }: {
     return () => { controller.abort(); window.clearTimeout(timer); };
   }, [sdk, key]);
   const rows = useMemo(() => result.key !== key ? [] : result.rows.filter((thread) =>
-    (machineId === null || thread.environmentHostId === machineId) && !localIds.has(thread.id)), [result, key, machineId, localIds]);
+    (machineId === null || thread.environmentHostId === machineId) &&
+    matchesFilters(thread.title ?? thread.titleFallback ?? "", thread.projectId, topicFilter, projectFilter) &&
+    !localIds.has(thread.id)), [result, key, machineId, topicFilter, projectFilter, localIds]);
   if (!query.trim() || (!options.archive && !options.messages)) return null;
   const loading = result.key !== key || result.loading;
   return <section data-machine-tabs-page="" className="mx-2 mb-2 rounded-md border border-border/50 px-2 py-1 text-xs">

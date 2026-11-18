@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyAuto, applyManual, diffManifests, emptyEntry, needsDescription, REDESCRIBE_AFTER_MS, search, unlock, verdict, type Scan, type SourceView } from '../core';
+import { applyAuto, applyManual, diffManifests, emptyEntry, hydrate, needsDescription, REDESCRIBE_AFTER_MS, search, unlock, verdict, type Scan, type SourceView } from '../core';
 
 const doc = (id: string, name: string, extra: Partial<{ aliases: string[]; category: string; tags: string[]; summary: string; notes: string }> = {}) =>
   ({ id, name, aliases: [], category: '', tags: [], summary: '', notes: '', paths: [], ...extra });
@@ -111,4 +111,14 @@ test('a repository nested in a folder without git is judged by its git state', (
   const apart = verdict([src('Mac', withParts('x', [part({ head: 'bbb', headTime: 99 })])), src('Tru', withParts('x', [part()]))], none);
   assert.equal(apart.level, 'attention');
   assert.match(apart.details.join(' '), /os: разные коммиты.*новее на Mac/);
+});
+
+test('a project can sit in several categories; the first is primary', () => {
+  const auto = applyAuto(emptyEntry(), { category: 'Продукты, Реклама и AdTech, продукты' }, null, 1).entry;
+  assert.deepEqual(auto.categories, ['Продукты', 'Реклама и AdTech']);
+  assert.equal(auto.category, 'Продукты');
+  assert.deepEqual(applyManual(auto, { category: 'Продукты, Реклама и AdTech' }, 2).locked, []);
+  const manual = applyManual(auto, { category: 'Личное' }, 3);
+  assert.deepEqual([manual.categories, manual.locked], [['Личное'], ['category']]);
+  assert.deepEqual(hydrate({ category: 'Старое' }).categories, ['Старое']);
 });

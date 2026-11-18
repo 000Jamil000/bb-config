@@ -13,7 +13,21 @@ machine, agent and the tab read the same cards.
 - **Tab.** Search (a Russian spelling finds a Latin name), category chips,
   filters by machine and state, cards grouped by category, and a card page with
   inline editing, per-machine state and the list of differing files.
-- **CLI for agents.** `bb catalog find|list|show|describe|set|unlock|categories|sync`.
+- **Categories.** A project can sit in up to four categories (comma-separated;
+  the first is primary). Categories can be arranged into named groups, shown as
+  separate blocks of the sidebar.
+- **Quick actions.** In a row, on hover: recent threads of the project (hover
+  or click), edit, new thread. In the panel: copy path, open the repository,
+  check copies, describe with an agent, and one-click category and tag editing.
+  **Показать в боковой панели** scrolls the app sidebar to the project's thread
+  group and highlights it; it needs a thread list that marks project groups
+  with `data-sidebar-project-id`.
+- **Two searches.** The field above the list searches projects; while it is
+  filled, every sidebar section shows how many matches it holds. The field in
+  the sidebar filters the sections themselves.
+- **Keyboard.** `/` search, `↑`/`↓` move through the list, `N` new thread in
+  the open project, `Esc` closes the panel.
+- **CLI for agents.** `bb catalog find|list|show|describe|set|unlock|categories|group|sync`.
   Output is a few compact lines; `--json` is available. Commands and limits are
   documented in `skills/project-catalog/SKILL.md`.
 - **Automatic description.** A thread working in a project with no card, or

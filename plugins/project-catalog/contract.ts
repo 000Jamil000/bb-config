@@ -30,7 +30,7 @@ export const hostContract = defineRpcContract({
 const autoField = z.enum(AUTO_FIELDS);
 const link = z.object({ label: z.string(), url: z.string() });
 export const entrySchema = z.object({
-  summary: z.string(), notes: z.string(), category: z.string(), tags: z.array(z.string()), aliases: z.array(z.string()),
+  summary: z.string(), notes: z.string(), category: z.string(), categories: z.array(z.string()), tags: z.array(z.string()), aliases: z.array(z.string()),
   links: z.array(link), status: z.enum(['active', 'paused', 'archive']), independent: z.boolean(), localPaths: z.array(z.string()), locked: z.array(autoField),
   describedAt: z.number().nullable(), describedDocHash: z.string().nullable(), updatedAt: z.number(),
 });
@@ -55,6 +55,8 @@ export type ProjectView = z.infer<typeof projectView>;
 const catalogSchema = z.object({
   projects: z.array(projectView),
   hosts: z.array(z.object({ id: z.string(), name: z.string(), connected: z.boolean() })),
+  /** Category name → name of the group it is shown under in the sidebar. */
+  groups: z.record(z.string(), z.string()),
   scanning: z.boolean(), scannedAt: z.number().nullable(),
 });
 export type Catalog = z.infer<typeof catalogSchema>;
@@ -64,5 +66,10 @@ export const rpcContract = defineRpcContract({
   save: { input: z.object({ projectId: z.string(), patch: patchSchema }).strict(), output: projectView },
   unlock: { input: z.object({ projectId: z.string(), fields: z.array(autoField) }).strict(), output: projectView },
   refresh: { input: z.object({ projectId: z.string().nullable() }).strict(), output: z.object({ started: z.boolean() }) },
+  set_group: { input: z.object({ category: z.string().min(1).max(60), group: z.string().max(40) }).strict(), output: z.object({ groups: z.record(z.string(), z.string()) }) },
+  threads: {
+    input: z.object({ projectId: z.string() }).strict(),
+    output: z.object({ total: z.number(), threads: z.array(z.object({ id: z.string(), title: z.string(), status: z.string(), updatedAt: z.number(), hostName: z.string().nullable(), pinned: z.boolean() })) }),
+  },
   describe_with_agent: { input: z.object({ projectId: z.string() }).strict(), output: z.object({ threadId: z.string() }) },
 });

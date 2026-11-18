@@ -22,8 +22,12 @@ bb catalog find бот калории --limit 5
 bb catalog list --category "Продукты"
 bb catalog list --machine Tru --attention
 bb catalog show <id|name|alias>     # full card; defaults to the current thread's project
-bb catalog categories
+bb catalog categories              # with the sidebar group of each
+bb catalog group "Продукты" "Работа" # put a category into a group; omit the group to remove it
 ```
+
+A project may have up to four categories: pass them comma-separated to
+`--category`, the first is primary.
 
 `find` matches names, aliases, tags, category, description, notes and folder
 paths; every query word must match. Add `--json` for scripts. When the user

@@ -9,7 +9,9 @@ export type Entry = {
   summary: string;
   /** The user's own text. Never written by automatic description. */
   notes: string;
+  /** Primary category: the first of `categories`. */
   category: string;
+  categories: string[];
   tags: string[];
   aliases: string[];
   links: Link[];
@@ -29,7 +31,7 @@ export type Patch = Partial<Pick<Entry, AutoField | 'notes' | 'status' | 'indepe
 export const REDESCRIBE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
 
 export function emptyEntry(): Entry {
-  return { summary: '', notes: '', category: '', tags: [], aliases: [], links: [], status: 'active', independent: false, localPaths: [], locked: [], describedAt: null, describedDocHash: null, updatedAt: 0 };
+  return { summary: '', notes: '', category: '', categories: [], tags: [], aliases: [], links: [], status: 'active', independent: false, localPaths: [], locked: [], describedAt: null, describedDocHash: null, updatedAt: 0 };
 }
 
 const clean = (value: string, max: number) => value.replace(/\s+/g, ' ').trim().slice(0, max);
@@ -53,11 +55,27 @@ function cleanLinks(links: Link[]) {
     .map(link => ({ label: link.label || link.url.replace(/^https?:\/\//i, '').replace(/\/$/, ''), url: link.url }))
     .slice(0, 12);
 }
+/** A project may sit in several categories; the text form is comma-separated, the first is primary. */
+export function splitCategories(text: string) {
+  return cleanList(text.split(','), 4).map(item => item.slice(0, 40));
+}
+/** Entries saved before multi-category support carry only `category`. */
+export function hydrate(stored: Partial<Entry> | undefined): Entry {
+  const entry = { ...emptyEntry(), ...stored };
+  if (!entry.categories.length && entry.category) entry.categories = [entry.category];
+  entry.category = entry.categories[0] ?? '';
+  return entry;
+}
+function assign(entry: Entry, field: AutoField, value: unknown) {
+  if (field === 'category') { entry.categories = splitCategories(String(value)); entry.category = entry.categories[0] ?? ''; }
+  else (entry as Record<AutoField, unknown>)[field] = value;
+}
+const current = (entry: Entry, field: AutoField) => field === 'category' ? (entry.categories.length ? entry.categories : entry.category ? [entry.category] : []).join(', ') : entry[field];
 function normalizePatch(patch: Patch): Patch {
   const out: Patch = {};
   if (patch.summary !== undefined) out.summary = patch.summary.trim().slice(0, 600);
   if (patch.notes !== undefined) out.notes = patch.notes.trim().slice(0, 4000);
-  if (patch.category !== undefined) out.category = clean(patch.category, 40);
+  if (patch.category !== undefined) out.category = splitCategories(patch.category).join(', ');
   if (patch.tags !== undefined) out.tags = cleanList(patch.tags, 12);
   if (patch.aliases !== undefined) out.aliases = cleanList(patch.aliases, 12);
   if (patch.links !== undefined) out.links = cleanLinks(patch.links);
@@ -71,14 +89,14 @@ const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b)
 /** Automatic description: writes only fields the user has not edited by hand. */
 export function applyAuto(entry: Entry, raw: Patch, docHash: string | null, now: number) {
   const patch = normalizePatch(raw);
-  const next: Entry = { ...entry };
+  const next: Entry = { ...entry, categories: [...(entry.categories ?? [])] };
   const written: AutoField[] = [];
   const skipped: AutoField[] = [];
   for (const field of AUTO_FIELDS) {
     const value = patch[field];
     if (value === undefined) continue;
     if (entry.locked.includes(field)) { skipped.push(field); continue; }
-    (next as Record<AutoField, unknown>)[field] = value;
+    assign(next, field, value);
     written.push(field);
   }
   next.describedAt = now;
@@ -93,8 +111,8 @@ export function applyManual(entry: Entry, raw: Patch, now: number): Entry {
   const next: Entry = { ...entry, locked: [...entry.locked] };
   for (const field of AUTO_FIELDS) {
     const value = patch[field];
-    if (value === undefined || same(value, entry[field])) continue;
-    (next as Record<AutoField, unknown>)[field] = value;
+    if (value === undefined || same(value, current(entry, field))) continue;
+    assign(next, field, value);
     if (!next.locked.includes(field)) next.locked.push(field);
   }
   if (patch.notes !== undefined) next.notes = patch.notes;

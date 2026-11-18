@@ -2,7 +2,7 @@ import { PluginCliError, cliCommand, defineCli, type BbPluginApi } from '@get-bb
 import { z } from 'zod';
 import { hostContract, rpcContract, type Catalog, type ProjectView } from './contract';
 import {
-  AUTO_FIELDS, applyAuto, applyManual, diffManifests, emptyEntry, needsDescription, search, unlock, verdict,
+  AUTO_FIELDS, applyAuto, applyManual, diffManifests, emptyEntry, hydrate, needsDescription, search, unlock, verdict,
   type AutoField, type CopyDiff, type Entry, type Link, type Manifest, type Patch, type Scan, type SourceView, type Status,
 } from './core';
 
@@ -22,6 +22,7 @@ export default function projectCatalog(bb: BbPluginApi) {
   const diffs = new Map<string, StoredDiff>();
   /** Latest known README/AGENTS hash per project, for the staleness check. */
   const docHashes = new Map<string, string | null>();
+  let groups: Record<string, string> = {};
   let lastFullScan: number | null = null;
   let scanning = false;
   let icons: { at: number; map: Record<string, string> } = { at: 0, map: {} };
@@ -33,7 +34,7 @@ export default function projectCatalog(bb: BbPluginApi) {
   const ready = (async () => {
     for (const key of await bb.storage.kv.list('p:')) {
       const value = await bb.storage.kv.get<Entry>(key);
-      if (value) entries.set(key.slice(2), { ...emptyEntry(), ...value });
+      if (value) entries.set(key.slice(2), hydrate(value));
     }
     for (const key of await bb.storage.kv.list('s:')) {
       const value = await bb.storage.kv.get<Scan>(key);
@@ -44,6 +45,7 @@ export default function projectCatalog(bb: BbPluginApi) {
       if (value) diffs.set(key.slice(2), value);
     }
     lastFullScan = (await bb.storage.kv.get<number>('meta:lastFullScan')) ?? null;
+    groups = (await bb.storage.kv.get<Record<string, string>>('meta:groups')) ?? {};
     try { await rememberDocHashes(); } catch (error) { bb.log.warn(`Project Catalog: could not index sources: ${String(error)}`); }
   })();
 
@@ -150,7 +152,7 @@ export default function projectCatalog(bb: BbPluginApi) {
       const diff = diffs.get(project.id) ?? null;
       return {
         id: project.id, name: project.name, remote: project.gitRemoteUrl ?? null, createdAt: project.createdAt, icon: iconMap[project.id] ?? null,
-        entry: stored ? { ...emptyEntry(), ...stored } : emptyEntry(), described: Boolean(stored && (stored.summary || stored.describedAt)),
+        entry: hydrate(stored), described: Boolean(stored && (stored.summary || stored.describedAt)),
         sources, verdict: verdict(sources as SourceView[], diff, { independent: stored?.independent ?? false, localPaths: stored?.localPaths ?? [] }), diff,
       } satisfies ProjectView;
     });
@@ -162,20 +164,28 @@ export default function projectCatalog(bb: BbPluginApi) {
     return found;
   }
   const docsOf = (list: ProjectView[]) => list.map(item => ({
-    id: item.id, name: item.name, aliases: item.entry.aliases, category: item.entry.category, tags: item.entry.tags,
+    id: item.id, name: item.name, aliases: item.entry.aliases, category: item.entry.categories.join(' '), tags: item.entry.tags,
     summary: item.entry.summary, notes: item.entry.notes, paths: item.sources.map(source => source.path), view: item,
   }));
   function categories() {
     const count = new Map<string, number>();
-    for (const entry of entries.values()) if (entry.category) count.set(entry.category, (count.get(entry.category) ?? 0) + 1);
+    for (const entry of entries.values()) for (const name of entry.categories) count.set(name, (count.get(name) ?? 0) + 1);
     return [...count].sort((a, b) => b[1] - a[1]);
+  }
+
+  async function setGroup(category: string, group: string) {
+    const name = group.replace(/\s+/g, ' ').trim().slice(0, 40);
+    groups = { ...groups };
+    if (name) groups[category] = name; else delete groups[category];
+    await bb.storage.kv.set('meta:groups', groups);
+    bb.realtime.publish('changed', { groups: true });
   }
 
   bb.rpc.register(rpcContract, {
     async catalog() {
       const { list, hosts } = await views();
       if (!scanning && (lastFullScan === null || Date.now() - lastFullScan > FULL_SCAN_EVERY_MS)) scanInBackground(null);
-      return { projects: list, hosts, scanning, scannedAt: lastFullScan };
+      return { projects: list, hosts, groups, scanning, scannedAt: lastFullScan };
     },
     async save({ projectId, patch }) {
       await ready;
@@ -192,6 +202,18 @@ export default function projectCatalog(bb: BbPluginApi) {
       if (scanning) return { started: false };
       scanInBackground(projectId);
       return { started: true };
+    },
+    async set_group({ category, group }) {
+      await ready;
+      await setGroup(category, group);
+      return { groups };
+    },
+    async threads({ projectId }) {
+      const [result, hosts] = await Promise.all([bb.sdk.threads.list({ projectId, archived: false, limit: 200 }), bb.sdk.hosts.list()]);
+      const rows = (Array.isArray(result) ? result : ((result as { threads?: unknown[] }).threads ?? [])) as { id: string; title?: string | null; titleFallback?: string | null; status: string; updatedAt: number; parentThreadId?: string | null; pinnedAt?: number | null; environmentHostId?: string | null; visibility?: string }[];
+      const roots = rows.filter(row => !row.parentThreadId && row.visibility !== 'hidden').sort((a, b) => b.updatedAt - a.updatedAt);
+      const names = new Map(hosts.map(item => [item.id, item.name]));
+      return { total: roots.length, threads: roots.slice(0, 5).map(row => ({ id: row.id, title: row.title || row.titleFallback || 'Без названия', status: row.status, updatedAt: row.updatedAt, hostName: row.environmentHostId ? names.get(row.environmentHostId) ?? null : null, pinned: Boolean(row.pinnedAt) })) };
     },
     async describe_with_agent({ projectId }) {
       const project = await bb.sdk.projects.get({ projectId });
@@ -224,11 +246,11 @@ export default function projectCatalog(bb: BbPluginApi) {
     const machines = [...new Set(item.sources.map(source => source.hostName))].join(',') || '—';
     const state = item.verdict.level === 'ok' || item.verdict.level === 'info' ? '' : `  ${mark[item.verdict.level]} ${item.verdict.label}`;
     const summary = item.entry.summary ? ` — ${item.entry.summary.replace(/\s+/g, ' ').slice(0, 140)}` : '';
-    return `${item.id}  ${item.name}  [${item.entry.category || 'без категории'}]  ${machines}${state}${summary}`;
+    return `${item.id}  ${item.name}  [${item.entry.categories.join(', ') || 'без категории'}]  ${machines}${state}${summary}`;
   };
   const card = (item: ProjectView) => {
     const e = item.entry;
-    const out = [`${item.name} (${item.id})`, `Категория: ${e.category || '—'}   Статус: ${e.status}`];
+    const out = [`${item.name} (${item.id})`, `Категории: ${e.categories.join(', ') || '—'}   Статус: ${e.status}`];
     if (e.summary) out.push(`Описание${e.locked.includes('summary') ? ' (вручную)' : ''}: ${e.summary}`);
     if (e.notes) out.push(`Заметки пользователя: ${e.notes}`);
     if (e.aliases.length) out.push(`Также называют: ${e.aliases.join(', ')}`);
@@ -270,7 +292,7 @@ export default function projectCatalog(bb: BbPluginApi) {
   const projectArg = { name: 'project', description: 'ID, название или алиас проекта; по умолчанию проект текущего треда' } as const;
   const fieldOptions = {
     summary: { type: 'string', description: 'Короткое описание, 1–2 предложения (до 600 символов)' },
-    category: { type: 'string', description: 'Категория (одна)' },
+    category: { type: 'string', aliases: ['categories'], description: 'Категория; несколько — через запятую (до 4), первая основная' },
     tags: { type: 'string', description: 'Теги через запятую (до 12)' },
     aliases: { type: 'string', aliases: ['alias'], description: 'Другие названия через запятую, включая русские написания' },
     links: { type: 'string', aliases: ['link'], description: 'Ссылки через запятую: название=https://…' },
@@ -313,7 +335,7 @@ export default function projectCatalog(bb: BbPluginApi) {
         async run(input) {
           let { list } = await views();
           const { category, machine, attention, undescribed } = input.options;
-          if (category) list = list.filter(item => item.entry.category.toLowerCase() === category.toLowerCase());
+          if (category) list = list.filter(item => item.entry.categories.some(name => name.toLowerCase() === category.toLowerCase()));
           if (machine) list = list.filter(item => item.sources.some(source => source.hostId === machine || source.hostName.toLowerCase().includes(machine.toLowerCase())));
           if (attention) list = list.filter(item => item.verdict.level === 'attention' || item.verdict.level === 'risk');
           if (undescribed) list = list.filter(item => !item.entry.summary);
@@ -381,13 +403,22 @@ export default function projectCatalog(bb: BbPluginApi) {
           return text(`Сняты закрепления у «${item.name}»: ${fields.join(', ')}`);
         },
       }),
+      group: cliCommand({
+        summary: 'Отнести категорию к группе в боковой панели; пустая группа убирает категорию из групп',
+        positionals: [{ name: 'category', description: 'Название категории', required: true }, { name: 'group', description: 'Название группы; не указывать, чтобы убрать' }],
+        async run(input) {
+          await ready;
+          await setGroup(input.positionals.category, input.positionals.group ?? '');
+          return text(input.positionals.group ? `Категория «${input.positionals.category}» в группе «${input.positionals.group}»` : `Категория «${input.positionals.category}» без группы`);
+        },
+      }),
       categories: cliCommand({
         summary: 'Категории каталога с числом проектов',
         options: { json: jsonFlag },
         async run(input) {
           await ready;
           const list = categories();
-          return input.options.json ? json(list.map(([name, count]) => ({ name, count }))) : text(list.length ? list.map(([name, count]) => `${count}\t${name}`).join('\n') : 'Категорий пока нет');
+          return input.options.json ? json(list.map(([name, count]) => ({ name, count, group: groups[name] ?? null }))) : text(list.length ? list.map(([name, count]) => `${count}\t${name}${groups[name] ? `\t(${groups[name]})` : ''}`).join('\n') : 'Категорий пока нет');
         },
       }),
       sync: cliCommand({

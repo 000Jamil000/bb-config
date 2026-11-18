@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { GridIcon, Icon } from './icons';
 import { Input } from '@/components/ui/input';
 import type { Catalog, ProjectView, rpcContract } from './contract';
-import { search, type AutoField, type Level, type Status } from './core';
+import { normalize, search, translit, type AutoField, type Level, type Status } from './core';
 import './catalog.css';
 
 type Source = ProjectView['sources'][number];
@@ -62,14 +62,94 @@ function Avatar({ project, size = 'size-9' }: { project: ProjectView; size?: str
 function VerdictBadge({ project }: { project: ProjectView }) {
   const style = LEVEL[project.verdict.level];
   return <span className={`inline-flex shrink-0 items-center gap-1 whitespace-nowrap text-xs font-medium ${style.text}`} title={project.verdict.details.join('\n') || project.verdict.label}>
-    <Icon name={style.icon} fallback="Circle" className="size-3.5 shrink-0" aria-hidden="true"/>{project.verdict.label}
+    <Icon name={style.icon} fallback="Circle" className="size-3.5 shrink-0" aria-hidden="true"/><span className="sr-only sm:not-sr-only">{project.verdict.label}</span>
   </span>;
 }
-function Row({ project, active, onOpen, onThread }: { project: ProjectView; active: boolean; onOpen: () => void; onThread: () => void }) {
+type ThreadList = { total: number; threads: { id: string; title: string; status: string; updatedAt: number; hostName: string | null; pinned: boolean }[] };
+const threadCache = new Map<string, { at: number; data: ThreadList }>();
+function useThreads(projectId: string, enabled: boolean) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [data, setData] = useState<ThreadList | null>(() => threadCache.get(projectId)?.data ?? null);
+  useEffect(() => {
+    if (!enabled) return;
+    const hit = threadCache.get(projectId);
+    if (hit) setData(hit.data);
+    if (hit && Date.now() - hit.at < 30_000) return;
+    let alive = true;
+    void rpc.call('threads', { projectId }).then(next => { threadCache.set(projectId, { at: Date.now(), data: next }); if (alive) setData(next); }).catch(() => { if (alive) setData(old => old ?? { total: 0, threads: [] }); });
+    return () => { alive = false; };
+  }, [projectId, enabled, rpc]);
+  return data;
+}
+/** Scroll the app sidebar to this project's thread group and flash it. Works in any thread-list view that marks project groups. */
+function revealInSidebar(projectId: string) {
+  const group = document.querySelector<HTMLElement>(`[data-sidebar-project-id="${CSS.escape(projectId)}"]`);
+  if (!group) return false;
+  const label = group.querySelector<HTMLElement>('[data-sidebar="group-label"] [aria-expanded="false"], [data-sidebar="group-label"][aria-expanded="false"]');
+  label?.click();
+  group.scrollIntoView({ block: 'start', behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth' });
+  group.classList.remove('catalog-flash');
+  void group.offsetWidth;
+  group.classList.add('catalog-flash');
+  window.setTimeout(() => group.classList.remove('catalog-flash'), 2200);
+  return true;
+}
+function ThreadList({ projectId, enabled, onNavigate }: { projectId: string; enabled: boolean; onNavigate?: () => void }) {
+  const navigate = useBbNavigate();
+  const data = useThreads(projectId, enabled);
+  const reveal = () => { if (!revealInSidebar(projectId)) toast.message('В текущем виде боковой панели этого проекта нет'); onNavigate?.(); };
+  return <div className="space-y-1.5">
+    {!data && <p className="px-2 py-1 text-xs text-muted-foreground">Загрузка…</p>}
+    {data && !data.threads.length && <p className="px-2 py-1 text-xs text-muted-foreground">Тредов пока нет</p>}
+    {data && data.threads.length > 0 && <ul>{data.threads.map(thread => <li key={thread.id}>
+      <button type="button" onClick={() => { onNavigate?.(); navigate.toThread(thread.id); }} className="catalog-row flex w-full cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring">
+        <span className={`size-1.5 shrink-0 rounded-full ${thread.status === 'active' ? 'bg-emerald-500' : thread.status === 'error' ? 'bg-red-500' : 'bg-transparent'}`} aria-label={thread.status === 'active' ? 'Работает' : thread.status === 'error' ? 'Ошибка' : undefined}/>
+        <span className="min-w-0 flex-1 truncate text-[13px]" title={thread.title}>{thread.title}</span>
+        <span className="shrink-0 text-[11px] tabular-nums text-muted-foreground">{ago(thread.updatedAt).replace(' назад', '')}</span>
+      </button></li>)}</ul>}
+    <div className="flex flex-wrap gap-x-3.5 gap-y-1 px-2 pt-0.5 text-xs text-muted-foreground">
+      <button type="button" className="inline-flex cursor-pointer items-center gap-1 hover:text-foreground" onClick={() => { onNavigate?.(); navigate.toProject(projectId); }}><Icon name="Plus" className="size-3.5" aria-hidden="true"/>Новый тред</button>
+      <button type="button" className="inline-flex cursor-pointer items-center gap-1 hover:text-foreground" onClick={reveal}><Icon name="PanelLeft" className="size-3.5" aria-hidden="true"/>{data && data.total > data.threads.length ? `Все ${data.total} в боковой панели` : 'Показать в боковой панели'}</button>
+    </div>
+  </div>;
+}
+/** Threads of a project on hover or click of its icon in the list. */
+function ThreadsButton({ project }: { project: ProjectView }) {
+  const [open, setOpen] = useState(false);
+  const [pinned, setPinned] = useState(false);
+  const [up, setUp] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const timer = useRef<number | undefined>(undefined);
+  const show = () => { setUp((ref.current?.getBoundingClientRect().top ?? 0) > window.innerHeight * 0.55); setOpen(true); };
+  const enter = () => { window.clearTimeout(timer.current); timer.current = window.setTimeout(show, 220); };
+  const leave = () => { window.clearTimeout(timer.current); if (!pinned) timer.current = window.setTimeout(() => setOpen(false), 180); };
+  const shut = () => { setOpen(false); setPinned(false); };
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => { if (!ref.current?.contains(event.target as Node)) shut(); };
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); shut(); } };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey, true);
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey, true); };
+  }, [open]);
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  return <div ref={ref} className="catalog-row-tools relative shrink-0" onMouseEnter={enter} onMouseLeave={leave}>
+    <Button size="icon" variant="ghost" className={`catalog-row-action relative size-7 text-muted-foreground ${open ? '!opacity-100' : ''}`} aria-label={`Треды проекта «${project.name}»`} aria-expanded={open}
+      onClick={() => { if (open && pinned) shut(); else { show(); setPinned(true); } }}>
+      <Icon name="MessageSquare" className="size-3.5" aria-hidden="true"/>
+    </Button>
+    {open && <div role="dialog" aria-label={`Треды проекта «${project.name}»`} className={`catalog-pop absolute right-0 z-30 w-80 rounded-xl border border-border bg-popover p-2 text-popover-foreground shadow-lg ${up ? 'bottom-full mb-1' : 'top-full mt-1'}`}>
+      <p className="truncate px-2 pb-1.5 pt-1 text-xs text-muted-foreground">Недавние треды · {project.name}</p>
+      <ThreadList projectId={project.id} enabled onNavigate={shut}/>
+    </div>}
+  </div>;
+}
+
+function Row({ project, active, onOpen, onEdit, onThread }: { project: ProjectView; active: boolean; onOpen: () => void; onEdit: () => void; onThread: () => void }) {
   const entry = project.entry;
   const quiet = project.verdict.level === 'ok' || project.verdict.level === 'info';
   const hosts = [...new Set(project.sources.map(source => shortHost(source.hostName)))];
-  return <li className={`catalog-row group relative flex items-center gap-3 rounded-lg px-2.5 py-2 ${active ? 'bg-muted' : ''} ${entry.status === 'archive' ? 'opacity-60' : ''}`}>
+  return <li data-catalog-row={project.id} className={`catalog-row group relative flex items-start gap-3 rounded-lg px-2.5 py-2 sm:items-center ${active ? 'bg-muted' : ''} ${entry.status === 'archive' ? 'opacity-60' : ''}`}>
     <button type="button" onClick={onOpen} aria-current={active ? 'true' : undefined} className="absolute inset-0 cursor-pointer rounded-lg focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" aria-label={`Открыть «${project.name}»`}/>
     <Avatar project={project} size="size-7"/>
     <div className="pointer-events-none relative min-w-0 flex-1">
@@ -77,18 +157,22 @@ function Row({ project, active, onOpen, onThread }: { project: ProjectView; acti
         <span className="truncate text-sm font-medium" title={project.name}>{project.name}</span>
         {!quiet && <VerdictBadge project={project}/>}
       </p>
-      <p className={`truncate text-[13px] leading-5 ${entry.summary ? 'text-muted-foreground' : 'italic text-muted-foreground/60'}`}>{entry.summary || 'Описания пока нет'}</p>
+      <p className={`line-clamp-2 text-[13px] leading-5 sm:line-clamp-1 ${entry.summary ? 'text-muted-foreground' : 'italic text-muted-foreground/60'}`}>{entry.summary || 'Описания пока нет'}</p>
     </div>
     <span className="pointer-events-none relative hidden w-20 shrink-0 truncate text-right text-xs text-muted-foreground sm:block" title={project.sources.map(source => `${source.hostName}: ${source.path}`).join('\n')}>{hosts.join(' · ') || '—'}</span>
+    <ThreadsButton project={project}/>
+    <Button size="icon" variant="ghost" className="catalog-row-action relative size-7 shrink-0 text-muted-foreground" aria-label={`Изменить описание, категории и теги «${project.name}»`} onClick={onEdit}>
+      <Icon name="Pencil" className="size-3.5" aria-hidden="true"/>
+    </Button>
     <Button size="icon" variant="ghost" className="catalog-row-action relative size-7 shrink-0 text-muted-foreground" aria-label={`Новый тред в «${project.name}»`} onClick={onThread}>
-      <Icon name="SquarePen" className="size-3.5" aria-hidden="true"/>
+      <Icon name="Plus" className="size-4" aria-hidden="true"/>
     </Button>
   </li>;
 }
 
 type Form = { summary: string; notes: string; category: string; tags: string; aliases: string; links: string; status: Status; independent: boolean; localPaths: string };
 const toForm = (project: ProjectView): Form => ({
-  summary: project.entry.summary, notes: project.entry.notes, category: project.entry.category,
+  summary: project.entry.summary, notes: project.entry.notes, category: project.entry.categories.join(', '),
   tags: project.entry.tags.join(', '), aliases: project.entry.aliases.join(', '),
   links: project.entry.links.map(link => `${link.label} = ${link.url}`).join('\n'), status: project.entry.status,
   independent: project.entry.independent, localPaths: project.entry.localPaths.join(', '),
@@ -115,10 +199,54 @@ const Section = ({ title, action, children }: { title: string; action?: ReactNod
   {children}
 </section>;
 
-function Detail({ project, categories, scanning, onClose, onSaved }: { project: ProjectView; categories: string[]; scanning: boolean; onClose: () => void; onSaved: (next: ProjectView) => void }) {
+const chip = 'inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border px-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring';
+/** Categories and tags change in one click, without opening the full form. */
+function QuickMeta({ project, categories, onSaved }: { project: ProjectView; categories: string[]; onSaved: (next: ProjectView) => void }) {
+  const rpc = useRpc<typeof rpcContract>();
+  const [picking, setPicking] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [tag, setTag] = useState('');
+  const entry = project.entry;
+  const save = async (patch: { category?: string; tags?: string[] }) => {
+    try { onSaved(await rpc.call('save', { projectId: project.id, patch })); } catch (error) { toast.error(String((error as Error).message ?? error)); }
+  };
+  const setCategories = (next: string[]) => save({ category: next.join(', ') });
+  const toggle = (name: string) => setCategories(entry.categories.includes(name) ? entry.categories.filter(item => item !== name) : [...entry.categories, name]);
+  const addCategory = () => { const name = draft.trim(); setDraft(''); if (name && !entry.categories.includes(name)) void setCategories([...entry.categories, name]); };
+  const addTag = () => { const name = tag.trim(); setTag(''); if (name && !entry.tags.some(item => item.toLowerCase() === name.toLowerCase())) void save({ tags: [...entry.tags, name] }); };
+  const others = categories.filter(name => !entry.categories.includes(name));
+  const full = entry.categories.length >= 4;
+  return <div className="space-y-3">
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">Категории</p>
+      <div className="flex flex-wrap gap-1.5">
+        {entry.categories.map((name, index) => <button key={name} type="button" onClick={() => void toggle(name)} title="Убрать категорию"
+          className={`${chip} border-foreground/25 bg-muted text-foreground hover:border-destructive/60`}>{name}{index === 0 && entry.categories.length > 1 && <span className="text-[10px] text-muted-foreground">осн.</span>}<Icon name="X" className="size-3 text-muted-foreground" aria-hidden="true"/></button>)}
+        {!full && <button type="button" aria-expanded={picking} onClick={() => setPicking(old => !old)} className={`${chip} border-dashed border-border text-muted-foreground hover:text-foreground`}><Icon name="Plus" className="size-3" aria-hidden="true"/>{entry.categories.length ? 'ещё' : 'категория'}</button>}
+      </div>
+      {picking && !full && <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-muted/40 p-2">
+        {others.map(name => <button key={name} type="button" onClick={() => void toggle(name)} className={`${chip} border-border bg-background text-foreground/80 hover:border-foreground/40 hover:text-foreground`}>{name}</button>)}
+        <input value={draft} aria-label="Новая категория" placeholder="новая…" onChange={event => setDraft(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addCategory(); } }} onBlur={addCategory}
+          className="h-6 w-28 rounded-full border border-input bg-background px-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"/>
+      </div>}
+    </div>
+    <div className="space-y-1.5">
+      <p className="text-xs text-muted-foreground">Теги</p>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {entry.tags.map(name => <button key={name} type="button" title="Убрать тег" onClick={() => void save({ tags: entry.tags.filter(item => item !== name) })}
+          className={`${chip} border-border text-foreground/80 hover:border-destructive/60`}>{name}<Icon name="X" className="size-3 text-muted-foreground" aria-hidden="true"/></button>)}
+        {entry.tags.length < 12 && <input value={tag} aria-label="Добавить тег" placeholder="+ тег" onChange={event => setTag(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') { event.preventDefault(); addTag(); } }} onBlur={addTag}
+          className="h-6 w-20 rounded-full border border-dashed border-border bg-transparent px-2 text-xs placeholder:text-muted-foreground focus:w-32 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"/>}
+      </div>
+    </div>
+    {entry.aliases.length > 0 && <p className="text-xs text-muted-foreground">Называю: <span className="text-foreground/80">{entry.aliases.join(', ')}</span></p>}
+  </div>;
+}
+
+function Detail({ project, categories, scanning, startEditing, onClose, onSaved }: { project: ProjectView; categories: string[]; scanning: boolean; startEditing: boolean; onClose: () => void; onSaved: (next: ProjectView) => void }) {
   const rpc = useRpc<typeof rpcContract>();
   const navigate = useBbNavigate();
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditing] = useState(startEditing);
   const [form, setForm] = useState<Form>(() => toForm(project));
   const [busy, setBusy] = useState<string | null>(null);
   const entry = project.entry;
@@ -134,6 +262,8 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
   const release = (field: AutoField) => run(`unlock:${field}`, async () => { onSaved(await rpc.call('unlock', { projectId: project.id, fields: [field] })); });
   const copy = (text: string, what: string) => { void navigator.clipboard?.writeText(text).then(() => toast.success(`${what} скопирован`)); };
   const alarming = project.verdict.level === 'risk' || project.verdict.level === 'attention';
+  const quick = 'inline-flex cursor-pointer items-center gap-1 rounded hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring disabled:cursor-default disabled:opacity-60';
+  const web = project.remote ? project.remote.replace(/^git@([^:]+):/, 'https://$1/').replace(/^ssh:\/\/git@/, 'https://').replace(/\.git$/, '') : null;
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape' && !editing) onClose(); };
     document.addEventListener('keydown', onKey);
@@ -145,15 +275,27 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
       <Avatar project={project} size="size-9"/>
       <div className="min-w-0 flex-1">
         <h2 className="truncate text-base font-semibold">{project.name}</h2>
-        <p className="truncate text-xs text-muted-foreground">{entry.category || NO_CATEGORY}{entry.status === 'paused' ? ' · на паузе' : entry.status === 'archive' ? ' · архив' : ''}</p>
+        <p className="truncate text-xs text-muted-foreground">{entry.categories.join(' · ') || NO_CATEGORY}{entry.status === 'paused' ? ' · на паузе' : entry.status === 'archive' ? ' · архив' : ''}</p>
       </div>
       <Button size="icon" variant="ghost" className="size-8 shrink-0 text-muted-foreground" aria-label="Закрыть" onClick={onClose}><Icon name="X" className="size-4" aria-hidden="true"/></Button>
     </header>
     <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 pb-6">
       {!editing && <>
-        <div className="flex gap-2">
-          <Button size="sm" className="gap-1.5" onClick={() => navigate.toProject(project.id)}><Icon name="SquarePen" className="size-3.5" aria-hidden="true"/>Новый тред</Button>
-          <Button size="sm" variant="outline" onClick={() => { setForm(toForm(project)); setEditing(true); }}>Изменить</Button>
+        <div className="space-y-2.5">
+          <div className="flex gap-2">
+            <Button size="sm" className="gap-1.5" onClick={() => navigate.toProject(project.id)}><Icon name="Plus" className="size-3.5" aria-hidden="true"/>Новый тред</Button>
+            <Button size="sm" variant="outline" className="gap-1.5" onClick={() => { setForm(toForm(project)); setEditing(true); }}><Icon name="Pencil" className="size-3.5" aria-hidden="true"/>Изменить</Button>
+          </div>
+          <div className="flex flex-wrap gap-x-3.5 gap-y-1.5 text-xs text-muted-foreground" role="group" aria-label="Быстрые действия">
+            {project.sources[0] && <button type="button" className={quick} onClick={() => copy(project.sources[0]!.path, 'Путь')}><Icon name="Copy" className="size-3.5" aria-hidden="true"/>Путь</button>}
+            {web && <a href={web} target="_blank" rel="noreferrer" className={quick}><Icon name="GitBranch" className="size-3.5" aria-hidden="true"/>Репозиторий</a>}
+            <button type="button" disabled={scanning || busy !== null} className={quick} onClick={() => void run('refresh', async () => { await rpc.call('refresh', { projectId: project.id }); })}>
+              <Icon name="RefreshCw" className={`size-3.5 ${scanning ? 'catalog-spin' : ''}`} aria-hidden="true"/>{scanning ? 'Проверяю…' : 'Проверить копии'}</button>
+            <button type="button" disabled={busy !== null} className={quick} title="Отдельный тред: агент читает README и обновляет незакреплённые поля"
+              onClick={() => void run('describe', async () => { const { threadId } = await rpc.call('describe_with_agent', { projectId: project.id }); toast.success('Агент описывает проект'); navigate.toThread(threadId); })}>
+              <Icon name="Sparkles" className="size-3.5" aria-hidden="true"/>{busy === 'describe' ? 'Запускаю…' : 'Описать с ИИ'}</button>
+            <button type="button" className={quick} onClick={() => copy(`bb catalog show ${project.id}`, 'Команда')}><Icon name="Copy" className="size-3.5" aria-hidden="true"/>Команда bb</button>
+          </div>
         </div>
         <div className="space-y-3">
           <p className={`text-sm leading-relaxed ${entry.summary ? '' : 'italic text-muted-foreground'}`}>{entry.summary || 'Описания пока нет. Его напишет агент в первом треде проекта, или добавьте сами.'}</p>
@@ -161,9 +303,9 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
           {entry.links.length > 0 && <p className="flex flex-wrap gap-x-4 gap-y-1 text-sm">{entry.links.map(link =>
             <a key={link.url} href={link.url} target="_blank" rel="noreferrer" className="inline-flex cursor-pointer items-center gap-1 underline underline-offset-2 hover:text-foreground"><Icon name="ExternalLink" className="size-3" aria-hidden="true"/>{link.label}</a>)}</p>}
         </div>
-        <Section title="На машинах" action={<button type="button" disabled={scanning || busy !== null} className="inline-flex cursor-pointer items-center gap-1 text-xs text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60"
-          onClick={() => void run('refresh', async () => { await rpc.call('refresh', { projectId: project.id }); })}>
-          <Icon name="RefreshCw" className={`size-3 ${scanning ? 'catalog-spin' : ''}`} aria-hidden="true"/>{scanning ? 'Проверяю…' : 'Проверить'}</button>}>
+        <QuickMeta project={project} categories={categories} onSaved={onSaved}/>
+        <Section title="Треды"><div className="-mx-2"><ThreadList projectId={project.id} enabled/></div></Section>
+        <Section title="На машинах">
           {alarming && <p className={`flex items-start gap-1.5 text-sm ${LEVEL[project.verdict.level].text}`}><Icon name={LEVEL[project.verdict.level].icon} className="mt-0.5 size-4 shrink-0" aria-hidden="true"/>
             <span>{project.verdict.level === 'risk' ? 'Копии расходятся' : 'Есть несохранённая работа'}</span></p>}
           {!project.sources.length && <p className="text-sm text-muted-foreground">У проекта нет папки ни на одной машине.</p>}
@@ -192,10 +334,6 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
           {entry.localPaths.length > 0 && <p className="text-xs text-muted-foreground">Не сравниваются (свои на каждой машине): {entry.localPaths.join(', ')}</p>}
           {entry.independent && <p className="text-xs text-muted-foreground">Копии помечены как разные и не сравниваются.</p>}
         </Section>
-        {(entry.aliases.length > 0 || entry.tags.length > 0) && <dl className="space-y-1.5 text-xs text-muted-foreground">
-          {entry.aliases.length > 0 && <div className="flex gap-2"><dt className="w-20 shrink-0">Называю</dt><dd className="min-w-0 text-foreground/80">{entry.aliases.join(', ')}</dd></div>}
-          {entry.tags.length > 0 && <div className="flex gap-2"><dt className="w-20 shrink-0">Теги</dt><dd className="min-w-0 text-foreground/80">{entry.tags.join(', ')}</dd></div>}
-        </dl>}
       </>}
       {editing && <div className="space-y-4">
         <Field label="Описание" locked={locked('summary')} onUnlock={() => void release('summary')}>
@@ -205,8 +343,8 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
           <textarea className={fieldClass} rows={3} maxLength={4000} value={form.notes} placeholder="Что важно помнить" onChange={event => setForm({ ...form, notes: event.target.value })}/>
         </Field>
         <div className="grid grid-cols-2 gap-3">
-          <Field label="Категория" locked={locked('category')} onUnlock={() => void release('category')}>
-            <Input list="catalog-categories" maxLength={40} value={form.category} onChange={event => setForm({ ...form, category: event.target.value })}/>
+          <Field label="Категории" locked={locked('category')} onUnlock={() => void release('category')} hint="Несколько — через запятую.">
+            <Input list="catalog-categories" maxLength={170} value={form.category} onChange={event => setForm({ ...form, category: event.target.value })}/>
             <datalist id="catalog-categories">{categories.map(name => <option key={name} value={name}/>)}</datalist>
           </Field>
           <Field label="Статус">
@@ -233,10 +371,6 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
             <Input value={form.localPaths} onChange={event => setForm({ ...form, localPaths: event.target.value })}/>
           </Field>}
         </div>}
-        <button type="button" disabled={busy !== null} className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:opacity-60"
-          onClick={() => void run('describe', async () => { const { threadId } = await rpc.call('describe_with_agent', { projectId: project.id }); toast.success('Агент описывает проект'); navigate.toThread(threadId); })}>
-          <Icon name="Sparkles" className="size-3.5" aria-hidden="true"/>{busy === 'describe' ? 'Запускаю…' : 'Поручить описание агенту (отдельный тред)'}
-        </button>
         <button type="button" className="block cursor-pointer font-mono text-[11px] text-muted-foreground/70 hover:text-foreground" title="Скопировать ID проекта" onClick={() => copy(project.id, 'ID')}>{project.id}</button>
       </div>}
     </div>
@@ -250,12 +384,23 @@ function Detail({ project, categories, scanning, onClose, onSaved }: { project: 
 let cached: Catalog | null = null;
 type View = { kind: 'all' } | { kind: 'category'; name: string } | { kind: 'focus'; name: 'attention' | 'risk' | 'undescribed' | 'archive' } | { kind: 'machine'; id: string };
 const viewKey = (view: View) => view.kind === 'all' ? 'all' : `${view.kind}:${'name' in view ? view.name : view.id}`;
+const categoriesOf = (project: ProjectView) => project.entry.categories.length ? project.entry.categories : [NO_CATEGORY];
+const typing = (target: EventTarget | null) => { const el = target as HTMLElement | null; return Boolean(el && (/input|textarea|select/i.test(el.tagName) || el.isContentEditable)); };
 
-function NavItem({ label, count, active, tone, onClick }: { label: string; count?: number; active: boolean; tone?: string; onClick: () => void }) {
-  return <button type="button" aria-current={active ? 'true' : undefined} onClick={onClick}
-    className={`catalog-nav flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${active ? 'bg-muted font-medium text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
-    <span className="truncate">{label}</span>{count !== undefined && <span className={`shrink-0 text-xs tabular-nums ${tone ?? 'opacity-60'}`}>{count}</span>}
+function NavItem({ label, count, active, tone, dim, onClick }: { label: string; count?: number; active: boolean; tone?: string; dim?: boolean; onClick: () => void }) {
+  return <button type="button" aria-current={active ? 'true' : undefined} onClick={onClick} title={label}
+    className={`catalog-nav ${dim && !active ? 'opacity-45' : ''} flex h-8 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 text-left text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${active ? 'bg-muted font-medium text-foreground' : 'text-foreground/75 hover:bg-muted/60 hover:text-foreground'}`}>
+    <span className="truncate">{label}</span>{count !== undefined && <span className={`shrink-0 text-xs tabular-nums ${tone ?? 'text-muted-foreground'}`}>{count}</span>}
   </button>;
+}
+/** A titled block of the sidebar; blocks are separated by a hairline so the structure reads at a glance. */
+function NavSection({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+  return <section className="border-t border-border pt-3">
+    <div className="flex h-6 items-center justify-between px-2.5">
+      <h2 className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>{action}
+    </div>
+    <div className="mt-1 space-y-0.5">{children}</div>
+  </section>;
 }
 
 function CatalogPage({ subPath }: { subPath: string }) {
@@ -265,6 +410,9 @@ function CatalogPage({ subPath }: { subPath: string }) {
   const [error, setError] = useState('');
   const [query, setQuery] = useState('');
   const [view, setView] = useState<View>({ kind: 'all' });
+  const [grouping, setGrouping] = useState(false);
+  const [navQuery, setNavQuery] = useState('');
+  const [editId, setEditId] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
     try { const next = await rpc.call('catalog'); cached = next; setData(next); setError(''); }
@@ -272,16 +420,9 @@ function CatalogPage({ subPath }: { subPath: string }) {
   }, [rpc]);
   useEffect(() => { void load(); }, [load]);
   useRealtime('changed', () => { void load(); });
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null;
-      if (event.key === '/' && !event.metaKey && !event.ctrlKey && !(target && /input|textarea|select/i.test(target.tagName)) && !target?.isContentEditable) { event.preventDefault(); searchRef.current?.focus(); }
-    };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
-  }, []);
 
   const projects = data?.projects ?? [];
+  const groupOf = data?.groups ?? {};
   const openId = subPath ? decodeURIComponent(subPath.split('/')[0]!) : '';
   const opened = projects.find(project => project.id === openId) ?? null;
   const open = useCallback((id: string | null) => navigate.toPluginPanel('projects', id ? { subPath: id, replace: Boolean(openId) } : { replace: true }), [navigate, openId]);
@@ -295,95 +436,167 @@ function CatalogPage({ subPath }: { subPath: string }) {
   };
   const categories = useMemo(() => {
     const map = new Map<string, number>();
-    for (const project of live) map.set(project.entry.category || NO_CATEGORY, (map.get(project.entry.category || NO_CATEGORY) ?? 0) + 1);
+    for (const project of live) for (const name of categoriesOf(project)) map.set(name, (map.get(name) ?? 0) + 1);
     return [...map].sort((a, b) => Number(a[0] === NO_CATEGORY) - Number(b[0] === NO_CATEGORY) || a[0].localeCompare(b[0]));
   }, [live]);
+  /** Categories arranged under their groups; ungrouped ones come last under a neutral heading. */
+  const sections = useMemo(() => {
+    const map = new Map<string, [string, number][]>();
+    for (const item of categories) { const key = groupOf[item[0]] ?? ''; map.set(key, [...(map.get(key) ?? []), item]); }
+    return [...map].sort((a, b) => Number(a[0] === '') - Number(b[0] === '') || a[0].localeCompare(b[0])).map(([name, items]) => ({ name, items }));
+  }, [categories, groupOf]);
+  const groupNames = [...new Set(Object.values(groupOf))].sort((a, b) => a.localeCompare(b));
   const visible = useMemo(() => {
     let items = view.kind === 'focus' && view.name === 'archive' ? projects.filter(project => project.entry.status === 'archive') : live;
     if (view.kind === 'focus' && view.name === 'attention') items = items.filter(project => project.verdict.level === 'attention');
     if (view.kind === 'focus' && view.name === 'risk') items = items.filter(project => project.verdict.level === 'risk');
     if (view.kind === 'focus' && view.name === 'undescribed') items = items.filter(project => !project.entry.summary);
     if (view.kind === 'machine') items = items.filter(project => project.sources.some(source => source.hostId === view.id));
-    if (view.kind === 'category') items = items.filter(project => (project.entry.category || NO_CATEGORY) === view.name);
+    if (view.kind === 'category') items = items.filter(project => categoriesOf(project).includes(view.name));
     if (query.trim()) {
-      const docs = items.map(project => ({ id: project.id, name: project.name, aliases: project.entry.aliases, category: project.entry.category, tags: project.entry.tags, summary: project.entry.summary, notes: project.entry.notes, paths: project.sources.map(source => source.path), project }));
+      const docs = items.map(project => ({ id: project.id, name: project.name, aliases: project.entry.aliases, category: project.entry.categories.join(' '), tags: project.entry.tags, summary: project.entry.summary, notes: project.entry.notes, paths: project.sources.map(source => source.path), project }));
       return search(docs, query).map(hit => hit.doc.project);
     }
     return [...items].sort((a, b) => a.name.localeCompare(b.name));
   }, [projects, live, view, query]);
+  /** With a project query, the sidebar becomes a facet: every section shows how many matches it holds. */
+  const matched = useMemo(() => {
+    if (!query.trim()) return null;
+    const docs = live.map(project => ({ id: project.id, name: project.name, aliases: project.entry.aliases, category: project.entry.categories.join(' '), tags: project.entry.tags, summary: project.entry.summary, notes: project.entry.notes, paths: project.sources.map(source => source.path), project }));
+    return search(docs, query).map(hit => hit.doc.project);
+  }, [live, query]);
+  const facet = (test: (project: ProjectView) => boolean, fallback: number) => matched ? matched.filter(test).length : fallback;
+  const navMatch = (...names: string[]) => {
+    const needle = normalize(navQuery);
+    return !needle || names.some(name => normalize(name).includes(needle) || translit(name).includes(translit(navQuery)));
+  };
   const grouped = !query.trim() && view.kind !== 'category';
   const groups = useMemo(() => {
     if (!grouped) return [{ name: '', items: visible }];
     const map = new Map<string, ProjectView[]>();
-    for (const project of visible) { const key = project.entry.category || NO_CATEGORY; map.set(key, [...(map.get(key) ?? []), project]); }
-    return [...map].sort((a, b) => Number(a[0] === NO_CATEGORY) - Number(b[0] === NO_CATEGORY) || a[0].localeCompare(b[0])).map(([name, items]) => ({ name, items }));
-  }, [visible, grouped]);
+    for (const project of visible) { const key = categoriesOf(project)[0]!; map.set(key, [...(map.get(key) ?? []), project]); }
+    const order = sections.flatMap(section => section.items.map(([name]) => name));
+    return [...map].sort((a, b) => order.indexOf(a[0]) - order.indexOf(b[0])).map(([name, items]) => ({ name, items }));
+  }, [visible, grouped, sections]);
+  const flat = useMemo(() => groups.flatMap(group => group.items), [groups]);
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      const inSearch = event.target === searchRef.current;
+      if (event.key === '/' && !typing(event.target)) { event.preventDefault(); searchRef.current?.focus(); return; }
+      if (typing(event.target) && !inSearch) return;
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        if (!flat.length) return;
+        event.preventDefault();
+        const at = flat.findIndex(project => project.id === openId);
+        const next = flat[Math.max(0, Math.min(flat.length - 1, at < 0 ? 0 : at + (event.key === 'ArrowDown' ? 1 : -1)))]!;
+        open(next.id);
+        document.querySelector(`[data-catalog-row="${next.id}"]`)?.scrollIntoView({ block: 'nearest' });
+      } else if (event.key === 'Enter' && inSearch && flat[0]) { event.preventDefault(); open(flat[0].id); }
+      else if ((event.key === 'n' || event.key === 'т') && !inSearch && opened) { event.preventDefault(); navigate.toProject(opened.id); }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [flat, openId, open, opened, navigate]);
+
   const refresh = async () => { try { await rpc.call('refresh', { projectId: null }); } catch (reason) { toast.error(String((reason as Error).message ?? reason)); } };
   const patch = (next: ProjectView) => setData(old => { const merged = old ? { ...old, projects: old.projects.map(project => project.id === next.id ? next : project) } : old; cached = merged; return merged; });
+  const setGroup = async (category: string, group: string) => {
+    if ((groupOf[category] ?? '') === group.trim()) return;
+    try { const result = await rpc.call('set_group', { category, group }); setData(old => { const merged = old ? { ...old, groups: result.groups } : old; cached = merged; return merged; }); }
+    catch (reason) { toast.error(String((reason as Error).message ?? reason)); }
+  };
   const is = (other: View) => viewKey(view) === viewKey(other);
+  const pick = (next: View) => setView(next);
   const title = view.kind === 'all' ? 'Все проекты' : view.kind === 'category' ? view.name : view.kind === 'machine' ? `На ${shortHost(data?.hosts.find(host => host.id === view.id)?.name ?? '')}`
     : view.name === 'attention' ? 'Несохранённая работа' : view.name === 'risk' ? 'Копии расходятся' : view.name === 'undescribed' ? 'Без описания' : 'Архив';
   const focusItems: { name: 'risk' | 'attention' | 'undescribed' | 'archive'; label: string; count: number; tone?: string }[] = [
-    { name: 'risk' as const, label: 'Копии расходятся', count: count.risk, tone: 'text-red-600 dark:text-red-400' },
-    { name: 'attention' as const, label: 'Несохранённая работа', count: count.attention, tone: 'text-amber-600 dark:text-amber-400' },
+    { name: 'risk' as const, label: 'Копии расходятся', count: count.risk, tone: 'font-medium text-red-600 dark:text-red-400' },
+    { name: 'attention' as const, label: 'Несохранённая работа', count: count.attention, tone: 'font-medium text-amber-600 dark:text-amber-400' },
     { name: 'undescribed' as const, label: 'Без описания', count: count.undescribed },
     { name: 'archive' as const, label: 'Архив', count: count.archive },
   ].filter(item => item.count > 0);
   const options: { key: string; label: string; view: View }[] = [
     { key: 'all', label: `Все проекты · ${live.length}`, view: { kind: 'all' } },
-    ...categories.map(([name, total]) => ({ key: `category:${name}`, label: `${name} · ${total}`, view: { kind: 'category', name } as View })),
+    ...sections.flatMap(section => section.items.map(([name, total]) => ({ key: `category:${name}`, label: `${section.name ? `${section.name} / ` : ''}${name} · ${total}`, view: { kind: 'category', name } as View }))),
     ...focusItems.map(item => ({ key: `focus:${item.name}`, label: `${item.label} · ${item.count}`, view: { kind: 'focus', name: item.name } as View })),
     ...(data?.hosts ?? []).map(host => ({ key: `machine:${host.id}`, label: `На ${shortHost(host.name)}`, view: { kind: 'machine', id: host.id } as View })),
   ];
-
   return <div className="relative flex h-full min-h-0">
-    <nav aria-label="Разделы каталога" className="hidden w-56 shrink-0 space-y-5 overflow-y-auto border-r border-border px-3 py-5 md:block">
-      <div className="space-y-0.5">
-        <NavItem label="Все проекты" count={live.length} active={is({ kind: 'all' })} onClick={() => setView({ kind: 'all' })}/>
-        {categories.map(([name, total]) => <NavItem key={name} label={name} count={total} active={is({ kind: 'category', name })} onClick={() => setView({ kind: 'category', name })}/>)}
+    <nav aria-label="Разделы каталога" className="hidden w-60 shrink-0 flex-col border-r border-border md:flex">
+      <div className="space-y-2 px-3 pb-3 pt-4">
+        <div className="relative">
+          <Icon name="Search" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-muted-foreground" aria-hidden="true"/>
+          <input type="search" aria-label="Фильтр разделов" value={navQuery} placeholder="Категория, группа, машина" onChange={event => setNavQuery(event.target.value)}
+            onKeyDown={event => { if (event.key === 'Escape') setNavQuery(''); }}
+            className="h-8 w-full rounded-md border border-input bg-background pl-8 pr-2 text-[13px] placeholder:text-muted-foreground/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"/>
+        </div>
+        {!navQuery.trim() && <NavItem label="Все проекты" count={matched ? matched.length : live.length} active={is({ kind: 'all' })} onClick={() => pick({ kind: 'all' })}/>}
       </div>
-      {focusItems.length > 0 && <div className="space-y-0.5">
-        <p className="px-2.5 pb-1 text-[11px] text-muted-foreground/70">Состояние</p>
-        {focusItems.map(item => <NavItem key={item.name} label={item.label} count={item.count} tone={item.tone} active={is({ kind: 'focus', name: item.name })} onClick={() => setView({ kind: 'focus', name: item.name })}/>)}
-      </div>}
-      {(data?.hosts.length ?? 0) > 1 && <div className="space-y-0.5">
-        <p className="px-2.5 pb-1 text-[11px] text-muted-foreground/70">Машины</p>
-        {data?.hosts.map(host => <NavItem key={host.id} label={shortHost(host.name)} count={live.filter(project => project.sources.some(source => source.hostId === host.id)).length} active={is({ kind: 'machine', id: host.id })} onClick={() => setView({ kind: 'machine', id: host.id })}/>)}
-      </div>}
+      <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 pb-4">
+        {sections.map((section, index) => {
+          const heading = section.name || (sections.length > 1 ? 'Прочее' : 'Категории');
+          const items = section.items.filter(([name]) => navMatch(name, section.name));
+          if (!items.length) return null;
+          return <NavSection key={section.name || 'rest'} title={heading}
+            action={index === 0 && !navQuery.trim() ? <button type="button" aria-pressed={grouping} onClick={() => setGrouping(old => !old)} className="cursor-pointer text-[11px] text-muted-foreground hover:text-foreground">{grouping ? 'Готово' : 'Группы'}</button> : undefined}>
+            {items.map(([name, total]) => { const shown = facet(project => categoriesOf(project).includes(name), total); return grouping && name !== NO_CATEGORY
+              ? <label key={name} className="flex h-8 items-center gap-2 px-2.5 text-[13px]"><span className="min-w-0 flex-1 truncate" title={name}>{name}</span>
+                  <input list="catalog-groups" aria-label={`Группа для «${name}»`} defaultValue={groupOf[name] ?? ''} placeholder="группа" className="h-6 w-24 rounded border border-input bg-background px-1.5 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+                    onBlur={event => void setGroup(name, event.target.value)} onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); }}/></label>
+              : <NavItem key={name} label={name} count={shown} dim={shown === 0} active={is({ kind: 'category', name })} onClick={() => pick({ kind: 'category', name })}/>; })}
+          </NavSection>;
+        })}
+        <datalist id="catalog-groups">{groupNames.map(name => <option key={name} value={name}/>)}</datalist>
+        {focusItems.some(item => navMatch(item.label, 'Состояние')) && <NavSection title="Состояние">
+          {focusItems.filter(item => navMatch(item.label, 'Состояние')).map(item => <NavItem key={item.name} label={item.label} count={item.count} tone={item.tone} active={is({ kind: 'focus', name: item.name })} onClick={() => pick({ kind: 'focus', name: item.name })}/>)}
+        </NavSection>}
+        {(data?.hosts.length ?? 0) > 1 && data!.hosts.some(host => navMatch(shortHost(host.name), host.name, 'Машины')) && <NavSection title="Машины">
+          {data!.hosts.filter(host => navMatch(shortHost(host.name), host.name, 'Машины')).map(host => { const shown = facet(project => project.sources.some(source => source.hostId === host.id), live.filter(project => project.sources.some(source => source.hostId === host.id)).length);
+            return <NavItem key={host.id} label={shortHost(host.name)} count={shown} dim={shown === 0} active={is({ kind: 'machine', id: host.id })} onClick={() => pick({ kind: 'machine', id: host.id })}/>; })}
+        </NavSection>}
+        {navQuery.trim() && <button type="button" className="w-full cursor-pointer px-2.5 pt-1 text-left text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground" onClick={() => setNavQuery('')}>Показать все разделы</button>}
+      </div>
+      <p className="flex items-center justify-between border-t border-border px-5 py-2.5 text-[11px] text-muted-foreground">
+        <span><kbd className="catalog-kbd">/</kbd>поиск</span><span><kbd className="catalog-kbd">↑↓</kbd>выбор</span><span><kbd className="catalog-kbd">N</kbd>тред</span>
+      </p>
     </nav>
     <div className="min-w-0 flex-1 overflow-y-auto">
       <div className="mx-auto max-w-3xl px-4 py-5 sm:px-6">
         <header className="flex items-center justify-between gap-3">
-          <h1 className="truncate text-lg font-semibold tracking-tight">{title}</h1>
+          <h1 className="truncate text-lg font-semibold tracking-tight">{title}<span className="ml-2 text-sm font-normal tabular-nums text-muted-foreground">{data ? visible.length : ''}</span></h1>
           <button type="button" disabled={!data || data.scanning} onClick={() => void refresh()} title="Проверить копии на машинах"
             className="inline-flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground disabled:cursor-default disabled:opacity-60">
-            <Icon name="RefreshCw" className={`size-3.5 ${data?.scanning ? 'catalog-spin' : ''}`} aria-hidden="true"/>{data?.scanning ? 'Проверяю машины…' : `Проверено ${ago(data?.scannedAt ?? null)}`}
+            <Icon name="RefreshCw" className={`size-3.5 ${data?.scanning ? 'catalog-spin' : ''}`} aria-hidden="true"/><span className="hidden sm:inline">{data?.scanning ? 'Проверяю машины…' : `Проверено ${ago(data?.scannedAt ?? null)}`}</span>
+            <span className="sm:hidden">{data?.scanning ? 'Проверяю…' : ago(data?.scannedAt ?? null).replace(' назад', '')}</span>
           </button>
         </header>
         {error && <p role="alert" className="mt-3 rounded-lg bg-destructive/10 px-3 py-2 text-sm text-destructive">{error}</p>}
         <div className="mt-4 flex gap-2">
           <div className="relative min-w-0 flex-1">
             <Icon name="Search" className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true"/>
-            <Input ref={searchRef} type="search" aria-label="Поиск по проектам" className="pl-9" value={query} placeholder="Найти проект" onChange={event => setQuery(event.target.value)}/>
+            <Input ref={searchRef} type="search" aria-label="Поиск по проектам" className="h-10 pl-9 md:h-9" value={query} placeholder={view.kind === 'all' ? 'Найти проект' : `Найти в разделе «${title}»`} onChange={event => setQuery(event.target.value)}/>
           </div>
-          <select aria-label="Раздел" className={`${selectClass} max-w-[45%] md:hidden`} value={viewKey(view)} onChange={event => setView(options.find(option => option.key === event.target.value)?.view ?? { kind: 'all' })}>
+          <select aria-label="Раздел" className={`${selectClass} h-10 w-[42%] shrink-0 md:hidden`} value={viewKey(view)} onChange={event => pick(options.find(option => option.key === event.target.value)?.view ?? { kind: 'all' })}>
             {options.map(option => <option key={option.key} value={option.key}>{option.label}</option>)}
           </select>
         </div>
+        {query.trim() && view.kind !== 'all' && matched && matched.length > visible.length && <p className="mt-2 text-xs text-muted-foreground">
+          В других разделах ещё {matched.length - visible.length}. <button type="button" className="cursor-pointer underline underline-offset-2 hover:text-foreground" onClick={() => pick({ kind: 'all' })}>Искать везде</button></p>}
         <div className="mt-4 space-y-6">
           {!data && !error && <ul className="space-y-1">{Array.from({ length: 10 }, (_, i) => <li key={i} className="catalog-skeleton h-[52px] rounded-lg bg-muted/40"/>)}</ul>}
           {data && !visible.length && <div className="px-2 py-16 text-center">
             <p className="text-sm">{query.trim() ? `По запросу «${query.trim()}» ничего не нашлось` : 'В этом разделе пусто'}</p>
-            <Button size="sm" variant="outline" className="mt-4" onClick={() => { setQuery(''); setView({ kind: 'all' }); }}>Показать все проекты</Button>
+            <Button size="sm" variant="outline" className="mt-4" onClick={() => { setQuery(''); pick({ kind: 'all' }); }}>Показать все проекты</Button>
           </div>}
           {groups.map(group => group.items.length > 0 && <section key={group.name || 'flat'}>
-            {group.name && <h2 className="px-2.5 pb-1 text-xs text-muted-foreground">{group.name}</h2>}
-            <ul>{group.items.map(project => <Row key={project.id} project={project} active={project.id === openId} onOpen={() => open(project.id)} onThread={() => navigate.toProject(project.id)}/>)}</ul>
+            {group.name && <h2 className="flex items-baseline gap-2 border-b border-border px-2.5 pb-1.5 text-xs font-medium text-muted-foreground">{group.name}<span className="tabular-nums opacity-70">{group.items.length}</span></h2>}
+            <ul className={group.name ? 'mt-1' : ''}>{group.items.map(project => <Row key={project.id} project={project} active={project.id === openId} onOpen={() => { setEditId(''); open(project.id); }} onEdit={() => { setEditId(project.id); open(project.id); }} onThread={() => navigate.toProject(project.id)}/>)}</ul>
           </section>)}
         </div>
       </div>
     </div>
-    {opened && <Detail key={opened.id} project={opened} categories={categories.map(([name]) => name).filter(name => name !== NO_CATEGORY)} scanning={data?.scanning ?? false} onClose={close} onSaved={patch}/>}
+    {opened && <Detail key={`${opened.id}:${editId === opened.id}`} startEditing={editId === opened.id} project={opened} categories={categories.map(([name]) => name).filter(name => name !== NO_CATEGORY)} scanning={data?.scanning ?? false} onClose={close} onSaved={patch}/>}
   </div>;
 }
 

@@ -1,0 +1,19 @@
+--- a/app.tsx
++++ b/app.tsx
+@@ -302,16 +302,6 @@
+             onClick={() => { setContext(null); onCloseAll(); }}>Close all</button>
+         </div>
+       )}
+-      {open.length > 1 ? (
+-        <button
+-          type="button"
+-          title="Close all workspaces"
+-          className="h-7 shrink-0 rounded-md px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground"
+-          onClick={onCloseAll}
+-        >
+-          Close all
+-        </button>
+-      ) : null}
+       <div className="relative shrink-0" ref={menuRef}>
+         <button
+           type="button"

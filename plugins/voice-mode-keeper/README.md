@@ -32,8 +32,9 @@ the patch is no longer needed), and otherwise applies the stored diff to a
 copy with `patch --fuzz=2` (moved lines, small nearby changes), builds it with
 the installed dependencies, then installs the files and reloads; a failed
 start restores the original files and bundle. Tests: `test_patch_keeper.py`
-(moved code with a nearby edit, shipped fix, misfit, failed start). The fixes
-were also sent upstream: notpritam/bb-plugin-inbox#3 and
+(moved code with a nearby edit, successive patches, shipped fix, misfit,
+failed start). KodaForge shows Close all only in the workspace tab context menu.
+The Needs You and Tokenomics fixes were sent upstream: notpritam/bb-plugin-inbox#3 and
 danielbachhuber/bb-plugins#100; once released, the keeper reports the patch as
 no longer needed.
 

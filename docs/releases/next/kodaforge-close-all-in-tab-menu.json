@@ -1,0 +1,13 @@
+{
+  "id": "kodaforge-close-all-in-tab-menu",
+  "title": "Close all в контекстном меню вкладки KodaForge",
+  "component": "kodaforge",
+  "where": "server",
+  "kind": "command",
+  "after": ["kodaforge-workspace-close"],
+  "applies": ["{python}", "scripts/updates.py", "require-plugin", "kodaforge"],
+  "apply": ["{python}", "scripts/kodaforge_workspace_tabs.py", "--apply"],
+  "verify": ["{python}", "scripts/kodaforge_workspace_tabs.py", "--check"],
+  "rerun": "Проверяет наличие патча в работающей каталожной версии KodaForge.",
+  "rollback": "Вернуть предыдущую версию Keeper и переустановить каталожный KodaForge, затем применить предыдущие патчи."
+}

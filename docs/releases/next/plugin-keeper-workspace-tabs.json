@@ -1,0 +1,10 @@
+{
+  "id": "plugin-keeper-workspace-tabs",
+  "title": "Plugin Keeper 0.2.5 для последовательных патчей вкладок",
+  "component": "voice-mode-keeper",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "voice-mode-keeper",
+  "rerun": "Сверяет версию и источник установленного Keeper.",
+  "rollback": "Вернуть предыдущую версию Keeper, собрать её и перезагрузить."
+}

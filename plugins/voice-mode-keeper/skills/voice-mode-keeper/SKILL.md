@@ -41,3 +41,8 @@ channel and accepts newer stable versions in range. It does not pin file hashes.
 Other kept plugins continue normally. Use `switch_to_fork.py --check` / `--apply`
 for the one-time migration; configured Voice Mode secrets cause a safe refusal.
 Subsequent fork updates use BB's Plugins updates or `bb plugin update voice-mode`.
+
+KodaForge workspace tab actions are staged after the base catalog fixes.
+Verify the live source with `python3 scripts/kodaforge_workspace_tabs.py --check`.
+Right-click a workspace tab to keep only that tab or close all workspaces.
+Close all appears only in the tab context menu.

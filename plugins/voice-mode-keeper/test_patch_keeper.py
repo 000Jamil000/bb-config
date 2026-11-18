@@ -49,7 +49,7 @@ class Fixture:
                          'rootDir': str(self.root), 'status': self.status}}
 
     def run(self, command, cwd=None, data=None):
-        if command[0] == 'patch':
+        if command[0] in ('patch', 'git'):
             result = keeper.subprocess.run(keeper.compat.argv(command), cwd=cwd, input=data.encode(), capture_output=True)
             if result.returncode:
                 raise RuntimeError('patch did not fit')
@@ -86,6 +86,41 @@ class PatchKeeperTest(unittest.TestCase):
         # A second run finds it in place and does nothing.
         self.assertIn('на месте', self.go(fixture)['message'])
         self.assertEqual(fixture.reloads, 1)
+
+    def test_new_overlay_uses_existing_base_and_ignores_old_receipt(self):
+        fixture = Fixture(ORIGINAL)
+        self.go(fixture)
+        base_spec = fixture.spec()
+        overlay = fixture.dir / 'second.patch'
+        overlay.write_text(PATCH.replace('-);', '-) ?? null;')
+                           .replace('+) ?? null;', '+) ?? 0;'))
+        spec = {**base_spec, 'overlays': [str(overlay)]}
+        fixture.spec = lambda: spec
+        self.assertEqual(self.go(fixture)['state'], 'ready')
+        self.assertEqual(fixture.reloads, 2)
+        self.assertIn(') ?? 0;', (fixture.root / 'server.ts').read_text())
+        (fixture.dir / 'state/demo-receipt.json').unlink()
+        self.assertEqual(self.go(fixture)['state'], 'ready')
+        self.assertEqual(fixture.reloads, 2)
+
+    def test_second_overlay_upgrades_an_installation_with_the_first(self):
+        fixture = Fixture(ORIGINAL)
+        base_spec = fixture.spec()
+        first = fixture.dir / 'first-overlay.patch'
+        first.write_text(PATCH.replace('-);', '-) ?? null;')
+                         .replace('+) ?? null;', '+) ?? 0;'))
+        second = fixture.dir / 'second-overlay.patch'
+        second.write_text(PATCH.replace('-);', '-) ?? 0;')
+                          .replace('+) ?? null;', '+) ?? 1;'))
+        fixture.spec = lambda: {**base_spec, 'overlays': [str(first)]}
+        self.assertEqual(self.go(fixture)['state'], 'ready')
+
+        fixture.spec = lambda: {**base_spec, 'overlays': [str(first), str(second)]}
+        self.assertEqual(self.go(fixture)['state'], 'ready')
+        self.assertIn(') ?? 1;', (fixture.root / 'server.ts').read_text())
+        (fixture.dir / 'state/demo-receipt.json').unlink()
+        self.assertEqual(self.go(fixture)['state'], 'ready')
+        self.assertEqual(fixture.reloads, 2)
 
     def test_fix_shipped_by_the_author_needs_no_patch(self):
         shipped = ORIGINAL.replace('  samples,\n);', '  samples,\n) ?? null; // upstream')

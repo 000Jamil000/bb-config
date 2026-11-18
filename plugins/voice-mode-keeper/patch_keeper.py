@@ -53,6 +53,8 @@ KEPT = {
         'source': 'git:https://github.com/Kodaks94/bb-plugin-kodaforge.git@',
         'patches': ['plugins/kodaforge-compat/editor.patch', 'plugins/kodaforge-compat/terminal.patch',
                     'plugins/kodaforge-compat/tabs.patch'],
+        'overlays': ['plugins/kodaforge-compat/workspace-close.patch',
+                     'plugins/kodaforge-compat/workspace-close-menu.patch'],
         'files': ['components/EditorGroup.tsx', 'components/TerminalPanel.tsx', 'app.tsx', 'server.ts'],
         # Shipped when the editor sets its own unicode highlighting, the terminal
         # no longer waits on the idle poll interval, and tabs can be closed at once.
@@ -107,6 +109,34 @@ def applied(folder, spec):
     return result.returncode == 0
 
 
+def missing_base(root, spec, text):
+    if spec['shipped'](text):
+        return []
+    return [name for name in spec['patches'] if not applied(root, {**spec, 'patches': [name]})]
+
+
+def pending_patches(root, spec, text):
+    """Unwind installed overlays before checking their prerequisites."""
+    overlays = spec.get('overlays', [])
+    if not overlays:
+        return missing_base(root, spec, text)
+
+    with tempfile.TemporaryDirectory(prefix='kept-overlays-') as directory:
+        base = Path(directory)
+        for name in spec['files']:
+            copy = base / name
+            copy.parent.mkdir(parents=True, exist_ok=True)
+            copy.write_bytes(unix_lines((root / name).read_bytes()))
+        missing = []
+        for overlay in reversed(overlays):
+            if applied(base, {**spec, 'patches': [overlay]}):
+                run(['git', 'apply', '--reverse', '-'], cwd=base, data=(REPO / overlay).read_text())
+            else:
+                missing.append(overlay)
+        original = {name: (base / name).read_text() for name in spec['files']}
+        return missing_base(base, spec, original) + list(reversed(missing))
+
+
 def keep(plugin_id, spec, installed):
     plugin = installed.get(plugin_id)
     status = {'plugin': plugin_id, 'name': spec['name'], 'version': (plugin or {}).get('version', '')}
@@ -119,12 +149,17 @@ def keep(plugin_id, spec, installed):
     receipt_path = STATE_DIR / f'{plugin_id}-receipt.json'
     hashes = {name: digest((root / name).read_bytes()) for name in spec['files']}
     # Applied by us earlier, possibly with fuzz: the exact result is recorded.
-    if receipt_path.exists() and json.loads(receipt_path.read_text()).get('hashes') == hashes:
+    overlays = spec.get('overlays', [])
+    patch_digest = digest(patch_text({'patches': spec['patches'] + overlays}).encode())
+    receipt = json.loads(receipt_path.read_text()) if receipt_path.exists() else {}
+    if receipt.get('hashes') == hashes and receipt.get('patchDigest') == patch_digest:
         return {**status, 'state': 'ready', 'message': f"Исправление {spec['name']} на месте."}
-    if spec['shipped'](text) and not applied(root, spec):
-        return {**status, 'state': 'ready', 'message': f"Исправление уже есть у автора {spec['name']}: патч больше не нужен."}
-    if applied(root, spec):
-        return {**status, 'state': 'ready', 'message': f"Исправление {spec['name']} на месте."}
+    pending = pending_patches(root, spec, text)
+    if not pending:
+        upstream = not overlays and spec['shipped'](text) and not applied(root, spec)
+        message = (f"Исправление уже есть у автора {spec['name']}: патч больше не нужен." if upstream
+                   else f"Исправление {spec['name']} на месте.")
+        return {**status, 'state': 'ready', 'message': message}
 
     before = {name: (root / name).read_bytes() for name in spec['files']}
     with tempfile.TemporaryDirectory(prefix=f'kept-{plugin_id}-') as directory:
@@ -144,7 +179,7 @@ def keep(plugin_id, spec, installed):
             # Lines may have moved and small things around them changed; the build
             # below decides whether the result still holds together.
             run(['patch', '--batch', '--silent', '--forward', '--no-backup-if-mismatch', '-p1', '--fuzz=2'],
-                cwd=stage, data=patch_text(spec))
+                cwd=stage, data=patch_text({'patches': pending}))
             run(['bb', 'plugin', 'build', str(stage)])
             for name in crlf:
                 (stage / name).write_bytes(unix_lines((stage / name).read_bytes()).replace(b'\n', b'\r\n'))
@@ -177,7 +212,7 @@ def keep(plugin_id, spec, installed):
         finally:
             shutil.rmtree(backup, ignore_errors=True)
     receipt_path.write_text(json.dumps({'hashes': {name: digest((root / name).read_bytes()) for name in spec['files']},
-                                        'version': plugin.get('version', '')}))
+                                        'version': plugin.get('version', ''), 'patchDigest': patch_digest}))
     return {**status, 'state': 'ready', 'message': f"Исправление {spec['name']} восстановлено после обновления."}
 
 

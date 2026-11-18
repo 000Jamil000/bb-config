@@ -430,60 +430,104 @@ function NavItem({ label, count, active, tone, dim, onClick }: { label: string; 
     <span className="truncate">{label}</span>{count !== undefined && <span className={`shrink-0 text-xs tabular-nums ${tone ?? 'text-muted-foreground'}`}>{count}</span>}
   </button>;
 }
-/** A titled block of the sidebar; blocks are separated by a hairline so the structure reads at a glance. */
-function NavSection({ title, count, active, onSelect, onRename, children }: { title: string; count?: number; active?: boolean; onSelect?: () => void; onRename?: (name: string) => void; children: ReactNode }) {
-  const [renaming, setRenaming] = useState(false);
-  const head = 'text-[11px] font-semibold uppercase tracking-wider';
-  return <section className="border-t border-border pt-3">
-    <div className="group/head relative flex h-7 items-center">
-      {renaming && onRename
-        ? <input autoFocus defaultValue={title} aria-label="Название группы" className="h-7 w-full rounded-md border border-input bg-background px-2.5 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-            onBlur={event => { setRenaming(false); const next = event.target.value.trim(); if (next && next !== title) onRename(next); }}
-            onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); if (event.key === 'Escape') setRenaming(false); }}/>
-        : onSelect
-          ? <button type="button" onClick={onSelect} aria-current={active ? 'true' : undefined} title="Все проекты группы"
-              className={`catalog-nav flex h-7 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${head} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
-              <span className="truncate">{title}</span>{count !== undefined && <span className={`shrink-0 tabular-nums font-normal normal-case tracking-normal ${onRename ? 'group-hover/head:invisible' : ''}`}>{count}</span>}
-            </button>
-          : <h2 className={`px-2.5 text-muted-foreground ${head}`}>{title}</h2>}
-      {onRename && !renaming && <button type="button" onClick={() => setRenaming(true)} aria-label={`Переименовать группу «${title}»`} data-tip="Переименовать группу"
-        className="catalog-hover-tool absolute right-1 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-background hover:text-foreground focus-visible:opacity-100 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring group-hover/head:opacity-100">
-        <Icon name="Pencil" className="size-3" aria-hidden="true"/></button>}
-    </div>
-    <div className="mt-0.5 space-y-0.5">{children}</div>
-  </section>;
+/** Pencil that fades in only after the pointer rests on a row, so passing over rows to pick a filter stays calm. */
+function EditTrigger({ label, open, onToggle }: { label: string; open: boolean; onToggle: () => void }) {
+  return <button type="button" onClick={event => { event.stopPropagation(); onToggle(); }} aria-label={label} aria-expanded={open} title={label}
+    className={`catalog-edit-trigger absolute right-8 top-1/2 flex size-6 -translate-y-1/2 cursor-pointer items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${open ? 'is-open' : ''}`}>
+    <Icon name="Pencil" className="size-3" aria-hidden="true"/>
+  </button>;
 }
-/** Categories are moved between groups by dragging them onto a group heading or into its list. */
-const DRAG_TYPE = 'application/x-catalog-category';
-function CategoryNavItem({ name, count, dim, active, onClick, onDrag }: { name: string; count: number; dim: boolean; active: boolean; onClick: () => void; onDrag: (name: string | null) => void }) {
-  const movable = name !== NO_CATEGORY;
-  return <div draggable={movable} title={movable ? `${name} · перетащите, чтобы перенести в другую группу` : undefined}
-    onDragStart={event => { event.dataTransfer.setData(DRAG_TYPE, name); event.dataTransfer.effectAllowed = 'move'; onDrag(name); }}
-    onDragEnd={() => onDrag(null)} className={movable ? 'catalog-draggable' : undefined}>
-    <NavItem label={name} count={count} dim={dim} active={active} onClick={onClick}/>
-  </div>;
-}
-function DropZone({ group, dragging, onDrop, children }: { group: string; dragging: string | null; onDrop: (category: string, group: string) => void; children: ReactNode }) {
-  const [over, setOver] = useState(false);
-  return <div className={`rounded-lg transition-colors ${dragging && over ? 'bg-muted/70 ring-1 ring-foreground/25' : ''}`}
-    onDragOver={event => { if (!dragging) return; event.preventDefault(); event.dataTransfer.dropEffect = 'move'; setOver(true); }}
-    onDragLeave={event => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setOver(false); }}
-    onDrop={event => { event.preventDefault(); setOver(false); const name = event.dataTransfer.getData(DRAG_TYPE); if (name) onDrop(name, group); }}>
+/** Small inline editor under a sidebar row: never clipped by the column, never covers the list. */
+function InlineEditor({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.stopPropagation(); onClose(); } };
+    document.addEventListener('keydown', onKey, true);
+    return () => document.removeEventListener('keydown', onKey, true);
+  }, [onClose]);
+  return <div className="catalog-pop mx-1 mb-2 mt-1 space-y-2.5 rounded-lg border border-border bg-background p-2.5 shadow-sm" role="group" aria-label={title}>
+    <p className="flex items-center justify-between text-[11px] text-muted-foreground">{title}
+      <button type="button" onClick={onClose} aria-label="Закрыть" className="flex size-5 cursor-pointer items-center justify-center rounded hover:bg-muted hover:text-foreground"><Icon name="X" className="size-3" aria-hidden="true"/></button></p>
     {children}
   </div>;
 }
-function NewGroupZone({ dragging, onDrop }: { dragging: string | null; onDrop: (category: string, group: string) => void }) {
-  const [pending, setPending] = useState<string | null>(null);
-  const [over, setOver] = useState(false);
-  if (pending) return <input autoFocus aria-label={`Новая группа для «${pending}»`} placeholder={`Новая группа для «${pending}»`}
-    className="h-8 w-full rounded-md border border-input bg-background px-2.5 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-    onBlur={event => { const name = event.target.value.trim(); if (name) onDrop(pending, name); setPending(null); }}
-    onKeyDown={event => { if (event.key === 'Enter') (event.target as HTMLInputElement).blur(); if (event.key === 'Escape') setPending(null); }}/>;
-  if (!dragging) return null;
-  return <div onDragOver={event => { event.preventDefault(); setOver(true); }} onDragLeave={() => setOver(false)}
-    onDrop={event => { event.preventDefault(); setOver(false); const name = event.dataTransfer.getData(DRAG_TYPE); if (name) setPending(name); }}
-    className={`flex h-9 items-center justify-center gap-1.5 rounded-lg border border-dashed text-xs transition-colors ${over ? 'border-foreground/50 bg-muted text-foreground' : 'border-border text-muted-foreground'}`}>
-    <Icon name="Plus" className="size-3.5" aria-hidden="true"/>Новая группа
+const miniInput = 'h-7 w-full rounded-md border border-input bg-background px-2 text-[13px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring';
+const miniChip = (on: boolean) => `inline-flex h-6 cursor-pointer items-center gap-1 rounded-full border px-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${on ? 'border-foreground bg-foreground text-background' : 'border-border text-muted-foreground hover:border-foreground/40 hover:text-foreground'}`;
+
+function CategoryEditor({ name, group, groups, onSave, onClose }: { name: string; group: string; groups: string[]; onSave: (next: { name: string; group: string }) => Promise<void>; onClose: () => void }) {
+  const [title, setTitle] = useState(name);
+  const [target, setTarget] = useState(group);
+  const [adding, setAdding] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const save = async () => { setBusy(true); try { await onSave({ name: title.trim() || name, group: target.trim() }); onClose(); } catch { /* reported by onSave */ } finally { setBusy(false); } };
+  return <InlineEditor title="Категория" onClose={onClose}>
+    <input autoFocus className={miniInput} value={title} aria-label="Название категории" onChange={event => setTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void save(); }}/>
+    <div className="space-y-1.5">
+      <p className="text-[11px] text-muted-foreground">Группа</p>
+      <div className="flex flex-wrap gap-1">
+        {groups.map(item => <button key={item} type="button" aria-pressed={target === item} onClick={() => { setTarget(item); setAdding(false); }} className={miniChip(target === item)}>{item}</button>)}
+        <button type="button" aria-pressed={target === '' && !adding} onClick={() => { setTarget(''); setAdding(false); }} className={miniChip(target === '' && !adding)}>Без группы</button>
+        {adding
+          ? <input autoFocus className="h-6 w-28 rounded-full border border-input bg-background px-2 text-xs focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring" placeholder="Новая группа" aria-label="Новая группа"
+              onChange={event => setTarget(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void save(); }}/>
+          : <button type="button" onClick={() => { setAdding(true); setTarget(''); }} className={`${miniChip(false)} border-dashed`}><Icon name="Plus" className="size-3" aria-hidden="true"/>новая</button>}
+      </div>
+    </div>
+    <div className="flex justify-end gap-1.5 pt-0.5">
+      <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onClose}>Отмена</Button>
+      <Button size="sm" className="h-7 px-2.5" disabled={busy || (title.trim() === name && target.trim() === group)} onClick={() => void save()}>{busy ? 'Сохраняю…' : 'Сохранить'}</Button>
+    </div>
+  </InlineEditor>;
+}
+
+function GroupEditor({ name, size, onRename, onDelete, onClose }: { name: string; size: number; onRename: (next: string) => Promise<void>; onDelete: () => Promise<void>; onClose: () => void }) {
+  const [title, setTitle] = useState(name);
+  const [confirm, setConfirm] = useState(false);
+  const save = async () => { if (title.trim() && title.trim() !== name) await onRename(title.trim()); onClose(); };
+  return <InlineEditor title="Группа" onClose={onClose}>
+    <input autoFocus className={miniInput} value={title} aria-label="Название группы" onChange={event => setTitle(event.target.value)} onKeyDown={event => { if (event.key === 'Enter') void save(); }}/>
+    {confirm
+      ? <div className="space-y-2 rounded-md bg-destructive/10 p-2 text-xs">
+          <p>Удалить группу? {size === 1 ? 'Её категория останется' : `Её ${size} категории останутся`} в «Прочем».</p>
+          <div className="flex justify-end gap-1.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={() => setConfirm(false)}>Нет</Button>
+            <Button size="sm" variant="destructive" className="h-7 px-2.5" onClick={() => void onDelete().then(onClose)}>Удалить</Button>
+          </div>
+        </div>
+      : <>
+          <div className="flex justify-end gap-1.5">
+            <Button size="sm" variant="ghost" className="h-7 px-2.5" onClick={onClose}>Отмена</Button>
+            <Button size="sm" className="h-7 px-2.5" disabled={!title.trim() || title.trim() === name} onClick={() => void save()}>Сохранить</Button>
+          </div>
+          <button type="button" onClick={() => setConfirm(true)} className="flex w-full cursor-pointer items-center gap-1.5 border-t border-border pt-2 text-xs text-muted-foreground hover:text-destructive">
+            <Icon name="Trash" className="size-3" aria-hidden="true"/>Удалить группу</button>
+        </>}
+  </InlineEditor>;
+}
+
+/** A titled block of the sidebar; blocks are separated by a hairline so the structure reads at a glance. */
+function NavSection({ title, count, active, onSelect, editor, children }: { title: string; count?: number; active?: boolean; onSelect?: () => void; editor?: { open: boolean; toggle: () => void; panel: ReactNode }; children: ReactNode }) {
+  const head = 'text-[11px] font-semibold uppercase tracking-wider';
+  return <section className="border-t border-border pt-3">
+    <div className="catalog-navrow relative">
+      {onSelect
+        ? <button type="button" onClick={onSelect} aria-current={active ? 'true' : undefined} title="Все проекты группы"
+            className={`catalog-nav flex h-7 w-full cursor-pointer items-center justify-between gap-2 rounded-md px-2.5 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${head} ${active ? 'bg-muted text-foreground' : 'text-muted-foreground hover:bg-muted/60 hover:text-foreground'}`}>
+            <span className="truncate">{title}</span>{count !== undefined && <span className="shrink-0 font-normal normal-case tabular-nums tracking-normal">{count}</span>}
+          </button>
+        : <h2 className={`flex h-7 items-center px-2.5 text-muted-foreground ${head}`}>{title}</h2>}
+      {editor && <EditTrigger label={`Изменить группу «${title}»`} open={editor.open} onToggle={editor.toggle}/>}
+    </div>
+    {editor?.open && editor.panel}
+    <div className="mt-0.5 space-y-0.5">{children}</div>
+  </section>;
+}
+function CategoryNavItem({ name, count, dim, active, onClick, editor }: { name: string; count: number; dim: boolean; active: boolean; onClick: () => void; editor?: { open: boolean; toggle: () => void; panel: ReactNode } }) {
+  return <div>
+    <div className="catalog-navrow relative">
+      <NavItem label={name} count={count} dim={dim} active={active} onClick={onClick}/>
+      {editor && <EditTrigger label={`Изменить категорию «${name}»`} open={editor.open} onToggle={editor.toggle}/>}
+    </div>
+    {editor?.open && editor.panel}
   </div>;
 }
 
@@ -495,7 +539,7 @@ function CatalogPage({ subPath }: { subPath: string }) {
   const [query, setQuery] = useState('');
   const [view, setView] = useState<View>({ kind: 'all' });
   const [navQuery, setNavQuery] = useState('');
-  const [dragging, setDragging] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
   const [editId, setEditId] = useState('');
   const searchRef = useRef<HTMLInputElement>(null);
   const load = useCallback(async () => {
@@ -590,10 +634,21 @@ function CatalogPage({ subPath }: { subPath: string }) {
     try { const result = await rpc.call('set_group', { category, group }); setData(old => { const merged = old ? { ...old, groups: result.groups } : old; cached = merged; return merged; }); }
     catch (reason) { toast.error(String((reason as Error).message ?? reason)); }
   };
+  const applyGroups = (groups: Record<string, string>) => setData(old => { const merged = old ? { ...old, groups } : old; cached = merged; return merged; });
   const renameGroup = async (from: string, to: string) => {
-    for (const [category, group] of Object.entries(groupOf)) if (group === from) await setGroup(category, to);
-    if (view.kind === 'group' && view.name === from) setView({ kind: 'group', name: to });
+    try { applyGroups((await rpc.call('rename_group', { from, to })).groups); } catch (reason) { toast.error(String((reason as Error).message ?? reason)); return; }
+    if (view.kind === 'group' && view.name === from) setView(to ? { kind: 'group', name: to } : { kind: 'all' });
   };
+  const saveCategory = async (from: string, next: { name: string; group: string }) => {
+    try {
+      let name = from;
+      if (next.name !== from) { const result = await rpc.call('rename_category', { from, to: next.name }); applyGroups(result.groups); name = next.name; await load(); }
+      if ((groupOf[from] ?? '') !== next.group || name !== from) await setGroup(name, next.group);
+      if (view.kind === 'category' && view.name === from) setView({ kind: 'category', name });
+    } catch (reason) { toast.error(String((reason as Error).message ?? reason)); throw reason; }
+  };
+  const groupNames = [...new Set(Object.values(groupOf))].sort((x, y) => x.localeCompare(y));
+  const toggleEditor = (key: string) => setEditing(old => old === key ? null : key);
   const is = (other: View) => viewKey(view) === viewKey(other);
   const pick = (next: View) => setView(next);
   const resetAll = () => { setView({ kind: 'all' }); setQuery(''); setNavQuery(''); };
@@ -639,15 +694,17 @@ function CatalogPage({ subPath }: { subPath: string }) {
           if (!items.length) return null;
           const inGroup = (project: ProjectView) => categoriesOf(project).some(name => (groupOf[name] ?? '') === section.name);
           const total = facet(inGroup, live.filter(inGroup).length);
-          return <DropZone key={section.name || 'rest'} group={section.name} dragging={dragging} onDrop={(category, group) => { setDragging(null); void setGroup(category, group); }}><NavSection title={heading} count={sections.length > 1 ? total : undefined}
+          const groupKey = `group:${section.name}`;
+          return <NavSection key={section.name || 'rest'} title={heading} count={sections.length > 1 ? total : undefined}
             active={is({ kind: 'group', name: section.name })} onSelect={sections.length > 1 ? () => pick({ kind: 'group', name: section.name }) : undefined}
-            onRename={section.name ? next => void renameGroup(section.name, next) : undefined}>
-            {items.map(([name, count]) => { const shown = facet(project => categoriesOf(project).includes(name), count);
-              return <CategoryNavItem key={name} name={name} count={shown} dim={shown === 0} active={is({ kind: 'category', name })}
-                onClick={() => pick({ kind: 'category', name })} onDrag={setDragging}/>; })}
-          </NavSection></DropZone>;
+            editor={section.name ? { open: editing === groupKey, toggle: () => toggleEditor(groupKey), panel: <GroupEditor name={section.name} size={section.items.length}
+              onRename={next => renameGroup(section.name, next)} onDelete={() => renameGroup(section.name, '')} onClose={() => setEditing(null)}/> } : undefined}>
+            {items.map(([name, count]) => { const shown = facet(project => categoriesOf(project).includes(name), count); const key = `category:${name}`;
+              return <CategoryNavItem key={name} name={name} count={shown} dim={shown === 0} active={is({ kind: 'category', name })} onClick={() => pick({ kind: 'category', name })}
+                editor={name !== NO_CATEGORY ? { open: editing === key, toggle: () => toggleEditor(key), panel: <CategoryEditor name={name} group={groupOf[name] ?? ''} groups={groupNames}
+                  onSave={next => saveCategory(name, next)} onClose={() => setEditing(null)}/> } : undefined}/>; })}
+          </NavSection>;
         })}
-        <NewGroupZone dragging={dragging} onDrop={(category, group) => { setDragging(null); void setGroup(category, group); }}/>
         {focusItems.some(item => navMatch(item.label, 'Состояние')) && <NavSection title="Состояние">
           {focusItems.filter(item => navMatch(item.label, 'Состояние')).map(item => <NavItem key={item.name} label={item.label} count={item.count} tone={item.tone} active={is({ kind: 'focus', name: item.name })} onClick={() => pick({ kind: 'focus', name: item.name })}/>)}
         </NavSection>}

@@ -6,6 +6,7 @@ const PATHS: Record<string, string> = {
   X: 'M18 6L6 18M6 6l12 12',
   Plus: 'M12 5v14M5 12h14',
   Check: 'M20 6L9 17l-5-5',
+  Trash: 'M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6',
   FolderInput: 'M2 9V5a2 2 0 0 1 2-2h4l2 3h8a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2v-1M2 13h10M9 10l3 3-3 3',
   Pencil: 'M17 3a2.8 2.8 0 0 1 4 4L7.5 20.5 2 22l1.5-5.5zM15 5l4 4',
   MessageSquare: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z',

@@ -1,6 +1,6 @@
 {
   "id": "plugin-project-catalog-0-3",
-  "title": "Project Catalog 0.3.2: группы категорий, несколько категорий у проекта, треды и быстрые действия",
+  "title": "Project Catalog 0.3.3: группы категорий, несколько категорий у проекта, треды и быстрые действия",
   "component": "project-catalog",
   "where": "server",
   "kind": "local-plugin",

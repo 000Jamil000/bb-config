@@ -15,9 +15,10 @@ machine, agent and the tab read the same cards.
   inline editing, per-machine state and the list of differing files.
 - **Categories.** A project can sit in up to four categories (comma-separated;
   the first is primary). Categories can be arranged into named groups, shown as
-  separate blocks of the sidebar. A group heading filters the whole group;
-  hover it to rename. Drag a category onto another group to move it, or onto
-  **Новая группа**, which appears while dragging.
+  separate blocks of the sidebar. A group heading filters the whole group.
+  Resting the pointer on a category or group for a moment shows a pencil; it
+  opens a small editor in place: rename a category and choose or create its
+  group, or rename and delete a group (its categories stay, ungrouped).
 - **Quick actions.** In a row, on hover, overlaid on its right edge without
   reserving width: recent threads of the project (hover or click), edit, new
   thread. Hidden on touch screens; the panel has the same actions.

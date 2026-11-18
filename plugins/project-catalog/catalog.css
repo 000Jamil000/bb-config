@@ -71,5 +71,10 @@
 [data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: none; transition-delay: 450ms; }
 @media (hover: none) { [data-tip]::after { display: none; } }
 @media (prefers-reduced-motion: reduce) { [data-tip]::after { transition: none; } }
-.catalog-draggable { cursor: grab; }
-.catalog-draggable:active { cursor: grabbing; }
+/* Edit pencils wait for the pointer to rest on a row (0.6 s) and sit left of the count, which stays visible. */
+.catalog-edit-trigger { background: color-mix(in srgb, var(--muted) 60%, var(--background)); opacity: 0; pointer-events: none; transition: opacity 120ms ease; transition-delay: 0s; }
+.catalog-navrow:hover .catalog-edit-trigger { opacity: 1; pointer-events: auto; transition-delay: 600ms; }
+.catalog-edit-trigger:focus-visible, .catalog-edit-trigger.is-open { opacity: 1; pointer-events: auto; transition-delay: 0s; }
+@media (hover: none) { .catalog-edit-trigger { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .catalog-edit-trigger { transition: none; } }
+.catalog-edit-trigger:hover { background: var(--background); }

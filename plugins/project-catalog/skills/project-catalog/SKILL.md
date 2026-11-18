@@ -24,6 +24,8 @@ bb catalog list --machine Tru --attention
 bb catalog show <id|name|alias>     # full card; defaults to the current thread's project
 bb catalog categories              # with the sidebar group of each
 bb catalog group "Продукты" "Работа" # put a category into a group; omit the group to remove it
+bb catalog rename-category "Старое" "Новое"   # in every card; the group follows
+bb catalog rename-group "Работа" "Клиенты"   # omit the new name to delete the group
 ```
 
 A project may have up to four categories: pass them comma-separated to

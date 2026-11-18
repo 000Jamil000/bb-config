@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { applyAuto, applyManual, diffManifests, emptyEntry, hydrate, needsDescription, REDESCRIBE_AFTER_MS, search, unlock, verdict, type Scan, type SourceView } from '../core';
+import { applyAuto, applyManual, diffManifests, emptyEntry, hydrate, needsDescription, renameCategory, REDESCRIBE_AFTER_MS, search, unlock, verdict, type Scan, type SourceView } from '../core';
 
 const doc = (id: string, name: string, extra: Partial<{ aliases: string[]; category: string; tags: string[]; summary: string; notes: string }> = {}) =>
   ({ id, name, aliases: [], category: '', tags: [], summary: '', notes: '', paths: [], ...extra });
@@ -121,4 +121,11 @@ test('a project can sit in several categories; the first is primary', () => {
   const manual = applyManual(auto, { category: 'Личное' }, 3);
   assert.deepEqual([manual.categories, manual.locked], [['Личное'], ['category']]);
   assert.deepEqual(hydrate({ category: 'Старое' }).categories, ['Старое']);
+});
+
+test('renaming a category keeps its position and merges duplicates', () => {
+  const entry = applyAuto(emptyEntry(), { category: 'Личное, Ислам' }, null, 1).entry;
+  assert.deepEqual(renameCategory(entry, 'Ислам', 'Вера', 2)?.categories, ['Личное', 'Вера']);
+  assert.deepEqual(renameCategory(entry, 'Ислам', 'Личное', 2)?.categories, ['Личное']);
+  assert.equal(renameCategory(entry, 'Нет такой', 'X', 2), null);
 });

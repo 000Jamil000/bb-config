@@ -2,7 +2,7 @@ import { PluginCliError, cliCommand, defineCli, type BbPluginApi } from '@get-bb
 import { z } from 'zod';
 import { hostContract, rpcContract, type Catalog, type ProjectView } from './contract';
 import {
-  AUTO_FIELDS, applyAuto, applyManual, diffManifests, emptyEntry, hydrate, needsDescription, search, unlock, verdict,
+  AUTO_FIELDS, applyAuto, applyManual, diffManifests, emptyEntry, hydrate, renameCategory, needsDescription, search, unlock, verdict,
   type AutoField, type CopyDiff, type Entry, type Link, type Manifest, type Patch, type Scan, type SourceView, type Status,
 } from './core';
 
@@ -181,6 +181,32 @@ export default function projectCatalog(bb: BbPluginApi) {
     bb.realtime.publish('changed', { groups: true });
   }
 
+  /** Rename a category in every card and carry its group over. */
+  async function renameCategoryEverywhere(from: string, rawTo: string) {
+    await ready;
+    const to = rawTo.replace(/\s+/g, ' ').trim().slice(0, 40);
+    if (!to || to === from) return 0;
+    let changed = 0;
+    for (const [projectId, stored] of entries) {
+      const next = renameCategory(hydrate(stored), from, to, Date.now());
+      if (!next) continue;
+      entries.set(projectId, next);
+      await bb.storage.kv.set(`p:${projectId}`, next);
+      changed++;
+    }
+    if (groups[from]) { const group = groups[from]!; groups = { ...groups }; delete groups[from]; if (!groups[to]) groups[to] = group; await bb.storage.kv.set('meta:groups', groups); }
+    bb.realtime.publish('changed', { categories: true });
+    return changed;
+  }
+  /** Rename a group, or delete it with an empty name: its categories become ungrouped. */
+  async function renameGroupEverywhere(from: string, rawTo: string) {
+    await ready;
+    const to = rawTo.replace(/\s+/g, ' ').trim().slice(0, 40);
+    groups = Object.fromEntries(Object.entries(groups).flatMap(([category, group]) => group !== from ? [[category, group]] : to ? [[category, to]] : []));
+    await bb.storage.kv.set('meta:groups', groups);
+    bb.realtime.publish('changed', { groups: true });
+  }
+
   bb.rpc.register(rpcContract, {
     async catalog() {
       const { list, hosts } = await views();
@@ -202,6 +228,14 @@ export default function projectCatalog(bb: BbPluginApi) {
       if (scanning) return { started: false };
       scanInBackground(projectId);
       return { started: true };
+    },
+    async rename_category({ from, to }) {
+      const changed = await renameCategoryEverywhere(from, to);
+      return { changed, groups };
+    },
+    async rename_group({ from, to }) {
+      await renameGroupEverywhere(from, to);
+      return { groups };
     },
     async set_group({ category, group }) {
       await ready;
@@ -410,6 +444,22 @@ export default function projectCatalog(bb: BbPluginApi) {
           await ready;
           await setGroup(input.positionals.category, input.positionals.group ?? '');
           return text(input.positionals.group ? `Категория «${input.positionals.category}» в группе «${input.positionals.group}»` : `Категория «${input.positionals.category}» без группы`);
+        },
+      }),
+      'rename-category': cliCommand({
+        summary: 'Переименовать категорию во всех карточках (группа переносится)',
+        positionals: [{ name: 'from', description: 'Текущее название', required: true }, { name: 'to', description: 'Новое название', required: true }],
+        async run(input) {
+          const changed = await renameCategoryEverywhere(input.positionals.from, input.positionals.to);
+          return text(`Переименовано в ${changed} карточках`);
+        },
+      }),
+      'rename-group': cliCommand({
+        summary: 'Переименовать группу категорий; пустое новое имя удаляет группу, категории остаются',
+        positionals: [{ name: 'from', description: 'Текущее название группы', required: true }, { name: 'to', description: 'Новое название; не указывать, чтобы удалить группу' }],
+        async run(input) {
+          await renameGroupEverywhere(input.positionals.from, input.positionals.to ?? '');
+          return text(input.positionals.to ? `Группа переименована в «${input.positionals.to}»` : `Группа «${input.positionals.from}» удалена, её категории без группы`);
         },
       }),
       categories: cliCommand({

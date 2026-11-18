@@ -66,6 +66,8 @@ export const rpcContract = defineRpcContract({
   save: { input: z.object({ projectId: z.string(), patch: patchSchema }).strict(), output: projectView },
   unlock: { input: z.object({ projectId: z.string(), fields: z.array(autoField) }).strict(), output: projectView },
   refresh: { input: z.object({ projectId: z.string().nullable() }).strict(), output: z.object({ started: z.boolean() }) },
+  rename_category: { input: z.object({ from: z.string().min(1).max(60), to: z.string().min(1).max(40) }).strict(), output: z.object({ changed: z.number(), groups: z.record(z.string(), z.string()) }) },
+  rename_group: { input: z.object({ from: z.string().min(1).max(40), to: z.string().max(40) }).strict(), output: z.object({ groups: z.record(z.string(), z.string()) }) },
   set_group: { input: z.object({ category: z.string().min(1).max(60), group: z.string().max(40) }).strict(), output: z.object({ groups: z.record(z.string(), z.string()) }) },
   threads: {
     input: z.object({ projectId: z.string() }).strict(),

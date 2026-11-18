@@ -59,6 +59,13 @@ function cleanLinks(links: Link[]) {
 export function splitCategories(text: string) {
   return cleanList(text.split(','), 4).map(item => item.slice(0, 40));
 }
+/** Rename one category inside an entry; the order is kept and a duplicate collapses. */
+export function renameCategory(entry: Entry, from: string, to: string, now: number): Entry | null {
+  const list = entry.categories.length ? entry.categories : entry.category ? [entry.category] : [];
+  if (!list.includes(from)) return null;
+  const categories = cleanList(list.map(name => name === from ? to : name), 4);
+  return { ...entry, categories, category: categories[0] ?? '', updatedAt: now };
+}
 /** Entries saved before multi-category support carry only `category`. */
 export function hydrate(stored: Partial<Entry> | undefined): Entry {
   const entry = { ...emptyEntry(), ...stored };

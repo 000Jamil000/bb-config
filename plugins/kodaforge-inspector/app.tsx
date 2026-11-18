@@ -35,13 +35,26 @@ function Inspector() {
   const [reopened, setReopened] = useState(false);
   const [postponed, setPostponed] = useState(false);
   const load = useCallback(() => {
-    rpc.call("config", null).then(
-      (config) => setLayout(config.layout),
+    if (!threadId) return;
+    let current = true;
+    rpc.call("config", { threadId }).then(
+      (config) => {
+        if (current) setLayout(config.layout);
+      },
       () => {},
     );
-  }, [rpc]);
-  useEffect(load, [load]);
-  useRealtime("layout", load);
+    return () => {
+      current = false;
+    };
+  }, [rpc, threadId]);
+  // Another project may have another choice: nothing carries over between threads.
+  useEffect(() => {
+    setLayout(null);
+    setReopened(false);
+    setPostponed(false);
+    return load();
+  }, [load]);
+  useRealtime("layout", () => void load());
   if (!threadId || layout === null) return null;
   const asking = reopened || (layout === "ask" && !postponed);
   return (
@@ -61,8 +74,12 @@ function Inspector() {
             setReopened(false);
             setPostponed(true);
           }}
-          onChoose={async (next) => {
-            const saved = await rpc.call("choose", { layout: next });
+          onChoose={async (next, scope) => {
+            const saved = await rpc.call("choose", {
+              threadId,
+              layout: next,
+              scope,
+            });
             setLayout(saved.layout);
             setReopened(false);
           }}
@@ -134,12 +151,20 @@ export function Chooser({
   current: Choice;
   first: boolean;
   onClose: () => void;
-  onChoose: (next: Choice) => Promise<void>;
+  onChoose: (next: Choice, scope: "project" | "all") => Promise<void>;
 }) {
   const [selected, setSelected] = useState<Choice>(current);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const apply = useRef<HTMLButtonElement>(null);
+  const save = (scope: "project" | "all") => {
+    setBusy(true);
+    setError("");
+    onChoose(selected, scope).catch(() => {
+      setError("Не удалось сохранить выбор. Повторите.");
+      setBusy(false);
+    });
+  };
   const close = useRef(onClose);
   close.current = onClose;
   useEffect(() => {
@@ -168,8 +193,9 @@ export function Chooser({
       >
         <h2 id="kfi-chooser-title">Как показывать диалог в редакторе?</h2>
         <p>
-          Выбор действует для всех диалогов. Изменить его можно кнопкой «Вид…»
-          или в настройках KodaForge Inspector.
+          «Применить» сохраняет выбор для этого проекта, «Сохранить для всех» —
+          для всех проектов сразу. Изменить его можно кнопкой «Вид…» или в
+          настройках KodaForge Inspector.
         </p>
         <div className="kfi-options" role="radiogroup" aria-label="Вид редактора">
           {OPTIONS.map((option) => (
@@ -193,19 +219,15 @@ export function Chooser({
           <button type="button" onClick={onClose} disabled={busy}>
             {first ? "Позже" : "Отмена"}
           </button>
+          <button type="button" disabled={busy} onClick={() => save("all")}>
+            Сохранить для всех
+          </button>
           <button
             ref={apply}
             type="button"
             className="kfi-primary"
             disabled={busy}
-            onClick={() => {
-              setBusy(true);
-              setError("");
-              onChoose(selected).catch(() => {
-                setError("Не удалось сохранить выбор. Повторите.");
-                setBusy(false);
-              });
-            }}
+            onClick={() => save("project")}
           >
             Применить
           </button>

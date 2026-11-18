@@ -13,6 +13,11 @@ export type Layout = (typeof LAYOUTS)[number];
 export function layoutOf(value: unknown): Layout {
   return (LAYOUTS as readonly unknown[]).includes(value) ? (value as Layout) : "ask";
 }
+/** A project's own choice wins; otherwise the choice saved for all; otherwise ask. */
+export function effectiveLayout(project: unknown, everywhere: unknown): Layout {
+  const own = layoutOf(project);
+  return own === "ask" ? layoutOf(everywhere) : own;
+}
 export const UPSTREAM =
   "git:https://github.com/Kodaks94/bb-plugin-kodaforge.git@semver:>=0.7.0 <1.0.0";
 export type Inspection = {
@@ -119,7 +124,8 @@ export const CSS = `
 .kfi-option svg { width:100%; height:auto; border-radius:6px; border:1px solid var(--border); color:var(--foreground); }
 .kfi-option b { font-weight:600; }
 .kfi-option span { color:var(--muted-foreground); font-size:12px; line-height:1.4; }
-.kfi-actions { display:flex; justify-content:flex-end; gap:8px; }
+.kfi-actions { display:flex; flex-wrap:wrap; justify-content:flex-end; gap:8px; }
+.kfi-actions button:first-child { margin-right:auto; }
 .kfi-actions button { padding:6px 12px; border-radius:6px; border:1px solid var(--border); background:transparent; color:inherit; cursor:pointer; }
 .kfi-actions button.kfi-primary { background:var(--foreground); color:var(--background); border-color:var(--foreground); }
 .kfi-warning { position:fixed; bottom:40px; right:20px; max-width:420px; z-index:999; background:var(--background); color:var(--foreground); border:1px solid var(--border); border-radius:8px; padding:12px; box-shadow:0 4px 20px #0002; font-size:13px; }

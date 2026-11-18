@@ -2,16 +2,23 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { LAYOUTS, UPSTREAM, layoutOf } from "./inspector";
+import { LAYOUTS, UPSTREAM, effectiveLayout, layoutOf } from "./inspector";
 const report = z.object({
   state: z.enum(["compatible", "incompatible", "waiting"]),
   reason: z.string().max(300),
 });
 const layout = z.enum(LAYOUTS);
 export const rpcContract = defineRpcContract({
-  config: { input: z.null(), output: z.object({ layout }) },
+  config: {
+    input: z.object({ threadId: z.string().min(1) }),
+    output: z.object({ layout }),
+  },
   choose: {
-    input: z.object({ layout }),
+    input: z.object({
+      threadId: z.string().min(1),
+      layout: z.enum(["native", "center"]),
+      scope: z.enum(["project", "all"]),
+    }),
     output: z.object({ layout }),
   },
   report: { input: report, output: z.object({ ok: z.boolean() }) },
@@ -20,9 +27,9 @@ export default function plugin(bb: BbPluginApi) {
   const settings = bb.settings.define({
     layout: {
       type: "select",
-      label: "Вид редактора диалога в KodaForge",
+      label: "Вид редактора диалога в KodaForge для всех проектов",
       description:
-        "«Спросить» показывает выбор с примерами при следующем открытии редактора диалога. До выбора действует штатный вид.",
+        "Действует в проектах без собственного выбора. «Спросить» показывает выбор с примерами при первом открытии редактора в каждом проекте; до выбора вид штатный. Кнопка «Сохранить для всех» в окне выбора записывает значение сюда и сбрасывает выбор отдельных проектов.",
       options: [...LAYOUTS],
       experimental_optionLabels: {
         ask: "Спросить при открытии",
@@ -32,12 +39,28 @@ export default function plugin(bb: BbPluginApi) {
       default: "ask",
     },
   });
+  const PROJECT_KEY = "project-layout:";
+  async function resolve(threadId: string) {
+    const { projectId } = await bb.sdk.threads.get({ threadId });
+    return effectiveLayout(
+      await bb.storage.kv.get(PROJECT_KEY + projectId),
+      (await settings.get()).layout,
+    );
+  }
   bb.rpc.register(rpcContract, {
-    config: async () => ({ layout: layoutOf((await settings.get()).layout) }),
+    config: async ({ threadId }) => ({ layout: await resolve(threadId) }),
     choose: async (value) => {
-      const next = await settings.experimental_set({ layout: value.layout });
+      if (value.scope === "all") {
+        // For all: one stored value, and no project keeps an older choice of its own.
+        for (const key of await bb.storage.kv.list(PROJECT_KEY))
+          await bb.storage.kv.delete(key);
+        await settings.experimental_set({ layout: value.layout });
+      } else {
+        const { projectId } = await bb.sdk.threads.get({ threadId: value.threadId });
+        await bb.storage.kv.set(PROJECT_KEY + projectId, value.layout);
+      }
       bb.realtime.publish("layout", {});
-      return { layout: layoutOf(next.layout) };
+      return { layout: await resolve(value.threadId) };
     },
     report: async (value) => {
       await bb.storage.kv.set("last-inspection", {
@@ -80,6 +103,7 @@ export default function plugin(bb: BbPluginApi) {
       const config = await settings.get();
       const result = {
         layout: layoutOf(config.layout),
+        projectChoices: (await bb.storage.kv.list(PROJECT_KEY)).length,
         upstreamTracking: tracking,
         source,
         browser: await bb.storage.kv.get("last-inspection"),

@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { JSDOM } from "jsdom";
-import { inspect, attachLayout, layoutOf, threadInWorkspace } from "../inspector";
+import { inspect, attachLayout, effectiveLayout, layoutOf, threadInWorkspace } from "../inspector";
 function fixture() {
   const dom = new JSDOM(
     `<div class="kf-root"><nav aria-label="Views"></nav><div data-panel id="main"><div data-panel id="editors"><div id="original"><input value="unsaved draft"></div></div></div><footer><button title="Switch branch"></button><button title="Toggle Terminal (⌃&#96;)"></button></footer></div>`,
@@ -84,4 +84,12 @@ test("only a stored explicit choice changes the layout", () => {
   for (const unset of ["ask", "", undefined, null, true, "sidebar"]) {
     assert.equal(layoutOf(unset), "ask");
   }
+});
+
+test("a project's own choice wins over the one saved for all", () => {
+  assert.equal(effectiveLayout(undefined, "ask"), "ask");
+  assert.equal(effectiveLayout(undefined, "center"), "center");
+  assert.equal(effectiveLayout("native", "center"), "native");
+  assert.equal(effectiveLayout("center", "native"), "center");
+  assert.equal(effectiveLayout("garbage", "native"), "native");
 });

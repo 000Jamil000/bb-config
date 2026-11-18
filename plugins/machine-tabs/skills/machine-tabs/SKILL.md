@@ -41,6 +41,13 @@ Russian or English words in the thread title; a title with no match is
 threads shown out of the tab's total; ancestors kept for a matching child count
 as shown. Filters last for the page session and are not a stored preference.
 
+The plugin setting `rowMark` chooses the mark before a thread title: `project`
+(the project's image or letters), `topic` (the guessed topic's icon) or `ask`
+(default: project marks, plus a chooser with previews the first time the filter
+row is opened). Project group headers always show the project mark. Change it
+with `bb plugin config machine-tabs set rowMark <ask|project|topic>`; do not
+pick it for the user unasked.
+
 - `bb machine-tabs list` — machines; `*` marks the active tab.
 - `bb machine-tabs select <machine-id|all>` — switch the tab.
 

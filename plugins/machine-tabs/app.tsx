@@ -30,7 +30,8 @@ import { cn } from "@/lib/utils";
 import { automaticProjectSectionOrder, projectsByLatestThread } from "./lib/project-order";
 import { GROUP_PAGING_CSS, withGroupPaging } from "./lib/group-paging";
 import { withProjectAliases } from "./lib/project-alias-view";
-import { TOPICS, matchesFilters, shownOfTotal, withAncestors } from "./lib/thread-topics";
+import { TOPICS, matchesFilters, shownOfTotal, topicForTitle, withAncestors, type RowMark, type Topic } from "./lib/thread-topics";
+import { ROW_MARK_CSS, RowMarkChooser } from "./lib/row-mark-chooser";
 import { installSidebarView } from "./lib/sidebar-view";
 import { SearchExtras, SearchSettings, type SearchOptions } from "./lib/thread-search";
 
@@ -76,6 +77,8 @@ const DEFAULT_VIEW: ListView = {
 
 /** A project's mark, shown before a thread's title. */
 interface ProjectBadge {
+  /** Set when rows show topic icons instead of project marks. */
+  topic?: Topic;
   letters: string;
   name: string;
   /** Threads outside any project: an icon instead of letters. */
@@ -221,6 +224,16 @@ function ProjectBadgeMark({
   /** In a group header: no agent icon is attached to it. */
   header?: boolean;
 }) {
+  if (!header && badge.topic) {
+    const topic = badge.topic;
+    return (
+      <span data-machine-tabs-badge="topic" title={`${topic.label} · ${badge.name}`} aria-label={topic.label}
+        className="machine-tabs-topic-mark" style={{ color: topic.color }}>
+        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
+          strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={topic.path} /></svg>
+      </span>
+    );
+  }
   return (
     <span
       data-machine-tabs-badge={header ? "header" : ""}
@@ -1138,6 +1151,15 @@ function MachineThreadList(props: PluginThreadListProps) {
   const [projectFilter, setProjectFilter] = useState("all");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const filtering = topicFilter !== "all" || projectFilter !== "all";
+  // Project marks stay until the user picks topic icons; the question comes with the first use of the filters.
+  const markRpc = useRpc<typeof rpcContract>();
+  const [rowMark, setRowMark] = useState<RowMark | null>(null);
+  const [askingMark, setAskingMark] = useState(false);
+  const loadRowMark = useCallback(() => {
+    markRpc.call("row_mark", null).then((result) => setRowMark(result.rowMark), () => {});
+  }, [markRpc]);
+  useEffect(loadRowMark, [loadRowMark]);
+  useRealtime("row-mark-changed", loadRowMark);
   const { threads, projects } = experimental_useSidebarThreads();
   const { collapsed, toggle } = useCollapsedGroups();
   const [sort, setSort] = useState<string | null>(null);
@@ -1264,11 +1286,15 @@ function MachineThreadList(props: PluginThreadListProps) {
       const machine = thread.host?.name;
       map.set(
         thread.id,
-        machine ? { ...badge, name: `${badge.name} · ${machine}` } : badge,
+        {
+          ...badge,
+          name: machine ? `${badge.name} · ${machine}` : badge.name,
+          topic: rowMark === "topic" ? topicForTitle(thread.displayTitle) : undefined,
+        },
       );
     }
     return map;
-  }, [threads, projectBadges]);
+  }, [threads, projectBadges, rowMark]);
   const headerCss = useMemo(() => projectHeaderCss(projectBadges), [projectBadges]);
 
   // First-level groups, each a filter for one instance of bb's list.
@@ -1397,7 +1423,10 @@ function MachineThreadList(props: PluginThreadListProps) {
           aria-expanded={filtersOpen || filtering}
           aria-controls="machine-tabs-filters"
           data-active={filtering ? "" : undefined}
-          onClick={() => setFiltersOpen((open) => !open)}
+          onClick={() => {
+            if (!filtersOpen && rowMark === "ask") setAskingMark(true);
+            setFiltersOpen((open) => !open);
+          }}
           className="machine-tabs-filter-toggle absolute right-9 top-1 flex size-5 items-center justify-center rounded text-muted-foreground hover:text-sidebar-foreground focus-visible:outline focus-visible:outline-2"
         >
           <BbIcon name="ListFilter" className="size-3.5" />
@@ -1436,6 +1465,19 @@ function MachineThreadList(props: PluginThreadListProps) {
       ) : null}
       <style>{HIDE_EMPTY_GROUPS}</style>
       <style>{GROUP_PAGING_CSS}</style>
+      <style>{ROW_MARK_CSS}</style>
+      {askingMark ? (
+        <RowMarkChooser
+          current={rowMark === "topic" ? "topic" : "project"}
+          first={rowMark === "ask"}
+          onClose={() => setAskingMark(false)}
+          onChoose={async (next) => {
+            const saved = await markRpc.call("set_row_mark", { rowMark: next });
+            setRowMark(saved.rowMark);
+            setAskingMark(false);
+          }}
+        />
+      ) : null}
       <style>{`
         .machine-tabs-search-settings { opacity: 0; transition: opacity 120ms ease; }
         .machine-tabs-search:hover .machine-tabs-search-settings,

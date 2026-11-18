@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { matchesFilters, shownOfTotal, topicForTitle, withAncestors } from "../lib/thread-topics.ts";
+import { matchesFilters, rowMarkOf, shownOfTotal, topicForTitle, withAncestors } from "../lib/thread-topics.ts";
 test("Russian and English titles receive distinct topics", () => {
   for (const [title, topic] of [
     ["Дизайн формы", "design"],
@@ -40,4 +40,9 @@ test("words that merely contain a keyword do not pick its topic", () => {
   for (const title of ["Ревью кода", "Code review", "Тесты бэкенда", "Fix build"]) {
     assert.equal(topicForTitle(title).id, "code", title);
   }
+});
+test("only an explicit stored choice replaces project marks", () => {
+  assert.equal(rowMarkOf("topic"), "topic");
+  assert.equal(rowMarkOf("project"), "project");
+  for (const unset of ["ask", "", undefined, null, "icons"]) assert.equal(rowMarkOf(unset), "ask");
 });

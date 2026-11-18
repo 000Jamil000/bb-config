@@ -33,7 +33,15 @@ export type TabsState = z.infer<typeof stateSchema>;
 
 const preferenceResultSchema = z.object({ key: z.string(), value: z.unknown() });
 
+const ROW_MARK_CHANGED = "row-mark-changed";
+const rowMarkSchema = z.enum(["ask", "project", "topic"]);
+
 export const rpcContract = defineRpcContract({
+  row_mark: { input: z.null(), output: z.object({ rowMark: rowMarkSchema }) },
+  set_row_mark: {
+    input: z.object({ rowMark: z.enum(["project", "topic"]) }),
+    output: z.object({ rowMark: rowMarkSchema }),
+  },
   // bb's own thread list renders inside this plugin's list (see app.tsx), so
   // its preference calls arrive here; they are forwarded to the thread-list
   // plugin, which stays the single owner of those preferences.
@@ -266,7 +274,30 @@ export default async function plugin(bb: BbPluginApi) {
     });
   }
 
+  const settings = bb.settings.define({
+    rowMark: {
+      type: "select",
+      label: "Значок перед названием треда",
+      description:
+        "«Спросить» оставляет значки проектов и предлагает выбор с примерами при первом открытии фильтров.",
+      options: ["ask", "project", "topic"],
+      experimental_optionLabels: {
+        ask: "Спросить при открытии фильтров",
+        project: "Значок проекта",
+        topic: "Значок темы по названию",
+      },
+      default: "ask",
+    },
+  });
+  const rowMark = async () => ({ rowMark: rowMarkSchema.catch("ask").parse((await settings.get()).rowMark) });
+  settings.onChange(() => bb.realtime.publish(ROW_MARK_CHANGED, null));
+
   bb.rpc.register(rpcContract, {
+    row_mark: rowMark,
+    async set_row_mark(input) {
+      await settings.experimental_set({ rowMark: input.rowMark });
+      return rowMark();
+    },
     async listPreferences() {
       return forward(
         "listPreferences",

@@ -37,3 +37,13 @@ export function withAncestors<T extends { id: string; parentThreadId?: string | 
   }
   return result;
 }
+
+/** What stands before a thread's title: its project's mark, or its topic's icon. */
+export const ROW_MARKS = ["ask", "project", "topic"] as const;
+export type RowMark = (typeof ROW_MARKS)[number];
+export type RowMarkChoice = Exclude<RowMark, "ask">;
+/** An unknown stored value never changes the rows on its own. */
+export function rowMarkOf(value: unknown): RowMark {
+  return (ROW_MARKS as readonly unknown[]).includes(value) ? (value as RowMark) : "ask";
+}
+

@@ -1,6 +1,6 @@
 import { experimental_defineHostEntry } from '@get-bb/plugin-sdk/host';
 import { execFile } from 'node:child_process';
-import { realpath } from 'node:fs/promises';
+import { realpath, stat } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { extname, isAbsolute } from 'node:path';
 import { hostContract } from './contract';
@@ -38,8 +38,10 @@ export default experimental_defineHostEntry({ contract: hostContract, handlers: 
   },
   // The file already is on the computer that opens it: no copy is made.
   launch: async ({ path }) => {
-    if (!isAbsolute(path) || !supported(path)) throw new Error('Этот тип файла пока не поддерживается.');
+    if (!isAbsolute(path)) throw new Error('Этот тип файла пока не поддерживается.');
+    // The link's own name proves nothing: the type is checked on what would actually be opened.
     path = await realpath(path);
+    if (!supported(path) || !(await stat(path)).isFile()) throw new Error('Этот тип файла пока не поддерживается.');
     return { path, application: await launch(path) };
   },
 } });

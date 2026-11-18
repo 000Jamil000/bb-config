@@ -841,7 +841,7 @@ sealed class StatusContext : ApplicationContext
                     core.Settings.IsZoomControlEnabled = false;
                     core.NavigationCompleted += delegate(object sender, CoreWebView2NavigationCompletedEventArgs e) { loaded = e.IsSuccess; retryAt = DateTime.UtcNow.AddSeconds(2); };
                     // A link in a reply opens in the user's browser, not inside the panel.
-                    core.NewWindowRequested += delegate(object sender, CoreWebView2NewWindowRequestedEventArgs e) { e.Handled = true; try { Process.Start(e.Uri); } catch (Exception) { } };
+                    core.NewWindowRequested += delegate(object sender, CoreWebView2NewWindowRequestedEventArgs e) { e.Handled = true; try { Uri link; if (Uri.TryCreate(e.Uri, UriKind.Absolute, out link) && (link.Scheme == Uri.UriSchemeHttps || link.Scheme == Uri.UriSchemeHttp)) Process.Start(link.AbsoluteUri); } catch (Exception) { } };
                     // The page reports a click or a key press in it ("pin") and Esc or its close button ("close"),
                     // as it does to the macOS app.
                     core.WebMessageReceived += delegate(object sender, CoreWebView2WebMessageReceivedEventArgs e)

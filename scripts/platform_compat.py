@@ -144,10 +144,21 @@ def link_directory(link, target):
         Path(link).symlink_to(target, target_is_directory=True)
 
 
+def _is_junction(link):
+    """Path.is_junction() exists from Python 3.12; 3.11 reads the reparse-point attribute."""
+    if hasattr(link, 'is_junction'):
+        return link.is_junction()
+    try:
+        attributes = os.lstat(link).st_file_attributes
+    except (OSError, AttributeError):
+        return False
+    return bool(attributes & 0x400) and not link.is_symlink()  # FILE_ATTRIBUTE_REPARSE_POINT
+
+
 def unlink_directory(link):
     """Remove such a link only, never what it points at."""
     link = Path(link)
-    if WINDOWS and link.is_junction():
+    if WINDOWS and _is_junction(link):
         os.rmdir(link)
     elif link.is_symlink():
         link.unlink()

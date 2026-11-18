@@ -10,9 +10,14 @@ export default function plugin(bb: BbPluginApi) {
     const machines = (await bb.sdk.hosts.list()).filter(h => h.status === 'connected');
     const { macHostId } = await settings.get();
     const candidates = macHostId ? machines.filter(h => h.id === macHostId) : machines;
-    const desktops = (await Promise.all(candidates.map(async machine => {
-      try { return { machine, platform: (await host.call('info', null, { hostId: machine.id })).platform }; } catch { return null; }
-    }))).filter(h => h !== null && ['darwin', 'win32'].includes(h.platform)).map(h => h!);
+    const probed = await Promise.all(candidates.map(async machine => {
+      try { return { machine, platform: (await host.call('info', null, { hostId: machine.id })).platform }; } catch { return { machine, platform: null }; }
+    }));
+    // Without an explicit choice an unreadable machine may be the Mac: never fall through to another computer.
+    const unknown = probed.filter(h => h.platform === null);
+    if (unknown.length && (!macHostId || !probed.some(h => h.platform !== null)))
+      throw new Error(`Не удалось определить систему машины ${unknown.map(h => h.machine.name).join(', ')}. Повторите или укажите компьютер в настройках плагина.`);
+    const desktops = probed.filter((h): h is { machine: typeof h.machine; platform: string } => h.platform !== null && ['darwin', 'win32'].includes(h.platform));
     const macs = desktops.filter(h => h.platform === 'darwin');
     const target = (macs.length === 1 ? macs[0] : desktops.length === 1 ? desktops[0] : null)?.machine;
     if (!target) throw new Error('Укажите подключённый Mac или Windows-компьютер в настройках плагина.');

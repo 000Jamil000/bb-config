@@ -6,5 +6,5 @@
   "kind": "local-plugin",
   "plugin": "file-local-open",
   "rerun": "Безопасно: при совпадении версии шаг только проверяется.",
-  "rollback": "Вернуть plugins/file-local-open к коммиту v1.0.5 (git checkout v1.0.5 -- plugins/file-local-open), затем npm ci --include=dev, bb plugin build и bb plugin reload file-local-open."
+  "rollback": "Вернуть plugins/file-local-open к релизу v1.1.0 (git checkout v1.1.0 -- plugins/file-local-open), затем npm ci --include=dev, bb plugin build и bb plugin reload file-local-open."
 }

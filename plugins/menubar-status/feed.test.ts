@@ -132,3 +132,7 @@ test("the status file may be a POSIX path or a Windows drive path", () => {
   assert.equal(statusFile("status.json"), null);
   assert.equal(statusFile(""), null);
 });
+
+test("a backslash in a POSIX status path is part of the name", () => {
+  assert.equal(statusFile("/Users/example/odd\\name/status.json"), "/Users/example/odd\\name/status.json");
+});

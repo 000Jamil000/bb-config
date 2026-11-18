@@ -46,12 +46,23 @@ const stateFile = join(stateDir, `${threadId}.json`);
 const loadState = () => (existsSync(stateFile) ? JSON.parse(readFileSync(stateFile, "utf8")) : null);
 const saveState = (state) => { mkdirSync(stateDir, { recursive: true, mode: 0o700 }); writeFileSync(stateFile, JSON.stringify(state), { mode: 0o600 }); };
 
+/** One argument for a cmd.exe command line. Quotes and %VAR% cannot be made literal there. */
+function cmdQuote(value) {
+  const text = String(value);
+  if (/["\r\n]/.test(text) || /%[^%\s]+%/.test(text)) throw new Error("Аргумент нельзя безопасно передать bb.cmd: уберите кавычки и %ИМЯ%.");
+  return `"${text}"`;
+}
+
 /** Runs the bb CLI and returns its parsed --json output. */
 function bb(...args) {
   const cli = process.env.BB_CLI;
   const direct = cli && existsSync(cli) && !/\.(cmd|bat)$/i.test(cli);
   const result = direct ? spawnSync(process.execPath, [cli, ...args, "--json"], { encoding: "utf8" })
-    : spawnSync("bb", [...args, "--json"], { encoding: "utf8", shell: process.platform === "win32" });
+    : process.platform === "win32"
+      // A .cmd launcher needs cmd.exe. Every argument is quoted, so & | < > ^ in a URL stay text;
+      // an argument that cannot be quoted safely is refused instead of being interpreted.
+      ? spawnSync([cli && existsSync(cli) ? cli : "bb", ...args, "--json"].map(cmdQuote).join(" "), { encoding: "utf8", shell: true, windowsVerbatimArguments: true })
+      : spawnSync("bb", [...args, "--json"], { encoding: "utf8" });
   if (result.status !== 0) throw new Error(`bb ${args.slice(0, 2).join(" ")}: ${(result.stderr || result.stdout || "").trim().split("\n").at(-1)}`);
   return JSON.parse(result.stdout);
 }
@@ -135,7 +146,7 @@ const SNAPSHOT = `
   const nodes = [...document.querySelectorAll('a[href], button, input, select, textarea, [role=button], [role=link], [role=tab], [role=menuitem], [contenteditable=true]')].filter(visible).slice(0, 200);
   return nodes.map((node, index) => {
     node.setAttribute("data-bb-page", String(index + 1));
-    const label = (node.getAttribute("aria-label") || node.getAttribute("title") || node.getAttribute("placeholder") || node.innerText || node.value || "").trim().replace(/\\s+/g, " ").slice(0, 80);
+    const label = (node.getAttribute("aria-label") || node.getAttribute("title") || node.getAttribute("placeholder") || node.innerText || (/^(INPUT|TEXTAREA|SELECT)$/.test(node.tagName) ? node.getAttribute("name") || node.type : node.value) || "").trim().replace(/\\s+/g, " ").slice(0, 80);
     const kind = node.tagName.toLowerCase() + (node.type ? ":" + node.type : "");
     return "[" + (index + 1) + "] " + kind + " " + JSON.stringify(label) + (node.href ? " -> " + node.href.slice(0, 120) : "");
   });`;

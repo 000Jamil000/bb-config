@@ -143,7 +143,7 @@
   },
   {
     "id": "config-updates",
-    "version": "0.1.3",
+    "version": "0.1.4",
     "enabled": true,
     "name": "Config Updates",
     "source": "path:plugins/config-updates"
@@ -329,7 +329,7 @@
   },
   {
     "id": "project-open",
-    "version": "0.2.0",
+    "version": "0.3.0",
     "enabled": true,
     "name": "Project Open",
     "source": "path:plugins/project-open"

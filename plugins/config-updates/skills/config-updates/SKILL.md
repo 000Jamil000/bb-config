@@ -61,6 +61,14 @@ GitHub, нет журнала). Не сообщай при этом, что об
 
 ## Диагностика
 
+- Если `bb plugin source config-updates` указывает на `preserved-source`, а
+  проверка не находит `scripts/updates.py`, подключите постоянный checkout
+  на машине сервера как проект BB. Из корня checkout выполните
+  `npm --prefix plugins/config-updates ci --include=dev`,
+  `bb plugin build plugins/config-updates`,
+  `bb plugin install path:"$PWD/plugins/config-updates"`, затем
+  `bb config-updates check`. Установка из нового пути сохраняет настройки.
+
 - «Версия не определена» — журнала нет. Это допустимо: каждый шаг проверяется
   по фактическому состоянию. Для установки сразу из релиза — `baseline`.
 - «Добавьте каталог … как проект BB» — checkout не подключён к BB как проект.

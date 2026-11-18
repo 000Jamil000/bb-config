@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { definePluginApp, useSdk, useBbNavigate, useSettings, useComposer, experimental_useSidebarThreads,
-  experimental_Icon as Icon } from '@get-bb/plugin-sdk/app';
+  experimental_Icon as Icon, experimental_THREAD_ACTION_GROUPS as GROUPS } from '@get-bb/plugin-sdk/app';
 import { toast } from 'sonner';
 import * as Tooltip from '@radix-ui/react-tooltip';
 import { openNativeTerminal, openNativeWorkspace, openNativeFiles, waitFor } from './native';
 import { finderFolderUrl, folderClientMode } from './folder-target';
 
 type Anchor = { threadId: string; element: HTMLElement };
-function useThreadAnchors() {
+function useThreadAnchors(enabled: boolean) {
   const [anchors, setAnchors] = useState<Anchor[]>([]);
   useEffect(() => {
+    if (!enabled) { setAnchors([]); return; }
     const mounts = new Map<HTMLElement, Anchor>();
     let frame = 0;
     const scan = () => {
@@ -71,7 +72,7 @@ function useThreadAnchors() {
         a.element.remove();
       }
     };
-  }, []);
+  }, [enabled]);
   return anchors;
 }
 const CSS = `
@@ -141,6 +142,37 @@ function HeaderBridge() {
   return <><span ref={marker} data-project-open-bridge="" hidden />{anchor && threadId ? createPortal(<ThreadButtons root={anchor.root} threadId={threadId} />, anchor.element) : null}</>;
 }
 
+async function openThreadTarget(
+  kind: 'folder' | 'terminal', threadId: string, sdk: ReturnType<typeof useSdk>,
+  navigate: ReturnType<typeof useBbNavigate>, values: ReturnType<typeof useSettings>['values'],
+  signal: AbortSignal, root?: HTMLElement,
+) {
+  const getRoot = async () => {
+    if (root) return root;
+    navigate.toThread(threadId);
+    return waitFor(document.body, () => {
+      const marker = [...document.querySelectorAll<HTMLElement>('[data-project-open-thread-id]')]
+        .find(element => element.dataset.projectOpenThreadId === threadId);
+      return marker?.closest<HTMLElement>('[data-split-pane-id]') ?? null;
+    }, signal);
+  };
+  if (kind === 'terminal') return openNativeTerminal(await getRoot(), signal);
+  const thread = await sdk.threads.get({ threadId, signal });
+  if (!thread.environmentId) throw new Error('У треда нет рабочей папки.');
+  const environment = await sdk.environments.get({ environmentId: thread.environmentId, signal });
+  if (!environment.path) throw new Error('У треда нет рабочей папки.');
+  if (!values) throw new Error('Настройки открытия папки ещё загружаются.');
+  const mode = folderClientMode({ userAgent: navigator.userAgent, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints,
+    compactTouch: window.matchMedia('(max-width:640px) and (pointer:coarse)').matches }, values.finderHelper === true);
+  if (mode === 'files') return openNativeFiles(await getRoot(), signal);
+  if (mode === 'finder') {
+    const url = finderFolderUrl(environment.hostId, environment.path);
+    if (!navigate.openUrl(url)) throw new Error('На этом устройстве недоступен обработчик Finder.');
+    return;
+  }
+  return openNativeWorkspace(await getRoot(), signal);
+}
+
 function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: string }) {
   const sdk = useSdk(), navigate = useBbNavigate();
   const { values } = useSettings();
@@ -190,32 +222,7 @@ function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: strin
       hideTooltip();
       if (pending.current) return;
       const controller = new AbortController(); pending.current = controller; setBusy(true);
-      void (async () => {
-        const getRoot = async () => {
-          if (root) return root;
-          navigate.toThread(threadId);
-          return waitFor(document.body, () => {
-            const marker = [...document.querySelectorAll<HTMLElement>('[data-project-open-thread-id]')]
-              .find(element => element.dataset.projectOpenThreadId === threadId);
-            return marker?.closest<HTMLElement>('[data-split-pane-id]') ?? null;
-          }, controller.signal);
-        };
-        if (kind === 'terminal') return openNativeTerminal(await getRoot(), controller.signal);
-        const thread = await sdk.threads.get({ threadId, signal: controller.signal });
-        if (!thread.environmentId) throw new Error('У треда нет рабочей папки.');
-        const environment = await sdk.environments.get({ environmentId: thread.environmentId, signal: controller.signal });
-        if (!environment.path) throw new Error('У треда нет рабочей папки.');
-        if (!values) throw new Error('Настройки открытия папки ещё загружаются.');
-        const mode = folderClientMode({ userAgent: navigator.userAgent, platform: navigator.platform, maxTouchPoints: navigator.maxTouchPoints,
-          compactTouch: window.matchMedia('(max-width:640px) and (pointer:coarse)').matches }, values.finderHelper === true);
-        if (mode === 'files') return openNativeFiles(await getRoot(), controller.signal);
-        if (mode === 'finder') {
-          const url = finderFolderUrl(environment.hostId, environment.path);
-          if (!navigate.openUrl(url)) throw new Error('На этом устройстве недоступен обработчик Finder.');
-          return;
-        }
-        return openNativeWorkspace(await getRoot(), controller.signal);
-      })()
+      void openThreadTarget(kind, threadId, sdk, navigate, values, controller.signal, root)
         .catch(error => { if (!controller.signal.aborted) toast.error(error instanceof Error ? error.message : String(error)); })
         .finally(() => { if (!controller.signal.aborted) { pending.current = null; setBusy(false); } });
     }}><Icon name={kind === 'folder' ? 'FolderOpen' : 'Terminal'} className="size-4" /></button></Tooltip.Trigger>
@@ -229,12 +236,31 @@ function ThreadButtons({ root, threadId }: { root?: HTMLElement; threadId: strin
   </Tooltip.Root>)}</Tooltip.Provider>;
 }
 
+/** Where the folder and terminal shortcuts live: on the row (default) or in the thread's native menu. */
+const inMenu = (values: ReturnType<typeof useSettings>['values']) => values?.placement === 'menu';
+
 function ProjectControls() {
-  const anchors = useThreadAnchors();
+  const { values } = useSettings();
+  // Until settings load nothing is mounted, so a "menu" choice never flashes row buttons.
+  const anchors = useThreadAnchors(values !== undefined && !inMenu(values));
   return <><style>{CSS}</style>{anchors.map(anchor => createPortal(<ThreadButtons threadId={anchor.threadId} />, anchor.element))}</>;
 }
 
 export default definePluginApp(app => {
+  for (const [kind, title, icon, order] of [
+    ['folder', 'Открыть папку треда', 'FolderOpen', 10],
+    ['terminal', 'Открыть терминал треда в BB', 'Terminal', 20],
+  ] as const) {
+    app.slots.experimental_threadAction({
+      id: 'open-' + kind, title, icon, group: GROUPS.open, order,
+      useData: () => useSettings().values,
+      item: ({ thread, sdk, navigate, data }) => thread.environment && inMenu(data) ? {
+        label: title, icon,
+        run: () => openThreadTarget(kind, thread.id, sdk, navigate, data, new AbortController().signal)
+          .catch(error => { toast.error(error instanceof Error ? error.message : String(error)); }),
+      } : null,
+    });
+  }
   app.slots.experimental_appOverlay({ id: 'project-controls', component: ProjectControls });
   app.composer.customize({ id: 'header-bridge', scopes: ['thread'], banners: [{ id: 'header-bridge', chrome: 'bare', component: HeaderBridge }] });
 });

@@ -4,7 +4,7 @@ import { realpath } from 'node:fs/promises';
 import { promisify } from 'node:util';
 import { extname, isAbsolute } from 'node:path';
 import { hostContract } from './contract';
-import { collectBundle, saveBundle, supported } from './files';
+import { collectBundle, saveBundle, saveToDownloads, supported } from './files';
 const run = promisify(execFile);
 /** Opens the file in an application on this computer and names that application. */
 async function launch(path: string): Promise<string> {
@@ -24,9 +24,16 @@ export default experimental_defineHostEntry({ contract: hostContract, handlers: 
   info: async () => ({ platform: process.platform }),
   read: ({ path }) => collectBundle(path),
   open: async ({ bundle, action }) => {
-    if (action === 'open' && !['darwin', 'win32'].includes(process.platform)) throw new Error('Для открытия нужна подключённая машина с macOS или Windows.');
+    if (action === 'save') {
+      const saved = await saveToDownloads(bundle);
+      // Show the saved file in Finder or Explorer; a failure to reveal is not a failure to save.
+      if (process.platform === 'darwin') await run('/usr/bin/open', ['-R', saved], { timeout: 15000 }).catch(() => undefined);
+      // explorer.exe exits with 1 even on success.
+      else if (process.platform === 'win32') await run('explorer.exe', [`/select,${saved}`], { timeout: 15000, windowsHide: true }).catch(() => undefined);
+      return { path: saved, application: 'Загрузки' };
+    }
+    if (!['darwin', 'win32'].includes(process.platform)) throw new Error('Для открытия нужна подключённая машина с macOS или Windows.');
     const path = await saveBundle(bundle);
-    if (action === 'save') return { path, application: 'Загрузки' };
     return { path, application: await launch(path) };
   },
   // The file already is on the computer that opens it: no copy is made.

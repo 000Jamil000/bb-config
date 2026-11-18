@@ -7,8 +7,9 @@ Chrome); the second only saves it. A file that already is on that computer,
 as when bb runs on a single PC, is opened in place without a copy.
 Includes a PDF preview fitted to panel width, without the thumbnail sidebar.
 
-Sources remain on their owning machine. Copies go to fresh directories under
-`~/Downloads/BB Files/`; SHA-256 verifies bytes. No fork of BB or a bundled plugin.
+Sources remain on their owning machine. Save writes straight to `~/Downloads/`
+(`name (2).ext` on collision; HTML with assets in its own folder) and reveals it in
+Finder; Open uses fresh directories under `~/Downloads/BB Files/`. SHA-256 verifies bytes. No fork of BB or a bundled plugin.
 Uses the supported content-script, composer, file-opener and host RPC APIs.
 
 See [usage and restoration](skills/file-local-open/SKILL.md) for limits and commands.

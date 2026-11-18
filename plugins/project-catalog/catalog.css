@@ -1,0 +1,80 @@
+.catalog-card {
+  transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
+}
+.catalog-card:hover,
+.catalog-card:focus-within {
+  border-color: color-mix(in srgb, currentColor 28%, transparent);
+  background-color: color-mix(in srgb, currentColor 4%, transparent);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 6px 16px -8px rgb(0 0 0 / 0.18);
+}
+/* The quick action stays reachable on touch screens, where there is no hover. */
+@media (hover: hover) {
+  .catalog-card-action { opacity: 0; transition: opacity 120ms ease; }
+  .catalog-card:hover .catalog-card-action,
+  .catalog-card:focus-within .catalog-card-action { opacity: 1; }
+}
+.catalog-chip,
+.catalog-stat { transition: background-color 140ms ease, border-color 140ms ease, color 140ms ease; }
+
+@keyframes catalog-spin { to { transform: rotate(360deg); } }
+.catalog-spin { animation: catalog-spin 1s linear infinite; }
+@keyframes catalog-pulse { 50% { opacity: 0.45; } }
+.catalog-skeleton { animation: catalog-pulse 1.4s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .catalog-card, .catalog-card-action, .catalog-chip, .catalog-stat { transition: none; }
+  .catalog-spin, .catalog-skeleton { animation: none; }
+}
+@media (max-width: 480px) {
+  .catalog-page { padding-inline: 12px; }
+}
+
+.catalog-row { transition: background-color 120ms ease; }
+.catalog-row:hover, .catalog-row.is-active { background-color: var(--muted); }
+/* Row tools overlay the right edge with a fade into the row colour, so they reserve no width. */
+.catalog-row-bar {
+  opacity: 0; pointer-events: none; transition: opacity 120ms ease;
+  background: linear-gradient(to right, transparent, var(--muted) 1.75rem);
+}
+.catalog-row:hover .catalog-row-bar, .catalog-row-bar:focus-within, .catalog-row-bar.is-open { opacity: 1; pointer-events: auto; }
+.catalog-nav { transition: background-color 120ms ease, color 120ms ease; }
+@media (prefers-reduced-motion: reduce) { .catalog-row, .catalog-row-bar, .catalog-nav { transition: none; } }
+
+.catalog-kbd { display: inline-block; min-width: 1.25rem; margin: 0 5px 0 0; padding: 0 4px; border: 1px solid color-mix(in srgb, currentColor 30%, transparent); border-radius: 4px; font: inherit; font-size: 10px; line-height: 16px; text-align: center; }
+.catalog-kbd:first-child { margin-left: 0; }
+
+@keyframes catalog-flash { 0%, 60% { background-color: color-mix(in srgb, #f59e0b 22%, transparent); } 100% { background-color: transparent; } }
+.catalog-flash { animation: catalog-flash 2.2s ease-out; border-radius: 8px; }
+@keyframes catalog-pop { from { opacity: 0; transform: translateY(-2px); } }
+.catalog-pop { animation: catalog-pop 120ms ease-out; }
+@media (prefers-reduced-motion: reduce) { .catalog-flash, .catalog-pop { animation: none; } .catalog-flash { outline: 2px solid #f59e0b; } }
+
+/* Touch screens have no hover: row tools would crowd the text, and every action is one tap away in the project panel. */
+@media (hover: none), (max-width: 639px) {
+  .catalog-row-bar { display: none; }
+}
+
+/* Small controls that appear only when their row is hovered or focused. */
+.catalog-hover-tool { opacity: 0; transition: opacity 120ms ease; }
+@media (hover: none) { .catalog-hover-tool { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .catalog-hover-tool { transition: none; } }
+
+/* Text hints for icon-only and hover-only controls: [data-tip] shows a small bubble after a short delay. */
+:where([data-tip]) { position: relative; }
+[data-tip]::after {
+  content: attr(data-tip); position: absolute; z-index: 50; bottom: calc(100% + 6px); right: 0;
+  width: max-content; max-width: 16rem; padding: 4px 8px; border-radius: 6px;
+  background: var(--foreground); color: var(--background); font-size: 11px; line-height: 1.35; font-weight: 400;
+  text-transform: none; letter-spacing: normal; white-space: normal; text-align: left;
+  opacity: 0; pointer-events: none; transform: translateY(2px); transition: opacity 120ms ease, transform 120ms ease; transition-delay: 0s;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after { opacity: 1; transform: none; transition-delay: 450ms; }
+@media (hover: none) { [data-tip]::after { display: none; } }
+@media (prefers-reduced-motion: reduce) { [data-tip]::after { transition: none; } }
+/* Edit pencils wait for the pointer to rest on a row (0.6 s) and sit left of the count, which stays visible. */
+.catalog-edit-trigger { background: color-mix(in srgb, var(--muted) 60%, var(--background)); opacity: 0; pointer-events: none; transition: opacity 120ms ease; transition-delay: 0s; }
+.catalog-navrow:hover .catalog-edit-trigger { opacity: 1; pointer-events: auto; transition-delay: 600ms; }
+.catalog-edit-trigger:focus-visible, .catalog-edit-trigger.is-open { opacity: 1; pointer-events: auto; transition-delay: 0s; }
+@media (hover: none) { .catalog-edit-trigger { opacity: 1; pointer-events: auto; } }
+@media (prefers-reduced-motion: reduce) { .catalog-edit-trigger { transition: none; } }
+.catalog-edit-trigger:hover { background: var(--background); }

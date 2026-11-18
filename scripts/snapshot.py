@@ -3,9 +3,11 @@
 import argparse
 from concurrent.futures import ThreadPoolExecutor
 import json
+from voice_source import is_voice_fork
 import shutil
 import subprocess
 from pathlib import Path
+from plugin_scope import externally_managed
 
 import platform_compat as compat
 
@@ -25,7 +27,7 @@ def plugin_record(plugin):
     row['name'] = plugin.get('name', plugin['id'])
     source = plugin['source']
     row['source'] = f'path:plugins/{plugin["id"]}' if source.startswith('path:') else source
-    if plugin.get('catalogEntryId') and not source.startswith('path:'):
+    if plugin.get('catalogEntryId') and not source.startswith('path:') and not is_voice_fork(plugin):
         row['installSource'] = plugin['catalogEntryId'] + '@' + plugin['catalogMarketplaceName']
     return row
 
@@ -37,7 +39,8 @@ def public_settings(config):
 
 def collect():
     """Finish all reads before modifying the repo. No transcripts or auth files."""
-    plugins = bb('plugin', 'list')['plugins']
+    excluded = externally_managed(ROOT)
+    plugins = [p for p in bb('plugin', 'list')['plugins'] if p['id'] not in excluded]
     calls = {
         'settings': ('settings', 'show'),
         'ui': ('settings', 'ui', 'list'),

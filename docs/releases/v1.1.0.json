@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "version": "v1.1.0",
+  "title": "Каталог проектов и подключение проекта на машине",
+  "steps": [
+    {
+      "id": "externally-managed-plugin-scope",
+      "title": "Исключение отдельно устанавливаемых плагинов из снимка и восстановления",
+      "component": "snapshot-restore",
+      "where": "server",
+      "kind": "manual",
+      "verify": [
+        "{python}",
+        "scripts/test_plugin_scope.py"
+      ],
+      "rerun": "Проверка выполняется на временных данных.",
+      "rollback": "Чтобы вернуться к прежней политике, используйте скрипты снимка и восстановления из предыдущей версии."
+    },
+    {
+      "id": "plugin-project-catalog",
+      "title": "Project Catalog 0.2.0: вкладка «Проекты», bb catalog и состояние копий на машинах",
+      "component": "project-catalog",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-catalog",
+      "introduces": true,
+      "rerun": "Безопасно: при совпадении версии шаг только проверяется. Карточки проектов хранятся в BB и при переустановке не теряются.",
+      "rollback": "bb plugin uninstall project-catalog. Перед удалением сохраните резервную копию BB для восстановления карточек."
+    },
+    {
+      "id": "plugin-project-machine-setup",
+      "title": "Подключение проекта на выбранной машине",
+      "component": "project-machine-setup",
+      "where": "server",
+      "kind": "local-plugin",
+      "plugin": "project-machine-setup",
+      "introduces": true,
+      "rerun": "Повтор проверяет версию и источник установки.",
+      "rollback": "Удалите расширение командой bb plugin remove project-machine-setup."
+    }
+  ]
+}

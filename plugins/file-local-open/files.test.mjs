@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readFile, symlink, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
-import { collectBundle, saveBundle, sha, MAX_BYTES } from './files.ts';
+import { collectBundle, saveBundle, saveToDownloads, sha, MAX_BYTES } from './files.ts';
 async function fixture(run) { const root = await mkdtemp(join(tmpdir(), 'bb-open-test-')); try { await run(root); } finally { await rm(root, { recursive: true, force: true }); } }
 test('HTML and nested CSS assets survive a server-to-Mac copy with Unicode paths', () => fixture(async root => {
   const src = join(root, 'source'); await mkdir(join(src, 'assets'), { recursive: true });
@@ -33,4 +33,21 @@ test('rejects altered bytes and traversal before writing', () => fixture(async r
 test('rejects oversized files without reading full contents', () => fixture(async root => {
   const file = join(root, 'large.pdf'); await writeFile(file, Buffer.alloc(MAX_BYTES + 1));
   await assert.rejects(collectBundle(file), /20 МБ/);
+}));
+test('save puts a single file straight into Downloads with Finder-style names', () => fixture(async root => {
+  const data = Buffer.from('%PDF-1.7 test');
+  const bundle = { main: 'guide.pdf', entries: [{ path: 'guide.pdf', content: data.toString('base64'), sha256: sha(data) }] };
+  const downloads = join(root, 'Downloads');
+  assert.equal(await saveToDownloads(bundle, downloads), join(downloads, 'guide.pdf'));
+  assert.equal(await saveToDownloads(bundle, downloads), join(downloads, 'guide (2).pdf'));
+  assert.deepEqual(await readFile(join(downloads, 'guide (2).pdf')), data);
+}));
+test('save keeps HTML assets together in a named Downloads folder', () => fixture(async root => {
+  const src = join(root, 'source'); await mkdir(src);
+  await writeFile(join(src, 'deck.html'), '<img src="a.png">'); await writeFile(join(src, 'a.png'), 'png');
+  const downloads = join(root, 'Downloads');
+  const path = await saveToDownloads(await collectBundle(join(src, 'deck.html')), downloads);
+  assert.equal(path, join(downloads, 'deck', 'deck.html'));
+  assert.equal(await readFile(join(downloads, 'deck', 'a.png'), 'utf8'), 'png');
+  assert.equal(await saveToDownloads(await collectBundle(join(src, 'deck.html')), downloads), join(downloads, 'deck (2)', 'deck.html'));
 }));

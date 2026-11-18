@@ -1,0 +1,11 @@
+{
+  "id": "plugin-kodaforge-inspector",
+  "title": "Центральный чат KodaForge и инспектор совместимости",
+  "component": "kodaforge-inspector",
+  "where": "server",
+  "kind": "local-plugin",
+  "plugin": "kodaforge-inspector",
+  "introduces": true,
+  "rerun": "При совпадении версии и источника шаг проверяет установленный компонент.",
+  "rollback": "bb plugin config kodaforge-inspector set layout native; для полного отключения — bb plugin disable kodaforge-inspector и обновить страницу BB."
+}

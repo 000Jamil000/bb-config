@@ -5,7 +5,7 @@
 сопоставляется с источником проекта без учёта регистра и вида слэшей. На Linux и macOS
 поведение прежнее.
 
-Уже применено, если установлен `config-updates` 0.1.4 из этого checkout. Шаг пересобирает и
+Уже применено, если установлен `config-updates` 0.1.5 из этого checkout. Шаг пересобирает и
 перезагружает плагин; настройки и журнал `.local/updates/` не меняются.
 На Windows после шага, если `python` в PATH сервера — заглушка Microsoft Store, задайте
 `bb plugin config config-updates set pythonPath <полный путь к python.exe>`.

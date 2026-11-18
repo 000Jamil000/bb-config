@@ -1,6 +1,6 @@
 {
   "id": "plugin-config-updates-windows",
-  "title": "Config Updates 0.1.4: работа на сервере BB под Windows",
+  "title": "Config Updates 0.1.5: работа на сервере BB под Windows",
   "component": "config-updates",
   "where": "server",
   "kind": "local-plugin",

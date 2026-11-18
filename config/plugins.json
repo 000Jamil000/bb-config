@@ -150,7 +150,7 @@
   },
   {
     "id": "config-updates",
-    "version": "0.1.4",
+    "version": "0.1.5",
     "enabled": true,
     "name": "Config Updates",
     "source": "path:plugins/config-updates"

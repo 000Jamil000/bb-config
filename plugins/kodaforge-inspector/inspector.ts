@@ -1,3 +1,32 @@
+export const inspectorSettings = {
+  enabled: {
+    type: "boolean",
+    label: "Показывать чат по центру в редакторе диалога",
+    default: false,
+  },
+  autoOpen: {
+    type: "boolean",
+    label: "Открывать выбранный диалог сразу в KodaForge",
+    default: false,
+  },
+  autoOpenThread: {
+    type: "string",
+    label: "ID диалога для автооткрытия (thr_… из адреса диалога BB)",
+    default: "",
+  },
+} as const;
+
+export function autoOpenWorkspace(
+  route: string,
+  autoOpen: unknown,
+  selectedThread: unknown,
+): string | null {
+  if (autoOpen !== true || typeof selectedThread !== "string") return null;
+  const match = /^\/projects\/[^/?#]+\/threads\/(thr_[A-Za-z0-9_-]+)\/?$/.exec(route);
+  if (!match || match[1] !== selectedThread.trim()) return null;
+  return "/plugins/kodaforge/forge/thread/" + match[1];
+}
+
 /** The workspace route names the thread displayed by this editor. */
 export function threadInWorkspace(pathname: string): string | null {
   return (

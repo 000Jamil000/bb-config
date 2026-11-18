@@ -5,33 +5,37 @@ import {
   useSyncExternalStore,
 } from "react";
 import { createPortal } from "react-dom";
-import { definePluginApp, ThreadChat, useRpc } from "@get-bb/plugin-sdk/app";
+import { definePluginApp, ThreadChat, useRpc, useSettings, useSdk } from "@get-bb/plugin-sdk/app";
 import type { rpcContract } from "./server";
-import { attachLayout, CSS, inspect, threadInWorkspace } from "./inspector";
+import { attachLayout, autoOpenWorkspace, CSS, inspect, threadInWorkspace } from "./inspector";
 type Attachment = ReturnType<typeof attachLayout>;
 function Inspector() {
-  const rpc = useRpc<typeof rpcContract>();
-  const threadId = useSyncExternalStore(
-    subscribeToRoute,
-    currentThread,
-    () => null,
-  );
-  const [enabled, setEnabled] = useState(false);
+  const { values } = useSettings();
+  const sdk = useSdk();
+  const route = useSyncExternalStore(subscribeToRoute, currentRoute, () => "");
+  const threadId = threadInWorkspace(route.split(/[?#]/, 1)[0]!);
+  const centered = values?.enabled === true;
+  const target = autoOpenWorkspace(route, values?.autoOpen, values?.autoOpenThread);
   useEffect(() => {
+    if (!target) return;
     let active = true;
-    rpc.call("config", null).then(
-      (config) => {
-        if (active) setEnabled(config.enabled);
-      },
-      () => {},
-    );
-    return () => {
-      active = false;
-    };
-  }, [rpc]);
-  return enabled && threadId ? (
-    <Workspace key={threadId} threadId={threadId} />
+    sdk.plugins.list().then(({ plugins }) => {
+      const forge = plugins.find((plugin) => plugin.id === "kodaforge");
+      if (!active || currentRoute() !== route || !forge?.enabled || !forge.app.bundle?.compatible)
+        return;
+      // The SDK exposes navigation to the calling plugin's own panels only.
+      window.history.replaceState(null, "", target);
+      window.dispatchEvent(new PopStateEvent("popstate"));
+    }).catch(() => {});
+    return () => { active = false; };
+  }, [route, sdk, target]);
+  return threadId ? (
+    <Workspace key={threadId + ":" + centered} threadId={threadId} centered={centered} />
   ) : null;
+}
+
+function currentRoute() {
+  return location.pathname + location.search + location.hash;
 }
 
 function currentThread() {
@@ -43,15 +47,17 @@ function subscribeToRoute(check: () => void) {
     .navigation;
   navigation?.addEventListener("currententrychange", check);
   window.addEventListener("popstate", check);
+  window.addEventListener("hashchange", check);
   const timer = navigation ? undefined : window.setInterval(check, 250);
   return () => {
     navigation?.removeEventListener("currententrychange", check);
     window.removeEventListener("popstate", check);
+    window.removeEventListener("hashchange", check);
     window.clearInterval(timer);
   };
 }
 
-function Workspace({ threadId }: { threadId: string }) {
+function Workspace({ threadId, centered }: { threadId: string; centered: boolean }) {
   const rpc = useRpc<typeof rpcContract>();
   const [paused, setPaused] = useState(false);
   const [attachment, setAttachment] = useState<Attachment | null>(null);
@@ -112,6 +118,10 @@ function Workspace({ threadId }: { threadId: string }) {
         return;
       }
       setWarning("");
+      if (!centered) {
+        report("compatible", "Штатное расположение чата в KodaForge");
+        return;
+      }
       if (
         mounted &&
         (editors !== result.editors ||
@@ -184,21 +194,23 @@ function Workspace({ threadId }: { threadId: string }) {
     };
     // A slow heartbeat detects route changes even when BB retains DOM panes.
     const timer = window.setInterval(schedule, 1500);
-    document.addEventListener("click", click, true);
-    document.addEventListener("keydown", key, true);
+    if (centered) {
+      document.addEventListener("click", click, true);
+      document.addEventListener("keydown", key, true);
+    }
     window.addEventListener("popstate", schedule);
     scan();
     return () => {
       observer.disconnect();
       cancelAnimationFrame(frame);
-      clearInterval(timer);
+      window.clearInterval(timer);
       document.removeEventListener("click", click, true);
       document.removeEventListener("keydown", key, true);
       window.removeEventListener("popstate", schedule);
       mounted?.dispose();
       style.remove();
     };
-  }, [paused, rpc, threadId]);
+  }, [centered, paused, rpc, threadId]);
   const choose = (next: "chat" | "code") => {
     attachment?.mode(next);
     setMode(next);

@@ -2,7 +2,7 @@ import { defineRpcContract, type BbPluginApi } from "@get-bb/plugin-sdk";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { z } from "zod";
-import { UPSTREAM } from "./inspector";
+import { inspectorSettings, UPSTREAM } from "./inspector";
 const report = z.object({
   state: z.enum(["compatible", "incompatible", "waiting"]),
   reason: z.string().max(300),
@@ -12,13 +12,7 @@ export const rpcContract = defineRpcContract({
   report: { input: report, output: z.object({ ok: z.boolean() }) },
 });
 export default function plugin(bb: BbPluginApi) {
-  const settings = bb.settings.define({
-    enabled: {
-      type: "boolean",
-      label: "Показывать чат по центру в редакторе диалога",
-      default: true,
-    },
-  });
+  const settings = bb.settings.define(inspectorSettings);
   bb.rpc.register(rpcContract, {
     config: async () => settings.get(),
     report: async (value) => {
@@ -61,6 +55,8 @@ export default function plugin(bb: BbPluginApi) {
       const config = await settings.get();
       const result = {
         enabled: config.enabled,
+        autoOpen: config.autoOpen,
+        autoOpenThread: config.autoOpenThread,
         upstreamTracking: tracking,
         source,
         browser: await bb.storage.kv.get("last-inspection"),

@@ -1,6 +1,6 @@
 {
   "id": "plugin-kodaforge-inspector",
-  "title": "Центральный чат KodaForge и инспектор совместимости",
+  "title": "Настройки чата и автооткрытия в KodaForge, инспектор совместимости",
   "component": "kodaforge-inspector",
   "where": "server",
   "kind": "local-plugin",

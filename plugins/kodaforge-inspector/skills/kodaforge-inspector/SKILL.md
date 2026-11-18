@@ -1,9 +1,11 @@
 ---
 name: kodaforge-inspector
-description: Проверка центрального чата KodaForge, источника обновлений и возврат к штатному расположению панелей.
+description: Проверка центрального чата KodaForge, автооткрытия выбранного диалога, источника обновлений и возврат к штатному расположению панелей.
 ---
 
 При запросе о центральном чате проверь `bb kodaforge-inspector status`. Сопоставь время последней проверки браузера с последним открытием редактора. Для свежего результата открой KodaForge для диалога и проверь статус ещё раз. Причина несовместимости указана в поле `browser.reason`.
+
+По умолчанию обе опции выключены. Чтобы переместить чат по центру или вернуть его вправо, задай `bb plugin config kodaforge-inspector set enabled true` или `false`. Для автооткрытия сохрани ID выбранного диалога через `bb plugin config kodaforge-inspector set autoOpenThread <ID>`, затем включи `bb plugin config kodaforge-inspector set autoOpen true`. Значение `autoOpen false` возвращает обычный вход. Вторая опция действует только при открытии указанного диалога.
 
 По запросу «вернуть штатный KodaForge» отключи слой командой `bb plugin disable kodaforge-inspector`. Обнови страницу и проверь обычное расположение редактора и чата. При повторном включении используй `bb plugin enable kodaforge-inspector`.
 
